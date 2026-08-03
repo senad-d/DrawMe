@@ -209,7 +209,7 @@ export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> 
     command = await invoke(info.binary, fullArgs);
   } catch (e) {
     const detail = ((e as { stderr?: string }).stderr || (e as Error).message || String(e)).trim();
-    throw new Error(`draw.io export failed: ${detail}`);
+    throw new Error(`draw.io export failed: ${detail}`, { cause: e });
   }
   if (!existsSync(plan.output)) {
     throw new Error(`draw.io reported no error but the output was not created: ${plan.output}`);
