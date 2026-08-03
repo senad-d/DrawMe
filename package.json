@@ -1,6 +1,6 @@
 {
   "name": "@senad-d/drawme",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension: turn natural-language descriptions into .drawio diagrams and export to PNG/SVG/PDF/JPG via the draw.io desktop CLI. Local-only, no network.",
   "type": "module",
   "license": "MIT",
@@ -31,7 +31,8 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-how-it-works.drawio.png"
   },
   "files": [
     "src",
