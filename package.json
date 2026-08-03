@@ -54,13 +54,13 @@
     "typebox": "1.1.38"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.82.1",
-    "@eslint/js": "^9.13.0",
-    "@types/node": "^22.10.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "eslint": "^9.13.0",
-    "globals": "^15.11.0",
-    "typescript": "^5.6.0",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.10.0",
     "vitest": "^4.1.10"
   }
