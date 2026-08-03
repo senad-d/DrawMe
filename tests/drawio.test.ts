@@ -8,6 +8,7 @@ describe("deriveOutput", () => {
   it("uses a single extension when not embedding", () => {
     expect(deriveOutput("diagram.drawio", "png", false)).toBe("diagram.png");
     expect(deriveOutput("dir/diagram.drawio", "svg", true)).toBe("dir/diagram.svg");
+    expect(deriveOutput("diagram", "pdf", true)).toBe("diagram.pdf");
   });
 });
 
@@ -50,6 +51,17 @@ describe("planExport", () => {
     expect(p.args).toContain("--width");
     expect(p.args).toContain("1200");
     expect(p.args).not.toContain("-s");
+  });
+
+  it("supports explicit height, scale, border, and embed options", () => {
+    const sized = planExport({ input: "a.drawio", height: 900, border: 0, embed: false }, "darwin");
+    expect(sized.args).toContain("--height");
+    expect(sized.args).toContain("900");
+    expect(sized.args).toContain("0");
+    expect(sized.args).not.toContain("-e");
+
+    const scaled = planExport({ input: "a.drawio", scale: 3 }, "darwin");
+    expect(scaled.args).toContain("3");
   });
 
   it("transparent adds -t for PNG only", () => {

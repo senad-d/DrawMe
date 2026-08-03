@@ -75,7 +75,7 @@ describe("extension registration", () => {
   it("drawio_shapesearch tool returns official style strings", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const res = await tools.get("drawio_shapesearch")!.execute("t", { query: "rectangle" }, undefined, undefined, {});
+    const res = await tools.get("drawio_shapesearch")!.execute("t", { query: "rectangle", limit: 1 }, undefined, undefined, {});
     expect(res.content[0].text).toContain("Rectangle");
   });
 
@@ -89,6 +89,56 @@ describe("extension registration", () => {
     expect(res.content[0].text).toContain("### Components");
     expect(res.content[0].text).toContain("### Relations");
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it("reports tool failures and empty search results as text", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const missing = join(tmpdir(), "drawme-file-that-does-not-exist.drawio");
+
+    const check = await tools.get("drawio_check")!.execute("t", { binary: missing }, undefined, undefined, {});
+    expect(check.content[0].text).toContain("draw.io");
+
+    const exported = await tools.get("drawio_export")!.execute("t", { input: missing }, undefined, undefined, {});
+    expect(exported.content[0].text).toContain("Export failed: input file not found");
+
+    const converted = await tools.get("drawio_from_mermaid")!.execute("t", {}, undefined, undefined, {});
+    expect(converted.content[0].text).toContain("Mermaid conversion failed:");
+
+    const laidOut = await tools
+      .get("drawio_layout")!
+      .execute("t", { input: missing, preset: "invalid" }, undefined, undefined, {});
+    expect(laidOut.content[0].text).toContain("Layout failed: unknown layout preset");
+
+    const shapes = await tools.get("drawio_shapesearch")!.execute("t", { query: "no-such-shape-xyz" }, undefined, undefined, {});
+    expect(shapes.content[0].text).toContain("No shapes matched");
+
+    const explained = await tools.get("drawio_explain")!.execute("t", { input: missing }, undefined, undefined, {});
+    expect(explained.content[0].text).toContain("Explain failed:");
+
+    const opened = await tools.get("drawio_open")!.execute("t", { path: missing }, undefined, undefined, {});
+    expect(opened.content[0].text).toContain("Open failed: file not found");
+  });
+
+  it("handles command usage and failure notifications", async () => {
+    const { pi, commands } = makeMockPi();
+    drawme(pi as never);
+    const notifications: { message: string; level: string }[] = [];
+    const ctx = {
+      ui: {
+        notify: (message: string, level: string) => notifications.push({ message, level }),
+      },
+    };
+
+    await commands.get("drawme")!.handler("   ", ctx);
+    await commands.get("drawme-check")!.handler("", ctx);
+    await commands.get("drawme-export")!.handler("", ctx);
+    await commands.get("drawme-export")!.handler(join(tmpdir(), "missing.drawio"), ctx);
+
+    expect(notifications.some((n) => n.message.startsWith("Usage: /drawme ") && n.level === "info")).toBe(true);
+    expect(notifications.some((n) => n.message.startsWith("draw.io "))).toBe(true);
+    expect(notifications.some((n) => n.message.startsWith("Usage: /drawme-export "))).toBe(true);
+    expect(notifications.some((n) => n.message.startsWith("Export failed:") && n.level === "error")).toBe(true);
   });
 });
 

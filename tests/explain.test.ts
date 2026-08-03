@@ -35,6 +35,43 @@ describe("explainXml", () => {
     expect(explainXml(xml)).toContain("- API Gateway");
   });
 
+  it("decodes doubly encoded numeric entities and preserves empty delimiters", () => {
+    const xml = `<diagram><mxGraphModel><root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="encoded" value="&amp;#x41;&amp;#80;&amp;nbsp;&lt;&gt;" vertex="1" parent="1">
+        <mxGeometry x="0" y="0" width="80" height="40" as="geometry"/>
+      </mxCell>
+    </root></mxGraphModel></diagram>`;
+    expect(explainXml(xml)).toContain("- AP <>");
+  });
+
+  it("unwraps UserObject and object cells", () => {
+    const xml = `<mxfile><diagram><mxGraphModel><root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/>
+      <UserObject id="user" label="User wrapper"><mxCell vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell></UserObject>
+      <object id="object" value="Object wrapper"><mxCell vertex="1" parent="1"><mxGeometry x="100" y="0" width="80" height="40" as="geometry"/></mxCell></object>
+    </root></mxGraphModel></diagram></mxfile>`;
+    const md = explainXml(xml);
+    expect(md).toContain("- User wrapper");
+    expect(md).toContain("- Object wrapper");
+  });
+
+  it("describes unlabeled and id-less vertices", () => {
+    const xml = `<mxfile><diagram><mxGraphModel><root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="mystery" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>
+      <mxCell vertex="1"><mxGeometry x="100" y="0" width="80" height="40" as="geometry"/></mxCell>
+    </root></mxGraphModel></diagram></mxfile>`;
+    const md = explainXml(xml);
+    expect(md).toContain("- (unlabeled mystery)");
+    expect(md).toContain("- (unlabeled null)");
+  });
+
+  it("describes compressed pages without throwing", () => {
+    const md = explainXml(`<mxfile><diagram name="Packed">compressed-data</diagram></mxfile>`);
+    expect(md).toContain("_(compressed page — cannot describe)_");
+  });
+
   it("skips edges with a dangling endpoint", () => {
     const xml = `<mxfile><diagram name="P"><mxGraphModel><root>
       <mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -51,12 +88,12 @@ describe("explainXml", () => {
       <diagram name="One"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
         <mxCell id="x" value="X" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>
       </root></mxGraphModel></diagram>
-      <diagram name="Two"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
         <mxCell id="y" value="Y" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>
       </root></mxGraphModel></diagram>
     </mxfile>`;
     const md = explainXml(xml);
     expect(md).toContain("## Page 1: One");
-    expect(md).toContain("## Page 2: Two");
+    expect(md).toContain("## Page 2\n");
   });
 });
