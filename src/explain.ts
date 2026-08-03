@@ -40,12 +40,33 @@ function decodeEntities(s: string): string {
     .replaceAll("&amp;", "&");
 }
 
+/** Strip tag-shaped spans in linear time while preserving unmatched delimiters. */
+function stripTags(text: string): string {
+  const parts: string[] = [];
+  let copiedThrough = 0;
+  let tagStart = -1;
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "<" && tagStart === -1) {
+      tagStart = i;
+    } else if (text[i] === ">" && tagStart !== -1) {
+      if (i > tagStart + 1) {
+        parts.push(text.slice(copiedThrough, tagStart));
+        copiedThrough = i + 1;
+      }
+      tagStart = -1;
+    }
+  }
+
+  parts.push(text.slice(copiedThrough));
+  return parts.join("");
+}
+
 /** Strip HTML tags/entities draw.io stores in labels; collapse whitespace. */
 function clean(text: string | null): string {
   if (!text) return "";
-  let t = text.replace(/<br\s*\/?>/gi, " ");
-  t = t.replace(/<[^>]+?>/g, "");
-  return decodeEntities(t).replace(/\s+/g, " ").trim();
+  const withLineBreaks = text.replace(/<br\s*\/?>/gi, " ");
+  return decodeEntities(stripTags(withLineBreaks)).replace(/\s+/g, " ").trim();
 }
 
 function shapeOf(style: string): string | null {

@@ -67,7 +67,8 @@ function run(bin: string, args: string[], timeout = 120_000): Promise<{ stdout: 
     execFile(bin, args, { timeout, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         (err as NodeJS.ErrnoException & { stderr?: string }).stderr = stderr?.toString();
-        reject(err);
+        const reason = err instanceof Error ? err : new Error(String(err));
+        reject(reason);
       } else {
         resolve({ stdout: stdout.toString(), stderr: stderr?.toString() ?? "" });
       }

@@ -25,6 +25,16 @@ describe("explainXml", () => {
     expect(md).toContain("- API —reads→ Database");
   });
 
+  it("strips HTML formatting from labels", () => {
+    const xml = `<mxfile><diagram><mxGraphModel><root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="api" value="&lt;b&gt;API&lt;/b&gt;&lt;br&gt;Gateway" vertex="1" parent="1">
+        <mxGeometry x="0" y="0" width="80" height="40" as="geometry"/>
+      </mxCell>
+    </root></mxGraphModel></diagram></mxfile>`;
+    expect(explainXml(xml)).toContain("- API Gateway");
+  });
+
   it("skips edges with a dangling endpoint", () => {
     const xml = `<mxfile><diagram name="P"><mxGraphModel><root>
       <mxCell id="0"/><mxCell id="1" parent="0"/>
