@@ -30,16 +30,26 @@ export interface ShapeMatch {
 }
 
 const SOUNDEX_MAP = "01230120022455012603010202"; // A..Z digit codes
-const TRAIL = /\.*\d*$/; // strip trailing dots/digits before Soundex
+
+/**
+ * Strip a trailing run of dots followed by digits before Soundex (e.g. "s3" → "s",
+ * "ec2" → "ec"). Equivalent to the old /\.*\d*$/ but linear (no backtracking).
+ */
+function stripTrail(name: string): string {
+  let end = name.length;
+  while (end > 0 && name[end - 1] >= "0" && name[end - 1] <= "9") end--;
+  while (end > 0 && name[end - 1] === ".") end--;
+  return name.slice(0, end);
+}
 
 function soundex(name: string): string {
   if (!name) return "";
   const s: string[] = [name[0].toUpperCase()];
   for (const ch of name.slice(1)) {
-    const c = ch.toUpperCase().charCodeAt(0) - 65;
+    const c = (ch.toUpperCase().codePointAt(0) ?? 0) - 65;
     if (c >= 0 && c <= 25 && SOUNDEX_MAP[c] !== "0") {
       const code = SOUNDEX_MAP[c];
-      if (code !== s[s.length - 1]) {
+      if (code !== s.at(-1)) {
         s.push(code);
         if (s.length > 4) break;
       }
@@ -53,7 +63,10 @@ function buildTagMap(shapes: Shape[]): Map<string, Set<number>> {
   const tagMap = new Map<string, Set<number>>();
   const add = (key: string, i: number) => {
     let set = tagMap.get(key);
-    if (!set) tagMap.set(key, (set = new Set()));
+    if (!set) {
+      set = new Set();
+      tagMap.set(key, set);
+    }
     set.add(i);
   };
   for (let i = 0; i < shapes.length; i++) {
@@ -64,7 +77,7 @@ function buildTagMap(shapes: Shape[]): Map<string, Set<number>> {
       if (token.length < 2 || seen.has(token)) continue;
       seen.add(token);
       add(token, i);
-      const sx = soundex(token.replace(TRAIL, ""));
+      const sx = soundex(stripTrail(token));
       if (sx && sx !== token && !seen.has(sx)) {
         seen.add(sx);
         add(sx, i);
@@ -86,35 +99,44 @@ function splitCompound(token: string): string[] {
     .filter((p) => p.length >= 2);
 }
 
-function matchTerm(tagMap: Map<string, Set<number>>, term: string): { exact: Set<number>; phonetic: Set<number> } {
+interface TermMatch {
+  exact: Set<number>;
+  phonetic: Set<number>;
+}
+
+function matchTerm(tagMap: Map<string, Set<number>>, term: string): TermMatch {
   const exact = new Set<number>(tagMap.get(term) ?? new Set<number>());
   let phonetic = new Set<number>();
-  const sx = soundex(term.replace(TRAIL, ""));
+  const sx = soundex(stripTrail(term));
   if (sx && sx !== term) {
     phonetic = new Set([...(tagMap.get(sx) ?? new Set<number>())].filter((i) => !exact.has(i)));
   }
   return { exact, phonetic };
 }
 
-function search(shapes: Shape[], tagMap: Map<string, Set<number>>, query: string, limit: number): ShapeMatch[] {
-  if (!query) return [];
+/** Sub-terms for a raw query word: its compound splits, else the whole word if long enough. */
+function pickTerms(subs: string[], raw: string): string[] {
+  if (subs.length) return subs;
+  return raw.length >= 2 ? [raw] : [];
+}
+
+/** Tokenize the query into unique search terms (compound-split, deduped, order-preserving). */
+function parseTerms(query: string): string[] {
   const terms: string[] = [];
   const seen = new Set<string>();
   for (const raw of query.toLowerCase().split(/\s+/).filter(Boolean)) {
-    const subs = splitCompound(raw);
-    const list = subs.length ? subs : raw.length >= 2 ? [raw] : [];
-    for (const t of list) {
+    for (const t of pickTerms(splitCompound(raw), raw)) {
       if (!seen.has(t)) {
         seen.add(t);
         terms.push(t);
       }
     }
   }
-  if (!terms.length) return [];
+  return terms;
+}
 
-  const termMatches = terms.map((t) => matchTerm(tagMap, t));
-
-  // Strict AND across all terms first.
+/** Strict AND across all terms (exact ∪ phonetic per term). Null when there are no terms. */
+function intersectAll(termMatches: TermMatch[]): Set<number> | null {
   let andSet: Set<number> | null = null;
   for (const { exact, phonetic } of termMatches) {
     const combined = new Set<number>([...exact, ...phonetic]);
@@ -126,16 +148,22 @@ function search(shapes: Shape[], tagMap: Map<string, Set<number>>, query: string
     }
     if (andSet.size === 0) break;
   }
+  return andSet;
+}
 
-  // Score: +1.0 exact, +0.5 Soundex-only, per term. AND results if any, else OR.
+/** Score: +1.0 exact, +0.5 Soundex-only, per term. Restrict to `pool` (AND results) if given. */
+function scoreMatches(termMatches: TermMatch[], pool: Set<number> | null): Map<number, number> {
   const scores = new Map<number, number>();
-  const pool = andSet && andSet.size ? andSet : null;
   for (const { exact, phonetic } of termMatches) {
     for (const idx of exact) if (pool === null || pool.has(idx)) scores.set(idx, (scores.get(idx) ?? 0) + 1.0);
     for (const idx of phonetic)
       if ((pool === null || pool.has(idx)) && !exact.has(idx)) scores.set(idx, (scores.get(idx) ?? 0) + 0.5);
   }
+  return scores;
+}
 
+/** Rank scored shapes: by score, then verbatim-title hits, then title, then index. */
+function rankMatches(scores: Map<number, number>, shapes: Shape[], terms: string[], limit: number): ShapeMatch[] {
   const termSet = new Set(terms);
   const titleHits = (idx: number): number => {
     const toks = new Set(shapes[idx].title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
@@ -156,6 +184,18 @@ function search(shapes: Shape[], tagMap: Map<string, Set<number>>, query: string
     return a - b;
   });
   return ranked.slice(0, limit).map((i) => ({ style: shapes[i].style, w: shapes[i].w, h: shapes[i].h, title: shapes[i].title }));
+}
+
+function search(shapes: Shape[], tagMap: Map<string, Set<number>>, query: string, limit: number): ShapeMatch[] {
+  if (!query) return [];
+  const terms = parseTerms(query);
+  if (!terms.length) return [];
+
+  const termMatches = terms.map((t) => matchTerm(tagMap, t));
+  const andSet = intersectAll(termMatches);
+  const pool = andSet?.size ? andSet : null; // AND results if any, else OR across all terms
+  const scores = scoreMatches(termMatches, pool);
+  return rankMatches(scores, shapes, terms, limit);
 }
 
 const INDEX_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "assets", "data", "shape-index.json.gz");

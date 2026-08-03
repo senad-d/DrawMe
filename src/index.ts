@@ -88,7 +88,8 @@ export default function drawme(pi: ExtensionAPI): void {
         const r = await exportDiagram(params as ExportOptions);
         const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed}`];
         if (r.repaired) lines.push("(repaired truncated -e PNG IEND chunk)");
-        lines.push(`binary=${r.binary}${r.version ? ` (${r.version})` : ""}`);
+        const versionSuffix = r.version ? ` (${r.version})` : "";
+        lines.push(`binary=${r.binary}${versionSuffix}`);
         return textResult(lines.join("\n"), r);
       } catch (e) {
         return textResult(`Export failed: ${(e as Error).message}`, { error: (e as Error).message });
@@ -129,7 +130,8 @@ export default function drawme(pi: ExtensionAPI): void {
     async execute(_id, params) {
       try {
         const r = await convertMermaid(params);
-        return textResult(`Converted Mermaid → ${r.output}\nbinary=${r.binary}${r.version ? ` (${r.version})` : ""}`, r);
+        const versionSuffix = r.version ? ` (${r.version})` : "";
+        return textResult(`Converted Mermaid → ${r.output}\nbinary=${r.binary}${versionSuffix}`, r);
       } catch (e) {
         return textResult(`Mermaid conversion failed: ${(e as Error).message}`, { error: (e as Error).message });
       }

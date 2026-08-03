@@ -57,8 +57,8 @@ const CANDIDATES = [
   "drawio", // Homebrew cask, jgraph .deb/.rpm, Arch AUR
   "draw.io", // older builds / custom symlinks
   "/Applications/draw.io.app/Contents/MacOS/draw.io", // macOS .app bundle
-  "C:\\Program Files\\draw.io\\draw.io.exe", // Windows
-  "C:\\Program Files (x86)\\draw.io\\draw.io.exe",
+  String.raw`C:\Program Files\draw.io\draw.io.exe`, // Windows
+  String.raw`C:\Program Files (x86)\draw.io\draw.io.exe`,
   "/mnt/c/Program Files/draw.io/draw.io.exe", // WSL2
 ];
 
@@ -76,8 +76,8 @@ function run(bin: string, args: string[], timeout = 120_000): Promise<{ stdout: 
 }
 
 function parseMajor(version: string): number {
-  const m = version.match(/(\d+)/);
-  return m ? parseInt(m[1], 10) : 0;
+  const m = /(\d+)/.exec(version);
+  return m ? Number.parseInt(m[1], 10) : 0;
 }
 
 /**
@@ -286,7 +286,7 @@ export async function convertMermaid(opts: MermaidOptions): Promise<MermaidResul
   let tempDir: string | undefined;
   try {
     if (!mmdPath) {
-      if (!opts.mermaid || !opts.mermaid.trim()) {
+      if (!opts.mermaid?.trim()) {
         throw new Error("provide either `input` (a .mmd file path) or `mermaid` (inline Mermaid text)");
       }
       tempDir = await mkdtemp(join(tmpdir(), "drawme-mmd-"));

@@ -5,7 +5,7 @@
  * network-free authoring references.
  */
 export function drawmeWorkflow(description: string, refDir: string): string {
-  const quoted = description.replace(/\n/g, "\n> ");
+  const quoted = description.replaceAll("\n", "\n> ");
   return [
     "# DrawMe — create a diagram",
     "",

@@ -60,7 +60,7 @@ for (const abs of files) {
   if (text.includes("\r")) issues.push(`${rel}: contains CR (expected LF line endings)`);
   const lines = text.split("\n");
   lines.forEach((line, i) => {
-    if (/[ \t]+$/.test(line)) issues.push(`${rel}:${i + 1}: trailing whitespace`);
+    if (/[ \t]$/.test(line)) issues.push(`${rel}:${i + 1}: trailing whitespace`);
   });
   if (text.length > 0 && !text.endsWith("\n")) issues.push(`${rel}: missing final newline`);
   if (text.endsWith("\n\n")) issues.push(`${rel}: multiple trailing blank lines`);
