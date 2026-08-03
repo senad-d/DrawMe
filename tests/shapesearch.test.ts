@@ -4,7 +4,7 @@ import { searchShapes } from "../src/shapesearch";
 describe("searchShapes (over the bundled shape index)", () => {
   it("returns official styles for a plain keyword (matches upstream ranking)", () => {
     const r = searchShapes("rectangle", 5);
-    expect(r.length).toBe(5);
+    expect(r).toHaveLength(5);
     // every hit is a real 'rectangle' shape with a non-empty official style
     for (const m of r) {
       expect(m.title.toLowerCase()).toContain("rectangle");

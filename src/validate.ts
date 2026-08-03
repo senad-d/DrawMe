@@ -26,10 +26,10 @@ export interface ValidateResult {
 /** Python `float()` semantics: accepts nan/inf, strict-numeric otherwise; else undefined (≈ ValueError). */
 function pyFloat(s: string): number | undefined {
   const t = s.trim().toLowerCase();
-  if (t === "nan" || t === "+nan" || t === "-nan") return NaN;
+  if (t === "nan" || t === "+nan" || t === "-nan") return Number.NaN;
   if (t === "inf" || t === "+inf" || t === "infinity" || t === "+infinity") return Infinity;
   if (t === "-inf" || t === "-infinity") return -Infinity;
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t)) return undefined;
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(t)) return undefined;
   const n = Number(t);
   return Number.isNaN(n) ? undefined : n;
 }
@@ -37,11 +37,6 @@ function pyFloat(s: string): number | undefined {
 /** Python `repr()` of an optional attribute, for message parity with validate.py. */
 function repr(s: string | null): string {
   return s === null ? "None" : `'${s}'`;
-}
-
-/** Format a float roughly like Python's `%g` (drops trailing zeros). */
-function g(n: number): string {
-  return String(n);
 }
 
 function rect(cell: DomEl): Rect | null {
@@ -147,7 +142,8 @@ function edgeRoute(edge: DomEl, byId: ById): Point[] | null {
 
 function orient(a: Point, b: Point, c: Point): number {
   const v = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-  return Math.abs(v) < 1e-9 ? 0 : v > 0 ? 1 : -1;
+  if (Math.abs(v) < 1e-9) return 0;
+  return v > 0 ? 1 : -1;
 }
 
 function segmentsCross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
@@ -188,32 +184,131 @@ function routesCross(pa: Point[], pb: Point[]): boolean {
   return false;
 }
 
-function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
-  const warns: string[] = [];
-  const routed: [string | null, Point[], Set<string | null>][] = [];
+type RoutedEdge = [string | null, Point[], Set<string | null>];
+type LeafBox = [string | null, Rect];
+
+/** Edges with a resolvable waypointed route, tagged with their id and endpoint ids. */
+function collectRoutedEdges(cells: DomEl[], ids: ById): RoutedEdge[] {
+  const routed: RoutedEdge[] = [];
   for (const c of cells) {
     if (c.getAttribute("edge") === "1") {
       const pts = edgeRoute(c, ids);
       if (pts) routed.push([attr(c, "id"), pts, new Set([attr(c, "source"), attr(c, "target")])]);
     }
   }
-  const leaves: [string | null, Rect][] = [];
+  return routed;
+}
+
+/** Absolute boxes of leaf vertices (real nodes, not containers or edge labels). */
+function collectLeafBoxes(cells: DomEl[], ids: ById, parents: Set<string | null>): LeafBox[] {
+  const leaves: LeafBox[] = [];
   for (const c of cells) {
     if (c.getAttribute("vertex") === "1" && !parents.has(attr(c, "id")) && !isEdgeLabel(c)) {
       const box = absRect(c, ids);
       if (box) leaves.push([attr(c, "id"), box]);
     }
   }
+  return leaves;
+}
+
+function routeThroughWarnings(routed: RoutedEdge[], leaves: LeafBox[]): string[] {
+  const warns: string[] = [];
   for (const [eid, pts, ends] of routed) {
     for (const [vid, box] of leaves) {
-      if (!ends.has(vid) && routeHitsRect(pts, box))
-        warns.push(`edge ${repr(eid)} routes through vertex ${repr(vid)}`);
+      if (!ends.has(vid) && routeHitsRect(pts, box)) warns.push(`edge ${repr(eid)} routes through vertex ${repr(vid)}`);
     }
   }
+  return warns;
+}
+
+function routeCrossWarnings(routed: RoutedEdge[]): string[] {
+  const warns: string[] = [];
   for (let i = 0; i < routed.length; i++) {
     for (let j = i + 1; j < routed.length; j++) {
-      if (routesCross(routed[i][1], routed[j][1]))
-        warns.push(`edges ${repr(routed[i][0])} and ${repr(routed[j][0])} cross`);
+      if (routesCross(routed[i][1], routed[j][1])) warns.push(`edges ${repr(routed[i][0])} and ${repr(routed[j][0])} cross`);
+    }
+  }
+  return warns;
+}
+
+function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
+  const routed = collectRoutedEdges(cells, ids);
+  const leaves = collectLeafBoxes(cells, ids, parents);
+  return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed)];
+}
+
+/**
+ * Fold UserObject/object wrappers (links & metadata) into their inner mxCell so
+ * the wrapper id resolves for edges that reference it.
+ */
+function collectCells(root: DomEl | null): DomEl[] {
+  const cells: DomEl[] = [];
+  for (const child of root ? elemChildren(root) : []) {
+    if (child.tagName === "mxCell") cells.push(child);
+    else if (child.tagName === "UserObject" || child.tagName === "object") {
+      const inner = firstByTag(child, "mxCell");
+      if (inner) {
+        inner.setAttribute("id", attr(child, "id") ?? "");
+        cells.push(inner);
+      }
+    }
+  }
+  return cells;
+}
+
+/** Map every cell by id (blank key for id-less cells); report duplicate ids as errors. */
+function buildIds(cells: DomEl[], errors: string[]): ById {
+  const ids: ById = new Map();
+  for (const c of cells) {
+    const cid = attr(c, "id");
+    if (cid !== null && ids.has(cid)) errors.push(`duplicate id ${repr(cid)}`);
+    ids.set(cid ?? "", c);
+  }
+  return ids;
+}
+
+/** Geometry checks for a single non-edge-label vertex. */
+function checkVertexGeometry(c: DomEl, cid: string | null, errors: string[], warns: string[]): void {
+  const r = rect(c);
+  if (r === null || hasNaN(r)) {
+    errors.push(`vertex ${repr(cid)} has missing/invalid geometry`);
+    return;
+  }
+  const [x, y, w, h] = r;
+  if (w <= 0 || h <= 0) warns.push(`vertex ${repr(cid)} non-positive size ${String(w)}x${String(h)}`);
+  if (x < 0 || y < 0) warns.push(`vertex ${repr(cid)} negative position (${String(x)},${String(y)})`);
+}
+
+/** Per-cell reference and geometry checks (parents, edge endpoints, reserved ids, geometry). */
+function checkCell(c: DomEl, ids: ById, errors: string[], warns: string[]): void {
+  const cid = attr(c, "id");
+  const parent = attr(c, "parent");
+  const isV = c.getAttribute("vertex") === "1";
+  const isE = c.getAttribute("edge") === "1";
+  if (parent !== null && !ids.has(parent)) errors.push(`cell ${repr(cid)} parent ${repr(parent)} does not exist`);
+  for (const end of ["source", "target"] as const) {
+    const ref = attr(c, end);
+    if (ref && !ids.has(ref)) errors.push(`edge ${repr(cid)} ${end} ${repr(ref)} does not exist`);
+  }
+  if ((isV || isE) && cid !== null && RESERVED.has(cid)) errors.push(`cell ${repr(cid)} reuses reserved id 0/1`);
+  if (isV && !isEdgeLabel(c)) checkVertexGeometry(c, cid, errors, warns);
+}
+
+/** Sibling overlap: leaf vertices only (containers legitimately wrap children). */
+function overlapWarnings(cells: DomEl[], parents: Set<string | null>): string[] {
+  const boxes: [string | null, string | null, Rect][] = [];
+  for (const c of cells) {
+    if (c.getAttribute("vertex") === "1" && !parents.has(attr(c, "id"))) {
+      const r = rect(c);
+      if (r && !hasNaN(r)) boxes.push([attr(c, "id"), attr(c, "parent"), r]);
+    }
+  }
+  const warns: string[] = [];
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const [ia, pa, ra] = boxes[i];
+      const [ib, pb, rb] = boxes[j];
+      if (pa === pb && overlap(ra, rb)) warns.push(`vertices ${repr(ia)} and ${repr(ib)} overlap`);
     }
   }
   return warns;
@@ -226,72 +321,16 @@ function checkPage(diagram: DomEl): [string[], string[]] {
     if (directText(diagram).trim()) return [[], [`page '${name}': compressed, skipped (cannot lint)`]];
     return [[`page '${name}': no <mxGraphModel>`], []];
   }
-  const root = firstByTag(model, "root");
-  // Fold UserObject/object wrappers (links & metadata) into their inner mxCell so
-  // the wrapper id resolves for edges that reference it.
-  const cells: DomEl[] = [];
-  for (const child of root ? elemChildren(root) : []) {
-    if (child.tagName === "mxCell") cells.push(child);
-    else if (child.tagName === "UserObject" || child.tagName === "object") {
-      const inner = firstByTag(child, "mxCell");
-      if (inner) {
-        inner.setAttribute("id", attr(child, "id") ?? "");
-        cells.push(inner);
-      }
-    }
-  }
+  const cells = collectCells(firstByTag(model, "root"));
 
   const errors: string[] = [];
   const warns: string[] = [];
-  const ids: ById = new Map();
-  for (const c of cells) {
-    const cid = attr(c, "id");
-    if (cid !== null && ids.has(cid)) errors.push(`duplicate id ${repr(cid)}`);
-    ids.set(cid ?? "", c);
-  }
+  const ids = buildIds(cells, errors);
   const parents = new Set<string | null>();
   for (const c of cells) parents.add(attr(c, "parent"));
 
-  for (const c of cells) {
-    const cid = attr(c, "id");
-    const parent = attr(c, "parent");
-    const isV = c.getAttribute("vertex") === "1";
-    const isE = c.getAttribute("edge") === "1";
-    if (parent !== null && !ids.has(parent))
-      errors.push(`cell ${repr(cid)} parent ${repr(parent)} does not exist`);
-    for (const end of ["source", "target"] as const) {
-      const ref = attr(c, end);
-      if (ref && !ids.has(ref)) errors.push(`edge ${repr(cid)} ${end} ${repr(ref)} does not exist`);
-    }
-    if ((isV || isE) && cid !== null && RESERVED.has(cid))
-      errors.push(`cell ${repr(cid)} reuses reserved id 0/1`);
-    if (isV && !isEdgeLabel(c)) {
-      const r = rect(c);
-      if (r === null || hasNaN(r)) errors.push(`vertex ${repr(cid)} has missing/invalid geometry`);
-      else {
-        const [x, y, w, h] = r;
-        if (w <= 0 || h <= 0) warns.push(`vertex ${repr(cid)} non-positive size ${g(w)}x${g(h)}`);
-        if (x < 0 || y < 0) warns.push(`vertex ${repr(cid)} negative position (${g(x)},${g(y)})`);
-      }
-    }
-  }
-
-  // Sibling overlap: leaf vertices only (containers legitimately wrap children).
-  const boxes: [string | null, string | null, Rect][] = [];
-  for (const c of cells) {
-    if (c.getAttribute("vertex") === "1" && !parents.has(attr(c, "id"))) {
-      const r = rect(c);
-      if (r && !hasNaN(r)) boxes.push([attr(c, "id"), attr(c, "parent"), r]);
-    }
-  }
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      const [ia, pa, ra] = boxes[i];
-      const [ib, pb, rb] = boxes[j];
-      if (pa === pb && overlap(ra, rb)) warns.push(`vertices ${repr(ia)} and ${repr(ib)} overlap`);
-    }
-  }
-  warns.push(...geometryWarnings(cells, ids, parents));
+  for (const c of cells) checkCell(c, ids, errors, warns);
+  warns.push(...overlapWarnings(cells, parents), ...geometryWarnings(cells, ids, parents));
   return [errors, warns];
 }
 

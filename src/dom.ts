@@ -19,10 +19,8 @@ export interface DomEl {
 /** Element children only (skips text/comment nodes). */
 export function elemChildren(el: DomEl): DomEl[] {
   const out: DomEl[] = [];
-  const nodes = el.childNodes;
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    if (n && n.nodeType === ELEMENT_NODE) out.push(n);
+  for (const n of Array.from(el.childNodes)) {
+    if (n?.nodeType === ELEMENT_NODE) out.push(n);
   }
   return out;
 }
@@ -46,10 +44,8 @@ export function attr(el: DomEl, name: string): string | null {
 /** Direct (non-descendant) text of an element, mirroring ElementTree's `.text`. */
 export function directText(el: DomEl): string {
   let s = "";
-  const nodes = el.childNodes;
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    if (n && n.nodeType === TEXT_NODE) s += n.nodeValue ?? "";
+  for (const n of Array.from(el.childNodes)) {
+    if (n?.nodeType === TEXT_NODE) s += n.nodeValue ?? "";
   }
   return s;
 }

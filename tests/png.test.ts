@@ -20,7 +20,7 @@ describe("repairPngBuffer", () => {
     expect(fixed).not.toBeNull();
     expect(fixed!.equals(Buffer.concat([body, IEND]))).toBe(true);
     // exactly one IEND, not the truncated field plus a chunk
-    expect(fixed!.length).toBe(body.length + 12);
+    expect(fixed!).toHaveLength(body.length + 12);
   });
 
   it("is a no-op when the file already ends with a valid IEND chunk", () => {
