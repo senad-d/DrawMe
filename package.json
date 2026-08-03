@@ -1,0 +1,67 @@
+{
+  "name": "@senad-d/drawme",
+  "version": "0.0.1",
+  "description": "Pi extension: turn natural-language descriptions into .drawio diagrams and export to PNG/SVG/PDF/JPG via the draw.io desktop CLI. Local-only, no network.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Senad Dizdarević",
+  "homepage": "https://github.com/senad-d/DrawMe#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/senad-d/DrawMe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/senad-d/DrawMe/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "drawio",
+    "diagram",
+    "flowchart",
+    "architecture",
+    "mermaid",
+    "svg",
+    "png",
+    "visualization"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "assets"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint:eslint": "eslint . --max-warnings=0",
+    "format:check": "node scripts/format-check.mjs",
+    "lint": "npm run typecheck && npm run lint:eslint && npm run format:check",
+    "check:golden": "node scripts/check-golden.mjs",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "test:coverage": "npm run coverage",
+    "validate": "npm run check:golden && npm run lint && npm test",
+    "dev": "pi --no-extensions -e ."
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
+    "typebox": "1.1.38"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@eslint/js": "^9.13.0",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.10.0",
+    "vitest": "^4.1.10"
+  }
+}

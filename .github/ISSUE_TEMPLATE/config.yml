@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/senad-d/DrawMe/discussions
+    about: Ask questions and discuss ideas rather than opening an issue.
+  - name: Security report
+    url: https://github.com/senad-d/DrawMe/blob/main/SECURITY.md
+    about: Please report suspected vulnerabilities privately (see SECURITY.md).

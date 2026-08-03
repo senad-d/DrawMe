@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a problem with DrawMe
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting a bug. Please fill out the details below so it can be reproduced.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include the `/drawme` prompt, tool call, or `.drawio` snippet involved.
+      placeholder: |
+        1. Run `/drawme ...`
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: drawio-version
+    attributes:
+      label: draw.io version
+      description: Output of `drawio --version` (or run `/drawme-check`).
+      placeholder: "26.0.9"
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version, and Pi version.
+      placeholder: "macOS 15 · Node 22.19 · pi 0.82.1"
+    validations:
+      required: false
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Any error text from the tool result, `/drawme-check`, or the CLI.
+      render: shell
+    validations:
+      required: false
