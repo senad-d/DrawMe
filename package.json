@@ -4,7 +4,7 @@
   "description": "Pi extension for authoring, validating, and exporting editable draw.io diagrams from natural-language descriptions.",
   "type": "module",
   "license": "MIT",
-  "author": "Senad Dizdarević",
+  "author": "Senad Dizdarević <112484166+senad-d@users.noreply.github.com>",
   "homepage": "https://github.com/senad-d/DrawMe#readme",
   "repository": {
     "type": "git",
@@ -17,6 +17,11 @@
     "pi",
     "pi-package",
     "pi-extension",
+    "pi-coding-agent",
+    "cli",
+    "terminal",
+    "typescript",
+    "coding-agent",
     "drawio",
     "diagram",
     "flowchart",
@@ -27,7 +32,7 @@
     "visualization"
   ],
   "engines": {
-    "node": ">=22.19"
+    "node": ">=22.19.0"
   },
   "pi": {
     "extensions": [
@@ -36,9 +41,15 @@
     "image": "https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-how-it-works.drawio.png"
   },
   "files": [
-    "src",
-    "assets",
-    "docs"
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "docs/**/*.md",
+    "assets/**/*",
+    "example/**/*.drawio",
+    "src/**/*.ts",
+    "tsconfig.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -46,10 +57,12 @@
     "format:check": "node scripts/format-check.mjs",
     "lint": "npm run typecheck && npm run lint:eslint && npm run format:check",
     "check:golden": "node scripts/check-golden.mjs",
+    "pack:dry-run": "npm pack --dry-run --json --ignore-scripts",
+    "check:pack": "node scripts/check-package-contents.mjs",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "test:coverage": "npm run coverage",
-    "validate": "npm run check:golden && npm run lint && npm test",
+    "validate": "npm run check:golden && npm run lint && npm test && npm run check:pack",
     "dev": "pi --no-extensions -e ."
   },
   "dependencies": {

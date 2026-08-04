@@ -34,7 +34,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 - **Guided workflow:** CLI detection, planning, authoring, validation, visual review, and final export are coordinated from one `/drawme` command.
 - **Deterministic validation:** a structural linter catches dangling edges, duplicate/reserved ids, broken parents, missing geometry, overlaps, and edge-routing defects before you ever look at a pixel.
 - **Exact shapes, not guesses:** search 10k+ official AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN styles from a bundled local index.
-- **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, and the truncated `-e` PNG chunk is auto-repaired.
+- **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, the truncated `-e` PNG chunk is auto-repaired, and temporary previews are removed automatically after final export.
 
 > **Security:** Pi packages run with your full system permissions. DrawMe reads and writes diagram files and can launch the draw.io CLI or your OS file opener. Review [`SECURITY.md`](SECURITY.md) before installation.
 
@@ -144,7 +144,7 @@ Registered for the model to call directly.
 | Tool | Purpose |
 | --- | --- |
 | `drawio_check` | Resolve the draw.io binary, version, and whether it supports Mermaid import / `--layout` (v30+). |
-| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG for a vision self-check (never embedded); `mode:"final"` → embedded editable deliverable, with the truncated `-e` PNG IEND chunk auto-repaired. |
+| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG for a vision self-check (never embedded); `mode:"final"` → embedded editable deliverable, with the truncated `-e` PNG IEND chunk auto-repaired and prior previews for the source removed automatically. |
 | `drawio_validate` | Deterministic structural lint: dangling edges, duplicate/reserved ids, broken parents, missing geometry; warnings for overlaps, off-canvas nodes, and edges routing through / crossing shapes. |
 | `drawio_shapesearch` | Exact official `style=` strings for 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN shapes, from a bundled local index. Use instead of guessing a style. |
 | `drawio_from_mermaid` | Convert Mermaid text (inline or a `.mmd`) to a native `.drawio` with automatic layout. Requires draw.io **v30+**. |
@@ -174,7 +174,7 @@ The extension factory in `src/index.ts` registers the tools and commands. Render
 4. **Validate** — run `drawio_validate` and fix every error before exporting.
 5. **Preview & self-check** — export a clean, width-capped PNG and inspect it visually; fix overlaps, clipping, and edge defects (max two rounds).
 6. **Review** — show the preview, apply targeted edits from your feedback, re-preview until approved.
-7. **Final export** — export each requested format (embedded/editable), report paths, and offer to open the source in the desktop app.
+7. **Final export** — export each requested format (embedded/editable), automatically remove previews for that source, report final paths, and offer to open the source in the desktop app.
 
 ## Bundled References and Assets
 

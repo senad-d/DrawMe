@@ -14,7 +14,7 @@ This document defines the extension's public functionality, options, defaults, d
 4. Use `drawio_shapesearch` instead of guessing official shape styles.
 5. Keep hand-authored XML uncompressed and structurally valid.
 6. Run `drawio_validate` and fix all errors before export.
-7. Use `drawio_export` with `mode: "preview"` for visual inspection and `mode: "final"` for deliverables.
+7. Use `drawio_export` with `mode: "preview"` for visual inspection and `mode: "final"` for deliverables. A successful final export removes previews previously created for the same source.
 8. Inspect every tool's text result. Several tools return failure text rather than throwing a tool-call error.
 9. Offer `drawio_open` for manual fine-tuning; call it only when the user wants a desktop application opened.
 
@@ -125,6 +125,7 @@ Additional behavior:
 - Final PNG, SVG, and PDF default to embedded/editable output.
 - JPG cannot carry editable XML; never set `embed: true` for JPG.
 - Embedded PNG exports are checked for draw.io's known truncated IEND chunk and repaired automatically when necessary.
+- Every successful preview output is tracked, including explicit `output` paths. The first successful final export for the same source automatically removes those preview artifacts; cleanup failures are returned as warnings without invalidating the final output.
 - Headless Linux handling is automatic, including `xvfb-run`, GPU disabling, and the root sandbox flag.
 
 #### Use
@@ -150,7 +151,7 @@ drawio_export({
 })
 ```
 
-Use a distinct `output` for each format or page. Never present a preview artifact as the final deliverable when a final export was requested.
+Use a distinct `output` for each format or page. Never present a preview artifact as the final deliverable when a final export was requested. Do not manually delete tracked preview artifacts after a final export; the tool handles that cleanup.
 
 ---
 
@@ -443,11 +444,11 @@ Make targeted source corrections, validate again, and re-preview. Limit automati
 
 ### 6. Final export
 
-After visual review, export each requested format and page with `mode: "final"`. Report:
+After visual review, export each requested format and page with `mode: "final"`. The first successful final export automatically removes preview artifacts for that source. Report:
 
 - source `.drawio` path;
 - validation status and retained warnings;
-- preview path when relevant;
+- preview inspection outcome, noting that the temporary artifact was removed;
 - every final output path and format;
 - whether each output embeds editable XML;
 - any unavailable or skipped functionality.
@@ -486,7 +487,7 @@ Use `drawio_layout` only for XML-authored or existing native diagrams on draw.io
 - `.drawio` is always the canonical editable source.
 - Final PNG, SVG, and PDF embed XML by default and can be reopened in draw.io where supported.
 - JPG cannot embed XML.
-- Preview PNG is intentionally clean and unembedded for vision compatibility.
+- Preview PNG is intentionally clean and unembedded for vision compatibility, and is automatically removed after a successful final export for the same source.
 - A final embedded PNG normally uses the `.drawio.png` double extension.
 - Multi-page exports should use `pageIndex` and explicit unique output names.
 - `drawio_explain` returns Markdown as text; it does not write a documentation file.

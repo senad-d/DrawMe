@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { planExport, deriveOutput } from "../src/drawio";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { planExport, deriveOutput, exportDiagram } from "../src/drawio";
 
 describe("deriveOutput", () => {
   it("uses the .drawio.png double extension when embedding a PNG", () => {
@@ -79,5 +83,48 @@ describe("planExport", () => {
   it("on Linux the headless flags trail the input; --no-sandbox only as root", () => {
     expect(planExport({ input: "a.drawio" }, "linux", false).linuxExtra).toEqual(["--disable-gpu"]);
     expect(planExport({ input: "a.drawio" }, "linux", true).linuxExtra).toEqual(["--disable-gpu", "--no-sandbox"]);
+  });
+});
+
+describe("exportDiagram preview cleanup", () => {
+  it("removes every preview created for the source after a successful final export", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-cleanup-"));
+    try {
+      const input = join(dir, "example.drawio");
+      const firstPreview = join(dir, "example.preview.png");
+      const secondPreview = join(dir, "example-review.png");
+      const finalOutput = join(dir, "example.svg");
+      const binary = join(dir, "fake-drawio.mjs");
+      await writeFile(input, "<mxfile/>");
+      await writeFile(
+        binary,
+        `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("30.0.0\\n");
+} else {
+  const output = args[args.indexOf("-o") + 1];
+  writeFileSync(output, "exported");
+}
+`,
+      );
+      await chmod(binary, 0o755);
+
+      await exportDiagram({ input, mode: "preview", output: firstPreview, binary });
+      await exportDiagram({ input, mode: "preview", output: secondPreview, binary });
+      expect(existsSync(firstPreview)).toBe(true);
+      expect(existsSync(secondPreview)).toBe(true);
+
+      const result = await exportDiagram({ input, format: "svg", mode: "final", output: finalOutput, binary });
+
+      expect(existsSync(finalOutput)).toBe(true);
+      expect(existsSync(firstPreview)).toBe(false);
+      expect(existsSync(secondPreview)).toBe(false);
+      expect(result.removedPreviews).toEqual([firstPreview, secondPreview]);
+      expect(result.previewCleanupWarnings).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

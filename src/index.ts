@@ -82,14 +82,19 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Use mode:'preview' for a clean, width-capped PNG to self-check with vision (never embedded), and mode:'final' for the deliverable (embedded editable output; the truncated -e PNG IEND chunk is auto-repaired).",
-    promptSnippet: "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' for self-check, mode:'final' for the deliverable).",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Use mode:'preview' for a clean, width-capped PNG to self-check with vision (never embedded), and mode:'final' for the deliverable (embedded editable output; the truncated -e PNG IEND chunk is auto-repaired). A successful final export automatically removes preview artifacts previously created for the same source.",
+    promptSnippet:
+      "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' for self-check, mode:'final' for the deliverable and automatic preview cleanup).",
     parameters: exportParams,
     async execute(_id, params) {
       try {
         const r = await exportDiagram(params as ExportOptions);
         const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed}`];
         if (r.repaired) lines.push("(repaired truncated -e PNG IEND chunk)");
+        if (r.removedPreviews.length > 0) lines.push(`Removed preview artifact(s): ${r.removedPreviews.join(", ")}`);
+        if (r.previewCleanupWarnings.length > 0) {
+          lines.push(`Preview cleanup warning(s): ${r.previewCleanupWarnings.join("; ")}`);
+        }
         const versionSuffix = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionSuffix}`);
         return textResult(lines.join("\n"), r);

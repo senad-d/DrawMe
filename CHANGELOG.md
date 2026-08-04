@@ -8,8 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- Final exports now automatically remove preview artifacts previously created for the same `.drawio`
+  source.
 - Refocused the documentation on DrawMe's current diagram-authoring workflow and removed obsolete
   guidance inherited from the earlier documentation set.
+- Improved npm and Pi gallery metadata, packaged linked diagram examples, and added a package-content
+  validation gate for releases.
 
 ## [0.0.1]
 

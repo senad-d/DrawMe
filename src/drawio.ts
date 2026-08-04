@@ -5,9 +5,9 @@
  * hand-build a draw.io command line.
  */
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { repairPng } from "./png";
 
@@ -163,7 +163,59 @@ export interface ExportResult {
   version?: string;
   /** True if the truncated `-e` PNG IEND chunk was repaired after export. */
   repaired: boolean;
+  /** Preview artifacts for this source that were removed after a successful final export. */
+  removedPreviews: string[];
+  /** Best-effort cleanup failures; the final export itself still succeeded. */
+  previewCleanupWarnings: string[];
   command: string;
+}
+
+/** Successful preview outputs, grouped by their canonical source path. */
+const previewOutputs = new Map<string, Map<string, string>>();
+
+function sourceKey(input: string): string {
+  try {
+    return realpathSync(input);
+  } catch {
+    return resolve(input);
+  }
+}
+
+function trackPreview(input: string, output: string): void {
+  const previews = previewOutputs.get(sourceKey(input)) ?? new Map<string, string>();
+  previews.set(resolve(output), output);
+  previewOutputs.set(sourceKey(input), previews);
+}
+
+async function removeTrackedPreviews(
+  input: string,
+  finalOutput: string,
+): Promise<{ removed: string[]; warnings: string[] }> {
+  const key = sourceKey(input);
+  const previews = previewOutputs.get(key);
+  if (!previews) return { removed: [], warnings: [] };
+
+  previewOutputs.delete(key);
+  const finalPath = resolve(finalOutput);
+  const removed: string[] = [];
+  const warnings: string[] = [];
+  const retry = new Map<string, string>();
+
+  for (const [path, displayPath] of previews) {
+    if (path === finalPath) continue;
+    const existed = existsSync(path);
+    try {
+      await rm(path, { force: true });
+      if (existed) removed.push(displayPath);
+    } catch (error) {
+      retry.set(path, displayPath);
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`${displayPath}: ${message}`);
+    }
+  }
+
+  if (retry.size > 0) previewOutputs.set(key, retry);
+  return { removed, warnings };
 }
 
 function isRootUser(): boolean {
@@ -216,6 +268,9 @@ export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> 
   }
 
   const repaired = plan.embed && plan.format === "png" ? await repairPng(plan.output) : false;
+  if (plan.mode === "preview") trackPreview(plan.input, plan.output);
+  const cleanup =
+    plan.mode === "final" ? await removeTrackedPreviews(plan.input, plan.output) : { removed: [], warnings: [] };
   return {
     output: plan.output,
     format: plan.format,
@@ -224,6 +279,8 @@ export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> 
     binary: info.binary,
     version: info.version,
     repaired,
+    removedPreviews: cleanup.removed,
+    previewCleanupWarnings: cleanup.warnings,
     command,
   };
 }

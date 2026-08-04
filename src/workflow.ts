@@ -32,6 +32,6 @@ export function drawmeWorkflow(description: string, refDir: string, agentReferen
       refDir +
       "/troubleshooting.md`.",
     "6. **Review** — show the PNG to the user, apply targeted XML edits from their feedback, and re-preview until they approve.",
-    "7. **Final export** — call `drawio_export` with `mode: \"final\"` for each requested format (default PNG; SVG/PDF/JPG on request). Report the `.drawio` source path and every exported file path, and offer to open the source in the desktop app with `drawio_open` for fine-tuning.",
+    "7. **Final export** — call `drawio_export` with `mode: \"final\"` for each requested format (default PNG; SVG/PDF/JPG on request). The first successful final export automatically removes preview artifacts created for the same source; do not delete them yourself or report them as retained outputs. Report the `.drawio` source path and every final exported file path, and offer to open the source in the desktop app with `drawio_open` for fine-tuning.",
   ].join("\n");
 }
