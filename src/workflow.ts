@@ -4,7 +4,7 @@
  * self-check→final loop while pointing it at the DrawMe tools and the bundled,
  * network-free authoring references.
  */
-export function drawmeWorkflow(description: string, refDir: string): string {
+export function drawmeWorkflow(description: string, refDir: string, agentReferencePath: string): string {
   const quoted = description.replaceAll("\n", "\n> ");
   return [
     "# DrawMe — create a diagram",
@@ -13,7 +13,11 @@ export function drawmeWorkflow(description: string, refDir: string): string {
     "",
     `> ${quoted}`,
     "",
-    "Produce a `.drawio` file and export it, following the workflow below. For anything that touches the draw.io CLI, use the DrawMe tools (`drawio_check`, `drawio_validate`, `drawio_export`) — do NOT shell out to `drawio` yourself. Everything runs locally; there is no network access.",
+    "Before starting, read `" +
+      agentReferencePath +
+      "`, the official DrawMe extension reference for agent behavior, tool options, decision rules, and limitations.",
+    "",
+    "Produce a `.drawio` file and export it, following the workflow below. For anything that touches the draw.io CLI, use the DrawMe tools — do NOT shell out to `drawio` yourself. Everything runs locally; there is no network access.",
     "",
     "1. **Check** — call `drawio_check` once (note the version: v30+ unlocks Mermaid conversion and the auto-layout pass). If the CLI is unavailable, still author the `.drawio` XML, tell the user how to install draw.io / open the file, and skip the export + self-check steps.",
     "2. **Plan** — choose the diagram type, shapes, relationships, and layout direction (LR or TB). For a specific type (ERD, UML class, sequence, C4, architecture, ML/DL, flowchart, SysML, BPMN, network, swimlane), read `" +

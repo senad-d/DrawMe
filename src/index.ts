@@ -4,7 +4,8 @@
  * CLI. It exposes the skill's workflow as plain commands + tools instead of a
  * skill, and does zero network I/O (see the audit note in the README).
  *
- * Tools:    drawio_check · drawio_export · drawio_validate
+ * Tools:    drawio_check · drawio_export · drawio_validate · drawio_from_mermaid
+ *           drawio_layout · drawio_shapesearch · drawio_explain · drawio_open
  * Commands: /drawme · /drawme-check · /drawme-export
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -28,6 +29,7 @@ import { drawmeWorkflow } from "./workflow";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REF_DIR = resolve(HERE, "..", "assets", "references");
+const AGENT_REFERENCE_PATH = resolve(HERE, "..", "docs", "agent-guide.md");
 
 const FORMAT = Type.Union([Type.Literal("png"), Type.Literal("svg"), Type.Literal("pdf"), Type.Literal("jpg")]);
 const MODE = Type.Union([Type.Literal("preview"), Type.Literal("final")]);
@@ -232,7 +234,7 @@ export default function drawme(pi: ExtensionAPI): void {
         ctx.ui.notify("Usage: /drawme <description of the diagram to create>", "info");
         return;
       }
-      pi.sendUserMessage(drawmeWorkflow(desc, REF_DIR));
+      pi.sendUserMessage(drawmeWorkflow(desc, REF_DIR, AGENT_REFERENCE_PATH));
     },
   });
 

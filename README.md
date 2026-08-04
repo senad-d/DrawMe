@@ -42,6 +42,7 @@ DrawMe is a native Pi **extension** that exposes the diagram-authoring workflow 
 ## Table of Contents
 
 - [Implementation Status](#implementation-status)
+- [Agent Reference](#agent-reference)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Commands](#commands)
@@ -67,6 +68,10 @@ This checkout implements the DrawMe core loop as a Pi extension:
 - Pure-TypeScript ports of the skill's structural linter, `-e` PNG IEND repair, shape search (over a bundled index), and diagram-to-Markdown describer — no Python runtime required.
 - draw.io binary resolution across macOS/Linux/Windows/WSL, headless-Linux `xvfb-run` handling, and version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
 - Validation pipeline: golden asset-integrity check, TypeScript typecheck, ESLint, a custom format check, and unit + real-CLI integration tests.
+
+## Agent Reference
+
+[`docs/agent-guide.md`](docs/agent-guide.md) is the official operational reference for AI agents. It documents every command, tool option, default, authoring mode, workflow, output behavior, and functional limitation. The `/drawme` command instructs the agent to read this packaged reference before starting.
 
 ## Quick Start
 
@@ -176,6 +181,7 @@ The extension factory in `src/index.ts` only registers tools and commands. Each 
 
 The model reads these on demand; all are network-free and ship in the package.
 
+- `docs/agent-guide.md` — official agent-facing command, tool, option, workflow, output, and limitation reference.
 - `assets/references/xml-authoring.md` — `.drawio` skeleton, cell/edge forms, containers, palette, spacing.
 - `assets/references/diagram-types.md` — per-type presets (ERD, UML, sequence, C4, architecture, ML, flowchart, SysML, BPMN, network, swimlane).
 - `assets/references/mermaid-authoring.md` — Mermaid authoring for the v30+ conversion path.
