@@ -1,56 +1,67 @@
 # Mermaid authoring → native .drawio
 
-Read this when the diagram is a **standard type with no custom styling needs** and the draw.io CLI is **version ≥ 30** — writing Mermaid text and letting the CLI convert it is faster and safer than hand-placing XML: you only get the *structure* right, layout comes free.
+Use Mermaid when the diagram is a standard type with no custom styling requirements and the draw.io
+CLI is version 30 or newer. Mermaid keeps the input focused on structure while draw.io supplies the
+initial layout.
 
-```bash
-# .mmd in → laid-out, editable, native .drawio out (draw.io desktop ≥ 30)
-drawio -x -f xml -o diagram.drawio diagram.mmd
-# then continue the normal workflow (validate → preview PNG → self-check → …)
+Call `drawio_check` first, then convert with:
+
+```text
+drawio_from_mermaid({
+  "mermaid": "flowchart LR\n  A[Client] --> B[Service]",
+  "output": "diagram.drawio"
+})
 ```
 
-**Version gate (critical):** on draw.io ≤ 29 the `.mmd` input fails with `Export failed`, and the `--layout` flag corrupts argument parsing entirely (like the `-w` pitfall). Resolve the CLI version in workflow step 1 (`drawio --version`); if it prints < 30, skip both this path and `--layout`, and author XML instead (optionally suggest `brew upgrade --cask drawio`).
+On draw.io 29 or older, skip Mermaid conversion and author uncompressed `.drawio` XML instead.
 
-## When to prefer which authoring mode
+## When to prefer each authoring mode
 
 | Author as | Best for | Why |
 |---|---|---|
-| **Mermaid → CLI convert** | flowchart, state, gantt, timeline, journey, pie, quadrant, sankey, gitGraph, **mindmap**, kanban, requirement, block, xychart, radar, wardley, C4 sketches | structure-only input, free layout, 28 types |
-| **XML (this skill's core path)** | anything needing **official vendor icons** (shapesearch/aiicons), **style presets**, swimlanes, precise positions, edge waypoint control, multi-page/drill-down | Mermaid can't express draw.io styles/shapes |
-| **Bundled generators** | code/IaC/SQL imports, sequence (seqlayout), C4 with drill-down (c4.py) | deterministic, data-driven |
+| **Mermaid → `drawio_from_mermaid`** | Flowchart, sequence, class, state, ER, gantt, mind map, timeline, journey, and similar standard diagrams | Concise structure and automatic initial layout |
+| **Uncompressed XML** | Official vendor icons, exact UML/BPMN notation, custom styling, swimlanes, containers, precise routing, or multi-page output | Full control over draw.io cells, styles, geometry, and pages |
+| **XML → `drawio_layout`** | Large or graph-heavy hand-authored diagrams | Repositions nodes and routes edges with an allowlisted ELK preset |
 
-Routing note: this converts Mermaid **into a `.drawio` deliverable**. If the user wants Mermaid text that lives in git / renders in Markdown, route to the **mermaid** skill instead (see "When to use / when NOT to use").
+If the user requests Mermaid source rather than a `.drawio` deliverable, do not convert it unless they
+also ask for a draw.io file.
 
-## Mermaid quirks that matter for draw.io's parser
+## Mermaid quirks that matter for draw.io conversion
 
-Condensed from the upstream reference (jgraph/drawio-mcp `shared/mermaid-reference.md`, Apache-2.0):
-
-- The **first non-directive line's keyword selects the type** — a misspelled header yields a blank diagram. Common: `flowchart TD`, `sequenceDiagram`, `classDiagram`, `stateDiagram-v2`, `erDiagram`, `gantt`, `mindmap`, `timeline`, `journey`, `pie`, `gitGraph`, `quadrantChart`, `sankey-beta`, `kanban`, `c4Context`.
-- **Node IDs are identifiers** (`A`, `node_1`) — no spaces, no trailing punctuation, avoid reserved words (`end`, `class`, `subgraph`). Display text goes in brackets/quotes: `A["User's Account"]`.
-- **One statement per line**; quote labels containing `:`, `-`, parentheses, or non-ASCII (use `"`, not `'`).
-- Only `<br>`, `<b>`, `<i>`, `<u>` are reliable HTML in labels; hex colors only (`#fff`, never `rgb()`).
-- Styling: `style A fill:#f9f,stroke:#333`, reusable `classDef x fill:#dfd` + `A:::x`, edge `linkStyle 0 stroke:#f00`.
-- **Never apply `--layout` to a Mermaid-converted file** — it is already laid out.
+- The first non-directive line selects the diagram type. Common headers include `flowchart TD`,
+  `sequenceDiagram`, `classDiagram`, `stateDiagram-v2`, `erDiagram`, `gantt`, `mindmap`, `timeline`,
+  `journey`, `pie`, `gitGraph`, and `c4Context`.
+- Node IDs are identifiers such as `A` or `node_1`. Put display text in brackets or quotes and avoid
+  reserved words such as `end`, `class`, and `subgraph`.
+- Keep one statement per line. Quote labels containing punctuation or non-ASCII text.
+- Only `<br>`, `<b>`, `<i>`, and `<u>` are consistently reliable in labels; prefer hex colors.
+- Style a node with `style A fill:#f9f,stroke:#333`, reusable classes with `classDef`, and edges with
+  `linkStyle`.
 - Match label language to the user's language.
+- Never apply `drawio_layout` to a Mermaid-converted file; conversion already lays it out.
 
-After converting, treat the `.drawio` as the artifact (delete the `.mmd`) and continue at the **validate → export draft** steps as usual. The converted file uses `UserObject`-wrapped cells — `validate.py` handles those.
+After conversion, treat the `.drawio` as the source of truth. Validate it, export a preview, inspect the
+result, and then create the requested final exports.
 
-## ELK `--layout` pass (XML-authored diagrams, CLI ≥ 30)
+## ELK layout for XML-authored diagrams
 
-For XML you authored with rough (or all-zero) positions, the CLI can run the editor's ELK layouts — an alternative to `autolayout.py` when Graphviz is unavailable, and the better choice for **organic/radial** shapes (networks, mind-map-like graphs) that `dot` lays out poorly:
-
-```bash
-# in-place re-layout (reading and overwriting the same path is supported)
-drawio -x -f xml --layout verticalFlow -o diagram.drawio diagram.drawio
-# or layout + export in one call
-drawio -x -f png -e -b 10 --layout verticalFlow -o diagram.drawio.png diagram.drawio
-```
+For rough XML geometry on draw.io 30 or newer, use `drawio_layout` with one of these presets:
 
 | Preset | Layout |
 |---|---|
-| `verticalFlow` / `horizontalFlow` | layered — flowcharts, pipelines |
-| `verticalTree` / `horizontalTree` / `radialTree` | trees — hierarchies, org charts |
-| `organic` | force-directed — networks, mind maps |
+| `verticalFlow` / `horizontalFlow` | Layered flowcharts and pipelines |
+| `verticalTree` / `horizontalTree` | Hierarchies and organization charts |
+| `radialTree` | Trees arranged around a center |
+| `organic` | Force-directed topologies and mind maps |
 
-Finer control: pass a JSON array instead of a preset — `--layout '[{"layout":"elkLayered","config":{"elk.direction":"RIGHT","elk.spacing.nodeNode":40}}]'` (algorithms: `elkLayered`, `elkTree`, `elkRadial`, `elkOrganic`, `elkStress`, `elkBox`).
+Use a distinct output path to preserve the rough source unless in-place replacement was requested:
 
-Choosing between layout engines: `autolayout.py` (Graphviz) understands this skill's graph-JSON pipeline (importers, groups→clusters, `--tune`, palette tinting) — prefer it when that pipeline is in play. Use `--layout` when Graphviz is missing, when re-laying-out an existing `.drawio`, or for organic/radial topologies.
+```text
+drawio_layout({
+  "input": "diagram-rough.drawio",
+  "preset": "horizontalFlow",
+  "output": "diagram.drawio"
+})
+```
+
+Continue with the layout tool's returned path and validate it again.

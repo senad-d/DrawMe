@@ -1,6 +1,6 @@
 # Diagram Type Presets
 
-When the user requests a specific diagram type, apply the matching preset below for shapes, styles, and layout conventions. These presets set **structural** style keywords (e.g. ERD's `shape=table;childLayout=tableLayout`); a user style preset (see `references/style-presets.md`) layers color/font/edge/extras on top.
+When the user requests a specific diagram type, apply the matching preset below for shapes, styles, and layout conventions. These presets focus on **structural** style keywords, such as ERD's `shape=table;childLayout=tableLayout`; adapt colors and typography to the user's requested visual style.
 
 Read this file when:
 - The user names one of these diagram types (ERD, UML class, sequence, C4, architecture, ML/DL model, flowchart, SysML, BPMN, network topology, cross-functional/swimlane)
@@ -8,7 +8,7 @@ Read this file when:
 
 ## ERD (Entity-Relationship Diagram)
 
-**From SQL DDL, don't hand-build**: `python3 scripts/sqlerd.py schema.sql -o graph.json` parses `CREATE TABLE` into per-table nodes (PK/FK-marked column lists) + crow's-foot FK edges for autolayout. Hand-build with the styles below when there's no DDL to parse.
+For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relations from the schema before authoring. Mermaid ER conversion is suitable for a standard ERD on draw.io 30+; use XML with the styles below when exact table styling or placement is required.
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -32,7 +32,7 @@ Read this file when:
 
 ## Sequence Diagram
 
-**Don't hand-place sequence geometry** — `python3 scripts/seqlayout.py seq.json -o out.drawio` computes all lifeline/activation-bar/arrow coordinates deterministically from a participants + messages JSON (schema in the script docstring), using exactly the styles below. Hand-edit the output only for fragments (alt/loop frames), which are out of its scope.
+Prefer Mermaid conversion for a standard sequence diagram on draw.io 30+. Use the styles below for custom XML diagrams that require exact lifelines, activation bars, message placement, or interaction frames.
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -45,7 +45,7 @@ Read this file when:
 
 ## C4 Model (System Context / Container / Component)
 
-**Don't hand-build** — `python3 scripts/c4.py c4.json -o out.drawio` generates the whole multi-page set (one page per level, drill-down links from parent elements to child pages, Graphviz placement; schema in the script docstring). The styles below are what it emits — for hand-tweaks afterwards:
+Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard single view on draw.io 30+; use XML when exact C4 styling, multiple pages, or drill-down links are required:
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -93,7 +93,7 @@ For neural network architecture diagrams — ideal for papers targeting NeurIPS,
 
 ## SysML (Block Definition / Internal Block / Requirement / Parametric)
 
-draw.io ships a native SysML 1.x shape library (`mxgraph.sysml.*`, ~60 shapes) — run `python3 scripts/shapesearch.py "sysml <keyword>"` for any element not listed below. Stereotype labels use guillemets as the first label line: `&#171;block&#187;` (HTML entities for « »). SysML behavioral diagrams (activity, state machine, use case, sequence) reuse the UML presets above; search `shapesearch.py "sysml activity"` / `"sysml state"` for the SysML-specific variants.
+draw.io ships a native SysML 1.x shape library (`mxgraph.sysml.*`, ~60 shapes). Call `drawio_shapesearch` with `sysml <keyword>` for any element not listed below. Stereotype labels use guillemets as the first label line: `&#171;block&#187;` (HTML entities for « »). SysML behavioral diagrams (activity, state machine, use case, sequence) reuse the UML presets above; search for `sysml activity` or `sysml state` for notation-specific variants.
 
 ### Block Definition Diagram (bdd)
 
@@ -139,7 +139,7 @@ draw.io ships a native SysML 1.x shape library (`mxgraph.sysml.*`, ~60 shapes) �
 
 ## BPMN (Business Process)
 
-draw.io ships ~200 native BPMN 2.0 shapes (`mxgraph.bpmn.*`). The official styles carry a long `points=[...]` connection-point list — run `python3 scripts/shapesearch.py "bpmn <element>"` for the full string; the styles below omit it for brevity and still render correctly.
+draw.io ships ~200 native BPMN 2.0 shapes (`mxgraph.bpmn.*`). The official styles carry a long `points=[...]` connection-point list — call `drawio_shapesearch` with `bpmn <element>` for the full string; the styles below omit it for brevity and still render correctly.
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -160,7 +160,7 @@ draw.io ships ~200 native BPMN 2.0 shapes (`mxgraph.bpmn.*`). The official style
 
 ## Network Topology
 
-Generic vocabulary is the `mxgraph.networks` library — one shared style prefix, per-element `shape=`. For **vendor-specific** icons (Cisco `mxgraph.cisco19`/`cisco_safe`, rack `mxgraph.rack`, cloud vendors), run `python3 scripts/shapesearch.py "<vendor> <device>"` instead.
+Generic vocabulary is the `mxgraph.networks` library — one shared style prefix, per-element `shape=`. For **vendor-specific** icons (Cisco `mxgraph.cisco19`/`cisco_safe`, rack `mxgraph.rack`, cloud vendors), call `drawio_shapesearch` with specific vendor and device keywords.
 
 Shared prefix (every node below): `fontColor=#0066CC;verticalAlign=top;verticalLabelPosition=bottom;labelPosition=center;align=center;html=1;outlineConnect=0;fillColor=#CCCCCC;strokeColor=#6881B3;gradientColor=none;gradientDirection=north;strokeWidth=2;`
 

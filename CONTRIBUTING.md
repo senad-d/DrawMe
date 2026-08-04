@@ -30,9 +30,9 @@ Individual checks are available as `npm run typecheck`, `npm run lint:eslint`, `
 
 ## Conventions
 
-- **Network-free.** DrawMe makes no network requests. Do not add `fetch`, `http(s)`, sockets, or any
-  outbound call. The only processes it may spawn are the draw.io CLI, `xvfb-run` on headless Linux, and
-  the OS file opener. See [`SECURITY.md`](SECURITY.md).
+- **Focused runtime surface.** Keep system interaction limited to diagram files and the documented
+  draw.io CLI, headless-Linux, and file-opening integrations. Document any new runtime capability in
+  [`SECURITY.md`](SECURITY.md).
 - **Pure TypeScript / Node.** No Python or other runtime dependencies. Prefer Node built-ins and the
   existing small dependencies (`typebox`, `@xmldom/xmldom`).
 - **Immutable bundled assets.** Files under `assets/` are vendored upstream data (the shape index and the
@@ -47,7 +47,7 @@ Individual checks are available as `npm run typecheck`, `npm run lint:eslint`, `
 - Tests live in `tests/**/*.test.ts` and run with Vitest.
 - The real-`draw.io` export/convert cases in `tests/integration.test.ts` **skip automatically** when the
   CLI is unavailable (so CI passes without it); install draw.io locally to exercise them.
-- New behavior needs a test. Ports of skill logic should be verified against the original where practical.
+- New behavior needs a test. Preserve existing behavior with regression coverage when replacing an implementation.
 
 ## Pull requests
 

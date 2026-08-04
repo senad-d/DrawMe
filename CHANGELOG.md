@@ -6,10 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Refocused the documentation on DrawMe's current diagram-authoring workflow and removed obsolete
+  guidance inherited from the earlier documentation set.
+
 ## [0.0.1]
 
-Initial release: DrawMe as a native Pi extension (a pure-TypeScript, network-free port of the
-`drawio-skill`).
+Initial release: DrawMe as a native Pi extension for authoring, validating, and exporting diagrams.
 
 ### Added
 
@@ -22,7 +26,7 @@ Initial release: DrawMe as a native Pi extension (a pure-TypeScript, network-fre
   diagram-to-Markdown describer — all pure TypeScript.
 - draw.io binary resolution (macOS/Linux/Windows/WSL), headless-Linux `xvfb-run` handling, and
   version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
-- Bundled, network-free authoring references and the vendored draw.io shape index.
+- Bundled authoring references and the vendored draw.io shape index.
 - Tooling: ESLint flat config, custom `format:check`, `check:golden` asset-integrity check, Vitest suite
   with real-CLI integration tests, CI, SonarCloud, and release workflows.
 

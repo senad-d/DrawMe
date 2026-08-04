@@ -3,7 +3,7 @@
 // the authoring references DrawMe ships and reads) are immutable data. This
 // computes a single SHA-256 over every file under assets/ (path + content) and
 // compares it to the committed baseline, failing if a shipped asset drifted or
-// was tampered with. Run `--update` after an intentional refresh. Local-only.
+// was tampered with. Run `--update` after an intentional refresh.
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";

@@ -12,7 +12,7 @@
 
 - [ ] `npm run validate` passes locally (golden check + lint + tests).
 - [ ] New/changed behavior has tests.
-- [ ] No network I/O was introduced (DrawMe is network-free by design — see `SECURITY.md`).
+- [ ] New runtime interactions are documented in `SECURITY.md`.
 - [ ] Bundled assets under `assets/` are unchanged, or `npm run check:golden -- --update` was run intentionally and explained below.
 - [ ] `README.md` / docs updated if behavior or the tool/command surface changed.
 

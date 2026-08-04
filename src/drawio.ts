@@ -1,9 +1,8 @@
 /**
  * draw.io desktop CLI wrapper: binary resolution + export. Encodes the tricky
- * flag knowledge from the skill (preview vs final export, the vision width cap,
- * the `-e` PNG IEND repair, page indexing, Linux-headless quirks) so callers
- * never hand-build a draw.io command line. Local-only — the only process it
- * spawns is the draw.io CLI (and, on headless Linux, `xvfb-run`). No network.
+ * flag knowledge for preview vs final export, the vision width cap, `-e` PNG
+ * IEND repair, page indexing, and headless-Linux handling so callers never
+ * hand-build a draw.io command line.
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -52,7 +51,7 @@ export interface ExportPlan {
   linuxExtra: string[];
 }
 
-/** Candidate binary names/paths, in resolution order (matches the skill's Step 1). */
+/** Candidate binary names and paths in resolution order. */
 const CANDIDATES = [
   "drawio", // Homebrew cask, jgraph .deb/.rpm, Arch AUR
   "draw.io", // older builds / custom symlinks
@@ -120,7 +119,7 @@ export function deriveOutput(input: string, format: ExportFormat, embed: boolean
 /**
  * Build the full export plan (no side effects) so the argument logic is unit-testable.
  *
- * Rules baked in from the skill:
+ * Export planning rules:
  * - preview → never `-e`, width-capped at 2000px (Claude vision rejects >2576px)
  * - final   → `-e` for png/svg/pdf (jpg can't embed), raster scale 2
  * - `--width` and `-s` are never combined; an explicit width/height wins

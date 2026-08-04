@@ -18,8 +18,6 @@ This document defines the extension's public functionality, options, defaults, d
 8. Inspect every tool's text result. Several tools return failure text rather than throwing a tool-call error.
 9. Offer `drawio_open` for manual fine-tuning; call it only when the user wants a desktop application opened.
 
-DrawMe performs all extension operations locally. It does not provide network-based rendering, icon downloads, or browser fallbacks.
-
 ## Functional availability
 
 | Functionality | draw.io CLI required | draw.io 30+ required |
@@ -504,7 +502,7 @@ Use `drawio_layout` only for XML-authored or existing native diagrams on draw.io
 - Shape search covers bundled official draw.io shapes, not arbitrary third-party logos.
 - Mermaid conversion cannot express all draw.io styles, containers, routing, or multi-page behavior.
 - ELK layout accepts only the six registered presets; arbitrary JSON layouts are not exposed.
-- The extension does not expose XML compression/decompression, Python generators, browser editor fallbacks, icon downloads, or arbitrary draw.io CLI arguments.
+- The extension does not expose XML compression/decompression, Python generators, or arbitrary draw.io CLI arguments.
 - A failed operation may be returned as text beginning with `Export failed`, `Layout failed`, `Mermaid conversion failed`, `Explain failed`, or `Open failed`. Treat that result as failure.
 
 ## Authoring references
@@ -516,4 +514,4 @@ Use these packaged references when additional notation or XML detail is needed:
 - [`../assets/references/mermaid-authoring.md`](../assets/references/mermaid-authoring.md) — Mermaid syntax and conversion guidance;
 - [`../assets/references/troubleshooting.md`](../assets/references/troubleshooting.md) — rendering and platform failure patterns.
 
-Some inherited reference text mentions upstream Python scripts or direct CLI commands. Those references provide background authoring knowledge only. They do not add extension functionality. Agents must use the registered DrawMe tools and options documented here.
+Use the registered DrawMe tools and options documented here rather than invoking the draw.io CLI directly.

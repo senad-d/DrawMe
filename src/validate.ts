@@ -1,10 +1,9 @@
 /**
- * Deterministic structural linter for `.drawio` files — a pure-TypeScript port of
- * the skill's `scripts/validate.py`. Catches the class of mistakes a vision
+ * Deterministic structural linter for `.drawio` files. Catches mistakes a vision
  * self-check is slow and unreliable at: dangling edge endpoints, duplicate or
  * reserved ids, broken parent references, and (as warnings) off-grid geometry,
  * overlapping sibling nodes, and edge-routing defects. Runs without launching
- * draw.io. Local-only, no network.
+ * draw.io.
  */
 import { readFile } from "node:fs/promises";
 import { DOMParser } from "@xmldom/xmldom";
@@ -34,7 +33,7 @@ function pyFloat(s: string): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
-/** Python `repr()` of an optional attribute, for message parity with validate.py. */
+/** Quote an optional attribute consistently in diagnostic messages. */
 function repr(s: string | null): string {
   return s === null ? "None" : `'${s}'`;
 }

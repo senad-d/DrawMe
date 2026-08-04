@@ -1,9 +1,8 @@
 /**
- * Describe a `.drawio` as structured Markdown — a pure-TypeScript port of the
- * skill's `scripts/explain.py`. The inverse of authoring: it lists components
- * (grouped by container/swimlane/tier), the relations between them (edge labels
- * become the relation verb), and a per-page breakdown for multi-page files.
- * Handy for a README/PR summary or a text-only read-back. Local-only, no network.
+ * Describe a `.drawio` as structured Markdown. The inverse of authoring: it
+ * lists components (grouped by container/swimlane/tier), the relations between
+ * them (edge labels become the relation verb), and a per-page breakdown for
+ * multi-page files. Handy for a README/PR summary or a text-only read-back.
  */
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";

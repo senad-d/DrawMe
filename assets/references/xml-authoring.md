@@ -1,6 +1,6 @@
 # Authoring .drawio XML
 
-Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it when a bundled generator writes the XML for you (`autolayout.py` + importers, `seqlayout.py`).
+Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it when `drawio_from_mermaid` creates the source for you.
 
 
 ### File skeleton
@@ -41,7 +41,7 @@ Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it w
 | `shape=cylinder3;` | cylinder — databases |
 | `swimlane;` | group/container with title bar |
 
-For **vendor/branded icons** (AWS/Azure/GCP/Cisco/Kubernetes) and any non-trivial shape, don't guess the `shape=mxgraph.*` name — a wrong name renders as a blank box. Run `python3 <this-skill-dir>/scripts/shapesearch.py "<keywords>"` to get the exact official style + size, or see `references/shapes.md` for the hand-writable cheatsheet. For **AI/LLM brand logos** (OpenAI, Claude, Gemini, …), which draw.io has none of, use `python3 <this-skill-dir>/scripts/aiicons.py "<brand>"`.
+For **vendor/branded icons** (AWS/Azure/GCP/Cisco/Kubernetes) and any non-trivial shape, don't guess the `shape=mxgraph.*` name — a wrong name renders as a blank box. Call `drawio_shapesearch` with specific vendor and component keywords, then copy the returned official style and recommended dimensions. If the bundled index has no suitable logo, use a clearly labeled standard shape or ask the user for an image asset.
 
 ### Required properties
 
@@ -118,10 +118,10 @@ For architecture diagrams with nested elements, use draw.io's parent-child conta
 **Edge style rules:**
 - **Animated connectors:** add `flowAnimation=1;` to any edge style to show a moving dot animation along the arrow. Works in SVG export and draw.io desktop — ideal for data-flow and pipeline diagrams. Example: `style="edgeStyle=orthogonalEdgeStyle;flowAnimation=1;rounded=1;..."`
 - **Always** include `rounded=1;orthogonalLoop=1;jettySize=auto` — these enable smart routing that avoids overlaps
-- Pin `exitX/exitY/entryX/entryY` on every edge when a node has 2+ connections — distributes lines across the shape perimeter. `scripts/edgeports.py <file>` does this for a whole diagram: it picks the side facing each peer and spreads that side's edges over even slots ordered by the far endpoint, so they don't stack or cross at the boundary. It skips ends you pinned by hand and is idempotent
+- Pin `exitX/exitY/entryX/entryY` on every edge when a node has 2+ connections. Pick the side facing each peer and spread that side's edges over evenly spaced slots so they do not stack or cross at the boundary.
 - Add `<Array as="points">` waypoints when an edge must detour around an intermediate shape
 - **Leave room for arrowheads:** the final straight segment between the last bend and the target shape must be ≥20px long. If too short, the arrowhead overlaps the bend and looks broken. Fix by increasing node spacing or adding explicit waypoints
-- **libavoid obstacle-avoiding routing (editor-side, draw.io ≥ 30):** draw.io has a newer connector router that recomputes edge paths to run *around* shapes (fanning out parallel edges) without moving any node. It runs interactively in the draw.io desktop editor (or via jgraph's MCP app-server `routing:"libavoid"`) — it is **not** a headless CLI flag. Passing `--layout libavoid` opens a modal `Unknown layout:` error dialog and hangs the run; the CLI `--layout` values are ELK *node* layout presets, a different thing (see `mermaid-authoring.md`). For CLI-authored files keep the orthogonal rules above; if a dense diagram still has crossings after export, open the `.drawio` in draw.io desktop once and let libavoid re-route. Don't stack it on an ELK `--layout` pass — pick one router, not both.
+- **Obstacle-avoiding routing (draw.io ≥ 30):** the desktop editor can recompute connectors around shapes without moving nodes. This is an interactive editor feature, not a `drawio_layout` preset. If a dense diagram still has crossings after preview, offer to open the `.drawio` in draw.io desktop for manual routing.
 
 ### Distributing connections on a shape
 

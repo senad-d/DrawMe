@@ -4,11 +4,10 @@
  * draw.io's CLI emits `-e` (embedded-XML) PNGs with the 4-byte IEND length
  * field present but the trailing 8 bytes of "IEND" type + CRC missing, so strict
  * PNG decoders and vision APIs reject the file (draw.io-desktop issue #8).
- * SVG/PDF are unaffected. Ported 1:1 from the skill's `scripts/repair_png.py`.
+ * SVG/PDF are unaffected.
  *
  * Idempotent: a no-op once the file already ends with a valid IEND chunk, so it
- * is safe to run unconditionally after every `-e` PNG export. Local-only, no
- * network.
+ * is safe to run unconditionally after every `-e` PNG export.
  */
 import { readFile, writeFile } from "node:fs/promises";
 

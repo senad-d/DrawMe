@@ -1,8 +1,8 @@
 /**
  * DrawMe — a native Pi extension that turns natural-language descriptions into
  * `.drawio` diagrams and exports them to PNG/SVG/PDF/JPG via the draw.io desktop
- * CLI. It exposes the skill's workflow as plain commands + tools instead of a
- * skill, and does zero network I/O (see the audit note in the README).
+ * CLI. It exposes the authoring workflow as plain commands and model-callable
+ * tools.
  *
  * Tools:    drawio_check · drawio_export · drawio_validate · drawio_from_mermaid
  *           drawio_layout · drawio_shapesearch · drawio_explain · drawio_open
@@ -82,7 +82,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Use mode:'preview' for a clean, width-capped PNG to self-check with vision (never embedded), and mode:'final' for the deliverable (embedded editable output; the truncated -e PNG IEND chunk is auto-repaired). Runs entirely locally.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Use mode:'preview' for a clean, width-capped PNG to self-check with vision (never embedded), and mode:'final' for the deliverable (embedded editable output; the truncated -e PNG IEND chunk is auto-repaired).",
     promptSnippet: "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' for self-check, mode:'final' for the deliverable).",
     parameters: exportParams,
     async execute(_id, params) {
@@ -178,7 +178,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_shapesearch",
     label: "draw.io: shape search",
     description:
-      "Find the exact official draw.io style= string for a shape by keyword (e.g. 'aws lambda', 'uml actor', 'k8s pod'). Covers 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/network shapes. Use this instead of guessing a style= when a diagram needs a specific vendor or notation shape. Local index, no network.",
+      "Find the exact official draw.io style= string for a shape by keyword (e.g. 'aws lambda', 'uml actor', 'k8s pod'). Covers 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/network shapes from a bundled index. Use this instead of guessing a style= when a diagram needs a specific vendor or notation shape.",
     promptSnippet: "Look up the exact official style= string for a draw.io shape by keyword.",
     parameters: Type.Object({
       query: Type.String({ description: "Keywords, e.g. 'aws lambda' or 'uml actor'" }),
@@ -196,7 +196,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_explain",
     label: "draw.io: explain",
     description:
-      "Describe an existing .drawio as structured Markdown (components grouped by container, relations with edge-label verbs, per page). Useful for a README/PR summary or to read a diagram back before editing. Pure-local, no draw.io CLI needed.",
+      "Describe an existing .drawio as structured Markdown (components grouped by container, relations with edge-label verbs, per page). Useful for a README/PR summary or to read a diagram back before editing. No draw.io CLI needed.",
     promptSnippet: "Describe an existing .drawio as Markdown (components + relations).",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -213,7 +213,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_open",
     label: "draw.io: open",
     description:
-      "Open a .drawio source or an exported file in the OS default application (draw.io desktop for .drawio) so the user can fine-tune it. Local action, no network.",
+      "Open a .drawio source or an exported file in the OS default application (draw.io desktop for .drawio) so the user can fine-tune it.",
     promptSnippet: "Open a .drawio or exported file in the desktop app.",
     parameters: Type.Object({ path: Type.String({ description: "File to open" }) }),
     async execute(_id, params) {

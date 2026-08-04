@@ -8,7 +8,6 @@
   <a href="https://github.com/senad-d/DrawMe/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/senad-d/DrawMe/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=senad-d_DrawMe"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=senad-d_DrawMe&metric=alert_status" /></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
-  <a href="#security"><img alt="network" src="https://img.shields.io/badge/network-none-brightgreen?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -18,7 +17,7 @@
 
 ---
 
-DrawMe is a native Pi **extension** that exposes the diagram-authoring workflow as plain commands and model-callable tools instead of a skill. You describe a diagram; Pi plans it, writes editable `.drawio` XML (or Mermaid on draw.io v30+), lints it deterministically, previews it for a visual self-check, and exports the approved result. It is a pure-TypeScript port of the [`drawio-skill`](example/) and is **network-free by construction**.
+DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram and Pi plans it, writes editable `.drawio` XML (or Mermaid on draw.io v30+), lints it deterministically, previews it for a visual self-check, and exports the approved result.
 
 <table align="center">
   <tr>
@@ -32,12 +31,12 @@ DrawMe is a native Pi **extension** that exposes the diagram-authoring workflow 
 </table>
 
 - **Natural-language authoring:** flowcharts, architecture, UML, BPMN, ERD, C4, network, ML — as native `.drawio`, or as Mermaid with automatic layout on v30+.
-- **Local-only, no network:** the only processes spawned are the draw.io CLI, `xvfb-run` on headless Linux, and the OS file opener. Nothing is ever uploaded.
+- **Guided workflow:** CLI detection, planning, authoring, validation, visual review, and final export are coordinated from one `/drawme` command.
 - **Deterministic validation:** a structural linter catches dangling edges, duplicate/reserved ids, broken parents, missing geometry, overlaps, and edge-routing defects before you ever look at a pixel.
 - **Exact shapes, not guesses:** search 10k+ official AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN styles from a bundled local index.
 - **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, and the truncated `-e` PNG chunk is auto-repaired.
 
-> **Security:** Pi packages run with your full system permissions. DrawMe reads Pi events through the extension API, spawns only the local draw.io CLI (never a shell), and makes no network requests. Read [`SECURITY.md`](SECURITY.md).
+> **Security:** Pi packages run with your full system permissions. DrawMe reads and writes diagram files and can launch the draw.io CLI or your OS file opener. Review [`SECURITY.md`](SECURITY.md) before installation.
 
 ## Table of Contents
 
@@ -65,7 +64,7 @@ This checkout implements the DrawMe core loop as a Pi extension:
 
 - Eight model-callable tools (`drawio_check`, `drawio_export`, `drawio_validate`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
 - A guided `/drawme` workflow that steers authoring, validation, a vision preview self-check, human review, and final multi-format export.
-- Pure-TypeScript ports of the skill's structural linter, `-e` PNG IEND repair, shape search (over a bundled index), and diagram-to-Markdown describer — no Python runtime required.
+- Pure-TypeScript structural linting, `-e` PNG IEND repair, shape search over a bundled index, and diagram-to-Markdown description — no Python runtime required.
 - draw.io binary resolution across macOS/Linux/Windows/WSL, headless-Linux `xvfb-run` handling, and version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
 - Validation pipeline: golden asset-integrity check, TypeScript typecheck, ESLint, a custom format check, and unit + real-CLI integration tests.
 
@@ -108,7 +107,7 @@ Inside Pi:
 /drawme a flowchart of a user login: enter credentials, validate, then success or retry
 ```
 
-Pi checks the CLI, plans and writes the `.drawio`, validates it, exports a preview PNG, self-checks it visually, and — after your review — exports the final editable deliverable. Everything runs locally.
+Pi checks the CLI, plans and writes the `.drawio`, validates it, exports a preview PNG, self-checks it visually, and — after your review — exports the final editable deliverable.
 
 ### Run from a source checkout
 
@@ -163,7 +162,7 @@ Natural-language request
                     └── Deliverables: .drawio source + PNG / SVG / PDF / JPG
 ```
 
-The extension factory in `src/index.ts` only registers tools and commands. Each tool spawns the draw.io CLI on demand with an argument list — never a shell — so importing or loading the extension opens no sockets, timers, or network connections.
+The extension factory in `src/index.ts` registers the tools and commands. Rendering, conversion, and layout launch the draw.io CLI on demand with an argument list rather than a shell; validation, shape search, and explanation run directly in the extension.
 
 ## The /drawme Workflow
 
@@ -179,7 +178,7 @@ The extension factory in `src/index.ts` only registers tools and commands. Each 
 
 ## Bundled References and Assets
 
-The model reads these on demand; all are network-free and ship in the package.
+The model reads these packaged references and assets on demand.
 
 - `docs/agent-guide.md` — official agent-facing command, tool, option, workflow, output, and limitation reference.
 - `assets/references/xml-authoring.md` — `.drawio` skeleton, cell/edge forms, containers, palette, spacing.
@@ -197,12 +196,9 @@ The model reads these on demand; all are network-free and ship in the package.
 
 ## Security
 
-DrawMe is **network-free by construction** — no tool, command, bundled reference, or the bundled shape
-index makes any network request. The only processes spawned are the draw.io CLI, `xvfb-run` on headless
-Linux, and the OS file opener (`open`/`xdg-open`/`start`). No prompt, diagram, file, or environment data
-is ever sent anywhere. The source `drawio-skill` was audited before porting; its only outbound calls
-(`aiicons.py` icon-CDN downloads and a browser-fallback URL builder) were **not** ported. See
-[`SECURITY.md`](SECURITY.md).
+DrawMe works with diagram files and may launch the draw.io CLI, `xvfb-run` on headless Linux, or the OS
+file opener (`open`/`xdg-open`/`start`). Pi extensions inherit the permissions of the Pi process, so
+install only packages you trust. See [`SECURITY.md`](SECURITY.md) for runtime and dependency details.
 
 ## Examples
 
@@ -210,12 +206,12 @@ Sample diagrams authored with DrawMe live in [`example/`](example/):
 
 - [`drawme-how-it-works.drawio`](example/drawme-how-it-works.drawio) — the workflow/architecture overview shown above.
 - [`drawme-installation-guide.drawio`](example/drawme-installation-guide.drawio) — an installation walkthrough.
-- [`tube-map-mode-example.drawio`](example/tube-map-mode-example.drawio) — a metro-style diagram.
+- [`git-graph-example.drawio`](example/git-graph-example.drawio) — a branching release-history example.
 
 ## Development
 
 ```bash
-npm ci --ignore-scripts   # first time: npm install to create the lockfile
+npm ci --ignore-scripts   # install the locked dependency set
 npm run validate          # golden check + lint + tests
 ```
 

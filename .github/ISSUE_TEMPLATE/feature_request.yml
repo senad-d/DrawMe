@@ -22,10 +22,3 @@ body:
       label: Alternatives considered
     validations:
       required: false
-  - type: checkboxes
-    id: constraints
-    attributes:
-      label: Constraints
-      options:
-        - label: This can be implemented without any network access (DrawMe is network-free by design).
-          required: false

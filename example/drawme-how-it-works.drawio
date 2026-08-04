@@ -8,10 +8,10 @@
         <mxCell id="2" value="DrawMe: from a prompt to an editable diagram" style="text;html=1;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;fontColor=#17365D;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1350" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="3" value="A Pi extension that orchestrates authoring, quality checks, human review, and local draw.io CLI exports" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#4F6475;" vertex="1" parent="1">
+        <mxCell id="3" value="A Pi extension that coordinates authoring, validation, visual review, and editable draw.io exports" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#4F6475;" vertex="1" parent="1">
           <mxGeometry x="40" y="70" width="1350" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="4" value="LOCAL ONLY  •  EDITABLE  •  MULTI-FORMAT" style="rounded=1;arcSize=20;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="4" value="GUIDED WORKFLOW  •  EDITABLE  •  MULTI-FORMAT" style="rounded=1;arcSize=20;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="1450" y="35" width="390" height="50" as="geometry" />
         </mxCell>
         <mxCell id="5" value="1  END-TO-END WORKFLOW" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=17;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
@@ -38,7 +38,7 @@
         <mxCell id="12" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;7 · FINAL EXPORT&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;PNG by default&lt;br&gt;SVG, PDF, or JPG&lt;br&gt;Keep source editable" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;shadow=1;" vertex="1" parent="5">
           <mxGeometry x="1530" y="80" width="210" height="215" as="geometry" />
         </mxCell>
-        <mxCell id="13" value="2  LOCAL ARCHITECTURE AND RESPONSIBILITIES" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=17;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="13" value="2  ARCHITECTURE AND RESPONSIBILITIES" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=17;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="40" y="560" width="1800" height="300" as="geometry" />
         </mxCell>
         <mxCell id="14" value="&lt;b&gt;Natural-language request&lt;/b&gt;&lt;br&gt;&lt;br&gt;User runs /drawme" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="13">
@@ -50,13 +50,13 @@
         <mxCell id="16" value="&lt;b&gt;DrawMe extension&lt;/b&gt;&lt;br&gt;&lt;br&gt;check • validate • export • shape search&lt;br&gt;Mermaid • layout • explain • open" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#EAF2F8;strokeColor=#1F4E78;strokeWidth=3;shadow=1;" vertex="1" parent="13">
           <mxGeometry x="710" y="70" width="370" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="17" value="&lt;b&gt;draw.io desktop CLI&lt;/b&gt;&lt;br&gt;&lt;br&gt;Renders and exports&lt;br&gt;Runs as a local process" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="13">
+        <mxCell id="17" value="&lt;b&gt;draw.io desktop CLI&lt;/b&gt;&lt;br&gt;&lt;br&gt;Renders and exports&lt;br&gt;Invoked by DrawMe tools" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="13">
           <mxGeometry x="1160" y="70" width="250" height="120" as="geometry" />
         </mxCell>
         <mxCell id="18" value="&lt;b&gt;Deliverables&lt;/b&gt;&lt;br&gt;&lt;br&gt;.drawio source&lt;br&gt;PNG • SVG • PDF • JPG" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="13">
           <mxGeometry x="1490" y="70" width="260" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="19" value="&lt;b&gt;Detected here: draw.io 26.0.9&lt;/b&gt;  •  XML authoring, validation, preview, and export are available  •  Mermaid conversion and ELK auto-layout require v30+" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontColor=#405466;fillColor=#F3F6F8;strokeColor=#AAB7C4;dashed=1;" vertex="1" parent="13">
+        <mxCell id="19" value="&lt;b&gt;Compatibility&lt;/b&gt;  •  XML authoring, validation, preview, and export work on older releases  •  Mermaid conversion and ELK auto-layout require draw.io v30+" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontColor=#405466;fillColor=#F3F6F8;strokeColor=#AAB7C4;dashed=1;" vertex="1" parent="13">
           <mxGeometry x="80" y="220" width="1640" height="45" as="geometry" />
         </mxCell>
         <mxCell id="20" value="3  WHAT DRAWME IS CAPABLE OF" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=17;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
@@ -71,7 +71,7 @@
         <mxCell id="23" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;EXPORT AND DELIVER&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• PNG, SVG, PDF, and JPG&lt;br&gt;• Editable XML embedded in final PNG, SVG, and PDF&lt;br&gt;• Scale, width, border, transparency&lt;br&gt;• Multi-page selection&lt;br&gt;• Open in desktop for fine-tuning" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=15;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="20">
           <mxGeometry x="920" y="75" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="24" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;OPERATE SAFELY AND REUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Explain existing diagrams as Markdown&lt;br&gt;• ELK layouts on v30+&lt;br&gt;• macOS, Linux, Windows, and headless Linux support&lt;br&gt;• No network calls&lt;br&gt;• Only local CLI and file opener processes" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=15;fontSize=14;fontColor=#263746;fillColor=#F3F9F1;strokeColor=#82B366;strokeWidth=2;shadow=1;" vertex="1" parent="20">
+        <mxCell id="24" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;EXTEND AND REUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Explain existing diagrams as Markdown&lt;br&gt;• ELK layouts on v30+&lt;br&gt;• macOS, Linux, Windows, WSL, and headless Linux&lt;br&gt;• Packaged authoring references&lt;br&gt;• Eight model-callable tools and three commands" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=15;fontSize=14;fontColor=#263746;fillColor=#F3F9F1;strokeColor=#82B366;strokeWidth=2;shadow=1;" vertex="1" parent="20">
           <mxGeometry x="1360" y="75" width="400" height="250" as="geometry" />
         </mxCell>
         <mxCell id="25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="6" target="7">
@@ -106,7 +106,7 @@
         <mxCell id="33" value="orchestrates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="15" target="16">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="34" value="invokes locally" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="16" target="17">
+        <mxCell id="34" value="invokes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="16" target="17">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="35" value="writes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="17" target="18">

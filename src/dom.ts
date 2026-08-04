@@ -1,7 +1,7 @@
 /**
  * Minimal shared helpers over `@xmldom/xmldom` nodes. Typed structurally so the
- * `.drawio` ports (validate, explain) read like the ElementTree originals without
- * fighting xmldom's exported types. Local-only, no network.
+ * validation and explanation code reads cleanly without fighting xmldom's
+ * exported types.
  */
 export const ELEMENT_NODE = 1;
 export const TEXT_NODE = 3;

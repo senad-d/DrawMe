@@ -1,13 +1,11 @@
 /**
- * Search 10k+ official draw.io shapes for their exact `style=` strings — a
- * pure-TypeScript port of the skill's `scripts/shapesearch.py`, over the bundled
- * `assets/data/shape-index.json.gz` (upstream draw.io shape data; see the notice
- * beside it). Resolves a keyword query (e.g. "aws lambda", "uml actor") to the
- * real palette style so a diagram uses the official shape instead of a guess.
- * Local-only, no network.
+ * Search 10k+ official draw.io shapes for their exact `style=` strings using the
+ * bundled `assets/data/shape-index.json.gz` file (upstream draw.io shape data;
+ * see the notice beside it). Resolves a keyword query such as "aws lambda" or
+ * "uml actor" to the real palette style instead of a guess.
  *
- * Algorithm mirrors upstream (tag map with exact + Soundex matching, strict AND
- * first, scored OR fallback) plus the skill's verbatim-title tiebreaker.
+ * Uses a tag map with exact + Soundex matching, strict AND first, a scored OR
+ * fallback, and a verbatim-title tiebreaker.
  */
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
