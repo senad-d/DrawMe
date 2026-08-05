@@ -1,7 +1,7 @@
 /**
  * draw.io desktop CLI wrapper: binary resolution + export. Encodes the tricky
- * flag knowledge for preview vs final export, the vision width cap, `-e` PNG
- * IEND repair, page indexing, and headless-Linux handling so callers never
+ * flag knowledge for focused previews vs final export, the vision width cap,
+ * `-e` PNG IEND repair, page indexing, and headless-Linux handling so callers never
  * hand-build a draw.io command line.
  */
 import { execFile } from "node:child_process";
@@ -163,15 +163,17 @@ export interface ExportResult {
   version?: string;
   /** True if the truncated `-e` PNG IEND chunk was repaired after export. */
   repaired: boolean;
-  /** Preview artifacts for this source that were removed after a successful final export. */
+  /** Superseded preview artifacts removed after this successful preview or final export. */
   removedPreviews: string[];
-  /** Best-effort cleanup failures; the final export itself still succeeded. */
+  /** Best-effort preview cleanup failures; the export itself still succeeded. */
   previewCleanupWarnings: string[];
   command: string;
 }
 
-/** Successful preview outputs, grouped by their canonical source path. */
+/** Successful preview outputs still present, grouped by their canonical source path. */
 const previewOutputs = new Map<string, Map<string, string>>();
+/** Serialize exports per source so concurrent preview calls cannot leave multiple latest artifacts. */
+const exportQueues = new Map<string, Promise<void>>();
 
 function sourceKey(input: string): string {
   try {
@@ -181,16 +183,42 @@ function sourceKey(input: string): string {
   }
 }
 
-function trackPreview(input: string, output: string): void {
-  const previews = previewOutputs.get(sourceKey(input)) ?? new Map<string, string>();
-  previews.set(resolve(output), output);
-  previewOutputs.set(sourceKey(input), previews);
+interface PreviewCleanup {
+  removed: string[];
+  warnings: string[];
 }
 
-async function removeTrackedPreviews(
-  input: string,
-  finalOutput: string,
-): Promise<{ removed: string[]; warnings: string[] }> {
+/**
+ * Keep the newly exported preview and retire every older tracked preview for the
+ * same source. Cleanup happens only after the replacement exists, so a failed
+ * export never destroys the last usable review image.
+ */
+async function replaceTrackedPreview(input: string, latestOutput: string): Promise<PreviewCleanup> {
+  const key = sourceKey(input);
+  const previous = previewOutputs.get(key) ?? new Map<string, string>();
+  const latestPath = resolve(latestOutput);
+  const retained = new Map<string, string>([[latestPath, latestOutput]]);
+  const removed: string[] = [];
+  const warnings: string[] = [];
+
+  for (const [path, displayPath] of previous) {
+    if (path === latestPath) continue;
+    const existed = existsSync(path);
+    try {
+      await rm(path, { force: true });
+      if (existed) removed.push(displayPath);
+    } catch (error) {
+      retained.set(path, displayPath);
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`${displayPath}: ${message}`);
+    }
+  }
+
+  previewOutputs.set(key, retained);
+  return { removed, warnings };
+}
+
+async function removeTrackedPreviews(input: string, finalOutput: string): Promise<PreviewCleanup> {
   const key = sourceKey(input);
   const previews = previewOutputs.get(key);
   if (!previews) return { removed: [], warnings: [] };
@@ -216,6 +244,25 @@ async function removeTrackedPreviews(
 
   if (retry.size > 0) previewOutputs.set(key, retry);
   return { removed, warnings };
+}
+
+async function withSourceExportQueue<T>(input: string, action: () => Promise<T>): Promise<T> {
+  const key = sourceKey(input);
+  const previous = exportQueues.get(key) ?? Promise.resolve();
+  let release = (): void => {};
+  const current = new Promise<void>((resolveCurrent) => {
+    release = resolveCurrent;
+  });
+  const tail = previous.then(() => current);
+  exportQueues.set(key, tail);
+
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+    if (exportQueues.get(key) === tail) exportQueues.delete(key);
+  }
 }
 
 function isRootUser(): boolean {
@@ -245,6 +292,10 @@ async function invoke(binary: string, fullArgs: string[]): Promise<string> {
  */
 export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> {
   if (!existsSync(opts.input)) throw new Error(`input file not found: ${opts.input}`);
+  return withSourceExportQueue(opts.input, () => exportDiagramQueued(opts));
+}
+
+async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
   const info = await resolveBinary(opts.binary);
   if (!info.available || !info.binary) {
     throw new Error(
@@ -268,9 +319,10 @@ export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> 
   }
 
   const repaired = plan.embed && plan.format === "png" ? await repairPng(plan.output) : false;
-  if (plan.mode === "preview") trackPreview(plan.input, plan.output);
   const cleanup =
-    plan.mode === "final" ? await removeTrackedPreviews(plan.input, plan.output) : { removed: [], warnings: [] };
+    plan.mode === "preview"
+      ? await replaceTrackedPreview(plan.input, plan.output)
+      : await removeTrackedPreviews(plan.input, plan.output);
   return {
     output: plan.output,
     format: plan.format,

@@ -9,7 +9,7 @@ Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it w
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="drawio" version="26.0.0">
   <diagram name="Page-1">
-    <mxGraphModel>
+    <mxGraphModel grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1200" pageHeight="800">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -28,6 +28,29 @@ Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it w
 - **Never use `--` inside XML comments** — it's illegal per XML spec and causes parse errors
 - Escape special characters in attribute values: `&amp;`, `&lt;`, `&gt;`, `&quot;`
 - **Multi-line text in labels:** use `&#xa;` for line breaks inside `value` attributes (not literal `\n`). Example: `value="Line 1&#xa;Line 2"`
+- Keep `page="1"` and `pageScale="1"` for a normal finite page, and resize `pageWidth`/`pageHeight` to the finished content. Use `page="0"` only when the user explicitly wants an infinite/non-page canvas; deterministic page-boundary, outer-margin, and empty-space checks are then intentionally skipped.
+- If `pageWidth` or `pageHeight` is omitted, DrawMe still validates cells and containment but records that page-boundary, outer-margin, and empty-space checks were skipped. Prefer explicit dimensions for deliverables.
+
+### Canvas sizing and content bounds
+
+Choose the page from the layout rather than leaving a large default canvas:
+
+1. Compute every visible top-level vertex/container rectangle as `(x, y, x + width, y + height)`. For a nested child, add every ancestor container's `x` and `y` to the child's local coordinates.
+2. Expand the bounds for separately sized edge labels and explicit waypoints when their positions are known. Automatic edge routes still need preview inspection.
+3. Shift top-level content so the minimum `x` and `y` leave a **40px recommended outer margin**; DrawMe warns below the **20px minimum**.
+4. Set `pageWidth` to the rightmost visible coordinate plus 40px and `pageHeight` to the bottommost visible coordinate plus 40px. Round both up to a multiple of 10. Keep `pageScale="1"` unless a deliberately scaled page is required.
+5. After every move, resize, container change, layout pass, legend addition, or waypoint edit, recalculate the bounds and resize the page. A page much larger than content creates unreadable full-diagram previews and triggers an excessive-empty-space warning.
+
+Example: content spanning `x=40..1160` and `y=40..720` should normally use `pageWidth="1200"` and `pageHeight="760"`. Do not count invisible helpers or intentional relative border ports as page-extending content.
+
+### Typography, padding, and labels
+
+- Use at least **12px for body/node labels** and **10px for connector labels**. Headings usually need 16px or more. Compact border ports and notation-mandated annotations may use 8–9px when their short labels remain legible; record the exception during review.
+- Add `whiteSpace=wrap;html=1;` to labeled nodes. Use about 10–16px visual padding (`spacing=10;` or directional spacing) between text and shape borders.
+- Size a node for the rendered lines, not only character count. A conservative height is `line count × (fontSize × 1.25) + top/bottom padding`; allow additional room for container title bands and icon shapes.
+- Estimate width from the longest line (`characters × fontSize × 0.6 + left/right padding`), then verify by preview. Insert deliberate `&#xa;` breaks for long labels rather than forcing a very wide node.
+- Prefer two or three concise lines. If a label remains long, enlarge the node, shorten the wording without changing meaning, or split details into a note/legend. Never reduce important body text merely to fit existing geometry.
+- A 2000px full-diagram preview scales the entire page. If labels become unreadable at that width, simplify the layout, tighten the canvas, split the diagram into pages, or use a focused review export; do not treat an unreadable full view as typography approval.
 
 ### Shape types (vertex)
 
@@ -187,6 +210,7 @@ Rules: swatch colors come from the active palette (preset or the table above) wi
 **Grid alignment:** snap all `x`, `y`, `width`, `height` values to **multiples of 10** — this ensures shapes align cleanly on draw.io's default grid and makes manual editing easier.
 
 **General rules:**
+- Recalculate visible content bounds and update `pageWidth`/`pageHeight` after every layout change; retain at least the 20px minimum outer margin (40px recommended)
 - Plan a grid before assigning x/y coordinates — sketch node positions on paper/mentally first
 - Group related nodes in the same horizontal or vertical band
 - Use `swimlane` cells for logical grouping with visible borders

@@ -12,6 +12,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import {
   applyLayout,
   convertMermaid,
@@ -53,6 +54,18 @@ export type DrawioExportInput = Static<typeof exportParams>;
 
 const textResult = (text: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text }], details });
 
+async function exportResult(text: string, result: Awaited<ReturnType<typeof exportDiagram>>) {
+  const content: (
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: "image/png" }
+  )[] = [{ type: "text", text }];
+  if (result.mode === "preview" && result.format === "png") {
+    const png = await readFile(result.output);
+    content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+  }
+  return { content, details: result };
+}
+
 export default function drawme(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "drawio_check",
@@ -82,9 +95,9 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Use mode:'preview' for a clean, width-capped PNG to self-check with vision (never embedded), and mode:'final' for the deliverable (embedded editable output; the truncated -e PNG IEND chunk is auto-repaired). A successful final export automatically removes preview artifacts previously created for the same source.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, never embedded, and attached to the text/metadata tool result for focused visual review. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
     promptSnippet:
-      "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' for self-check, mode:'final' for the deliverable and automatic preview cleanup).",
+      "Export a .drawio to PNG/SVG/PDF/JPG (each mode:'preview' call attaches the latest review image and removes the previous preview file; mode:'final' creates the deliverable and cleans the remaining preview).",
     parameters: exportParams,
     async execute(_id, params) {
       try {
@@ -97,7 +110,7 @@ export default function drawme(pi: ExtensionAPI): void {
         }
         const versionSuffix = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionSuffix}`);
-        return textResult(lines.join("\n"), r);
+        return exportResult(lines.join("\n"), r);
       } catch (e) {
         return textResult(`Export failed: ${(e as Error).message}`, { error: (e as Error).message });
       }
@@ -108,15 +121,20 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_validate",
     label: "draw.io: validate",
     description:
-      "Structurally lint a .drawio file: errors for dangling edge endpoints, duplicate/reserved ids, broken parents, and missing geometry; warnings for overlapping nodes, off-canvas shapes, and edges that route through shapes or cross each other. Deterministic and does not launch draw.io. Run before exporting.",
-    promptSnippet: "Lint a .drawio for structural errors before exporting.",
+      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, and explicit routes through shapes or across edges. Reports observations and a readability score. Deterministic and does not launch draw.io. Run after every source edit and before exporting.",
+    promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
       const r = await validateFile(params.input);
       const lines = [
-        ...r.warnings.map((w) => `warning: ${w}`),
-        ...r.errors.map((e) => `error: ${e}`),
-        `${r.errors.length} error(s), ${r.warnings.length} warning(s)`,
+        `Errors (${r.errors.length}):`,
+        ...(r.errors.length > 0 ? r.errors.map((error) => `- ${error}`) : ["- none"]),
+        `Actionable warnings (${r.warnings.length}):`,
+        ...(r.warnings.length > 0 ? r.warnings.map((warning) => `- ${warning}`) : ["- none"]),
+        `Informational observations (${r.observations.length}):`,
+        ...(r.observations.length > 0 ? r.observations.map((observation) => `- ${observation}`) : ["- none"]),
+        `Readability score: ${r.score.total} (route-through=${r.score.through}, crossings=${r.score.crossings}, overlaps=${r.score.overlaps}; lower is better for variants of this graph)`,
+        `${r.errors.length} error(s), ${r.warnings.length} unresolved warning(s)`,
       ];
       return textResult(lines.join("\n"), r);
     },

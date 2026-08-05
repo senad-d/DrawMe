@@ -8,8 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
-- Final exports now automatically remove preview artifacts previously created for the same `.drawio`
-  source.
+- Added focused visual quality passes, stronger deterministic canvas/edge/readability checks, attached PNG
+  previews, warning-resolution gates, and explicit approval before final export.
+- Intentionally re-baselined the golden asset hash after adding finite-page sizing, typography, preview
+  readability, and five-retry correction guidance to the packaged authoring references.
+- Each successful preview now removes the previous preview file for the same `.drawio` source, leaving only
+  the latest review artifact; final export removes that remaining preview.
 - Refocused the documentation on DrawMe's current diagram-authoring workflow and removed obsolete
   guidance inherited from the earlier documentation set.
 - Improved npm and Pi gallery metadata, packaged linked diagram examples, and added a package-content

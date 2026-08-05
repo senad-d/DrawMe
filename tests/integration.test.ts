@@ -4,15 +4,21 @@
  * this file is safe to run in CI without draw.io installed.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import drawme from "../src/index";
 import { resolveBinary } from "../src/drawio";
+import { AUTOMATIC_CORRECTION_LIMIT } from "../src/workflow";
 
 // --- Minimal mock of the bits of ExtensionAPI the extension touches ---
-type ToolDef = { name: string; execute: (...a: unknown[]) => Promise<{ content: { text: string }[]; details: unknown }> };
+type ResultContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+type ToolDef = { name: string; execute: (...a: unknown[]) => Promise<{ content: ResultContent[]; details: unknown }> };
+
+function textOf(content: ResultContent): string {
+  return content.type === "text" ? content.text : "";
+}
 function makeMockPi() {
   const tools = new Map<string, ToolDef>();
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
@@ -52,13 +58,89 @@ describe("extension registration", () => {
     expect([...commands.keys()].sort()).toEqual(["drawme", "drawme-check", "drawme-export"]);
   });
 
-  it("/drawme injects a workflow message containing the description", async () => {
+  it("/drawme injects the ordered focused-review workflow and approval gate", async () => {
     const { pi, commands, sent } = makeMockPi();
     drawme(pi as never);
     await commands.get("drawme")!.handler("a flowchart of login", {});
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain("a flowchart of login");
-    expect(sent[0]).toContain("drawio_export");
+
+    const workflow = sent[0];
+    expect(workflow).toContain("a flowchart of login");
+    const passes = [
+      "Canvas and composition",
+      "Nodes and typography",
+      "Connectors",
+      "Semantics and final polish",
+      "Holistic regression check",
+    ];
+    for (let i = 0; i < passes.length - 1; i++) {
+      expect(workflow.indexOf(passes[i])).toBeLessThan(workflow.indexOf(passes[i + 1]));
+    }
+    expect(workflow).toContain("handle exactly one category at a time");
+    expect(workflow).toContain("validate, then replace/re-export that pass preview before advancing");
+    expect(workflow).toContain("call `drawio_validate` immediately after authoring and after every later XML edit");
+    expect(workflow).toContain(`allow at most ${AUTOMATIC_CORRECTION_LIMIT} correction retries`);
+    expect(workflow).toContain("explicit user approval before any `mode: \"final\"` export");
+    expect(workflow).toContain("<name>.review-canvas.png");
+    expect(workflow).toContain("<name>.review.png");
+    expect(workflow).not.toContain("<name>.review-final.png");
+    expect(workflow).toContain("only the latest review image remains");
+    expect(workflow).not.toMatch(/two[- ]round|2 self-check rounds|after 5 rounds/i);
+  });
+
+  it("attaches only the latest successful preview file but keeps final and failure results text-only", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const dir = await mkdtemp(join(tmpdir(), "drawme-image-result-"));
+    try {
+      const input = join(dir, "sample.drawio");
+      const firstOutput = join(dir, "sample.review-canvas.png");
+      const latestOutput = join(dir, "sample.review-nodes.png");
+      const binary = join(dir, "fake-drawio.mjs");
+      await writeFile(input, SAMPLE);
+      await writeFile(
+        binary,
+        `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--version")) process.stdout.write("30.0.0\\n");
+else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "base64"));
+`,
+      );
+      await chmod(binary, 0o755);
+
+      const first = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output: firstOutput, binary });
+      expect(first.content).toHaveLength(2);
+      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+
+      const latest = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output: latestOutput, binary });
+      expect(latest.content).toHaveLength(2);
+      expect(latest.content[0]).toMatchObject({ type: "text" });
+      expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(textOf(latest.content[0])).toContain(`Removed preview artifact(s): ${firstOutput}`);
+      expect(existsSync(firstOutput)).toBe(false);
+      expect(existsSync(latestOutput)).toBe(true);
+
+      const final = await tools
+        .get("drawio_export")!
+        .execute("t", { input, format: "svg", mode: "final", output: join(dir, "sample.svg"), binary });
+      expect(final.content).toHaveLength(1);
+      expect(final.content[0]).toMatchObject({ type: "text" });
+      expect(existsSync(latestOutput)).toBe(false);
+
+      const failure = await tools
+        .get("drawio_export")!
+        .execute("t", { input: join(dir, "missing.drawio"), mode: "preview", binary });
+      expect(failure.content).toHaveLength(1);
+      expect(failure.content[0]).toMatchObject({ type: "text" });
+      expect(failure.content.some((block) => block.type === "image")).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("drawio_validate tool reports a clean sample", async () => {
@@ -68,7 +150,12 @@ describe("extension registration", () => {
     const file = join(dir, "s.drawio");
     await writeFile(file, SAMPLE);
     const res = await tools.get("drawio_validate")!.execute("t", { input: file }, undefined, undefined, {});
-    expect(res.content[0].text).toContain("0 error(s)");
+    const text = textOf(res.content[0]);
+    expect(text).toContain("Errors (0):");
+    expect(text).toContain("Actionable warnings (0):");
+    expect(text).toContain("Informational observations (1):");
+    expect(text).toContain("Readability score: 0");
+    expect(text).toContain("0 error(s), 0 unresolved warning(s)");
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -76,7 +163,7 @@ describe("extension registration", () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
     const res = await tools.get("drawio_shapesearch")!.execute("t", { query: "rectangle", limit: 1 }, undefined, undefined, {});
-    expect(res.content[0].text).toContain("Rectangle");
+    expect(textOf(res.content[0])).toContain("Rectangle");
   });
 
   it("drawio_explain tool describes a sample as Markdown", async () => {
@@ -86,8 +173,8 @@ describe("extension registration", () => {
     const file = join(dir, "s.drawio");
     await writeFile(file, SAMPLE);
     const res = await tools.get("drawio_explain")!.execute("t", { input: file }, undefined, undefined, {});
-    expect(res.content[0].text).toContain("### Components");
-    expect(res.content[0].text).toContain("### Relations");
+    expect(textOf(res.content[0])).toContain("### Components");
+    expect(textOf(res.content[0])).toContain("### Relations");
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -97,27 +184,28 @@ describe("extension registration", () => {
     const missing = join(tmpdir(), "drawme-file-that-does-not-exist.drawio");
 
     const check = await tools.get("drawio_check")!.execute("t", { binary: missing }, undefined, undefined, {});
-    expect(check.content[0].text).toContain("draw.io");
+    expect(textOf(check.content[0])).toContain("draw.io");
 
     const exported = await tools.get("drawio_export")!.execute("t", { input: missing }, undefined, undefined, {});
-    expect(exported.content[0].text).toContain("Export failed: input file not found");
+    expect(textOf(exported.content[0])).toContain("Export failed: input file not found");
+    expect(exported.content.some((block) => block.type === "image")).toBe(false);
 
     const converted = await tools.get("drawio_from_mermaid")!.execute("t", {}, undefined, undefined, {});
-    expect(converted.content[0].text).toContain("Mermaid conversion failed:");
+    expect(textOf(converted.content[0])).toContain("Mermaid conversion failed:");
 
     const laidOut = await tools
       .get("drawio_layout")!
       .execute("t", { input: missing, preset: "invalid" }, undefined, undefined, {});
-    expect(laidOut.content[0].text).toContain("Layout failed: unknown layout preset");
+    expect(textOf(laidOut.content[0])).toContain("Layout failed: unknown layout preset");
 
     const shapes = await tools.get("drawio_shapesearch")!.execute("t", { query: "no-such-shape-xyz" }, undefined, undefined, {});
-    expect(shapes.content[0].text).toContain("No shapes matched");
+    expect(textOf(shapes.content[0])).toContain("No shapes matched");
 
     const explained = await tools.get("drawio_explain")!.execute("t", { input: missing }, undefined, undefined, {});
-    expect(explained.content[0].text).toContain("Explain failed:");
+    expect(textOf(explained.content[0])).toContain("Explain failed:");
 
     const opened = await tools.get("drawio_open")!.execute("t", { path: missing }, undefined, undefined, {});
-    expect(opened.content[0].text).toContain("Open failed: file not found");
+    expect(textOf(opened.content[0])).toContain("Open failed: file not found");
   });
 
   it("handles command usage and failure notifications", async () => {
@@ -164,7 +252,9 @@ describe("real draw.io export", async () => {
       expect(existsSync(out)).toBe(true);
       const data = await readFile(out);
       expect(data.subarray(0, 4).equals(PNG_SIG)).toBe(true);
-      expect(res.content[0].text).toContain("Exported");
+      expect(textOf(res.content[0])).toContain("Exported");
+      const image = res.content.find((block) => block.type === "image");
+      expect(image).toMatchObject({ type: "image", mimeType: "image/png", data: data.toString("base64") });
     },
     120_000,
   );
@@ -208,7 +298,7 @@ describe("draw.io v30+ features (Mermaid + layout)", async () => {
         .get("drawio_from_mermaid")!
         .execute("t", { mermaid: "flowchart LR\n A[Start] --> B[End]", output: out }, undefined, undefined, {});
       expect(existsSync(out)).toBe(true);
-      expect(res.content[0].text).toContain("Converted");
+      expect(textOf(res.content[0])).toContain("Converted");
       await rm(dir, { recursive: true, force: true });
     },
     120_000,
