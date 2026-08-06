@@ -404,35 +404,43 @@ function overlapWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>)
   return warnings;
 }
 
+function isContainmentCandidate(cell: DomEl, ids: ById): boolean {
+  return (
+    cell.getAttribute("vertex") === "1" &&
+    !geometryIsRelative(cell) &&
+    !isEdgeLabel(cell) &&
+    isVisible(cell, ids)
+  );
+}
+
+function overflowSides(childBox: Rect, parentBox: Rect): string[] {
+  const [x, y, width, height] = childBox;
+  const [px, py, parentWidth, parentHeight] = parentBox;
+  const sides: string[] = [];
+  if (x < px) sides.push("left");
+  if (y < py) sides.push("top");
+  if (x + width > px + parentWidth) sides.push("right");
+  if (y + height > py + parentHeight) sides.push("bottom");
+  return sides;
+}
+
+function containmentWarning(cell: DomEl, ids: ById): string | null {
+  if (!isContainmentCandidate(cell, ids)) return null;
+  const parentId = attr(cell, "parent");
+  const parent = parentId ? ids.get(parentId) : undefined;
+  if (parent?.getAttribute("vertex") !== "1" || !isVisible(parent, ids)) return null;
+  const childBox = absRect(cell, ids);
+  const parentBox = absRect(parent, ids);
+  if (!childBox || !parentBox) return null;
+  const sides = overflowSides(childBox, parentBox);
+  if (sides.length === 0) return null;
+  return `vertex ${repr(attr(cell, "id"))} extends beyond parent ${repr(parentId)} (${sides.join(", ")})`;
+}
+
 function containmentWarnings(cells: DomEl[], ids: ById): string[] {
-  const warnings: string[] = [];
-  for (const cell of cells) {
-    if (
-      cell.getAttribute("vertex") !== "1" ||
-      geometryIsRelative(cell) ||
-      isEdgeLabel(cell) ||
-      !isVisible(cell, ids)
-    ) {
-      continue;
-    }
-    const parentId = attr(cell, "parent");
-    const parent = parentId ? ids.get(parentId) : undefined;
-    if (parent?.getAttribute("vertex") !== "1" || !isVisible(parent, ids)) continue;
-    const childBox = absRect(cell, ids);
-    const parentBox = absRect(parent, ids);
-    if (!childBox || !parentBox) continue;
-    const [x, y, width, height] = childBox;
-    const [px, py, parentWidth, parentHeight] = parentBox;
-    const sides: string[] = [];
-    if (x < px) sides.push("left");
-    if (y < py) sides.push("top");
-    if (x + width > px + parentWidth) sides.push("right");
-    if (y + height > py + parentHeight) sides.push("bottom");
-    if (sides.length > 0) {
-      warnings.push(`vertex ${repr(attr(cell, "id"))} extends beyond parent ${repr(parentId)} (${sides.join(", ")})`);
-    }
-  }
-  return warnings;
+  return cells
+    .map((cell) => containmentWarning(cell, ids))
+    .filter((warning): warning is string => warning !== null);
 }
 
 interface ContentBounds {
