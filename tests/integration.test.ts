@@ -41,6 +41,17 @@ const SAMPLE = `<mxfile><diagram name="Page-1"><mxGraphModel><root>
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const IEND = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
 
+/** Stand-in draw.io CLI: reports v30 and writes a tiny PNG to the -o path. */
+const FAKE_DRAWIO = `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--version")) process.stdout.write("30.0.0\\n");
+else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "base64"));
+`;
+
+const VISION_CTX = { model: { input: ["text", "image"] } };
+const TEXT_ONLY_CTX = { model: { input: ["text"] } };
+
 describe("extension registration", () => {
   it("registers all tools and commands without throwing", () => {
     const { pi, tools, commands } = makeMockPi();
@@ -58,7 +69,7 @@ describe("extension registration", () => {
     expect([...commands.keys()].sort()).toEqual(["drawme", "drawme-check", "drawme-export"]);
   });
 
-  it("/drawme injects the ordered focused-review workflow and approval gate", async () => {
+  it("/drawme injects the critique-first, fully autonomous workflow", async () => {
     const { pi, commands, sent } = makeMockPi();
     drawme(pi as never);
     await commands.get("drawme")!.handler("a flowchart of login", {});
@@ -66,26 +77,30 @@ describe("extension registration", () => {
 
     const workflow = sent[0];
     expect(workflow).toContain("a flowchart of login");
-    const passes = [
-      "Canvas and composition",
-      "Nodes and typography",
-      "Connectors",
-      "Semantics and final polish",
-      "Holistic regression check",
-    ];
-    for (let i = 0; i < passes.length - 1; i++) {
-      expect(workflow.indexOf(passes[i])).toBeLessThan(workflow.indexOf(passes[i + 1]));
+    const categories = ["Canvas and composition", "Nodes and typography", "Connectors", "Semantics"];
+    for (let i = 0; i < categories.length - 1; i++) {
+      expect(workflow.indexOf(categories[i])).toBeLessThan(workflow.indexOf(categories[i + 1]));
     }
-    expect(workflow).toContain("handle exactly one category at a time");
-    expect(workflow).toContain("validate, then replace/re-export that pass preview before advancing");
+    expect(workflow).toContain("structured critique");
+    expect(workflow).toContain("states whether the preview image is attached");
+    expect(workflow).toContain("Image attached");
+    expect(workflow).toContain("Image NOT attached");
+    expect(workflow).toContain("cannot view images");
+    expect(workflow).toContain("rendered inspection was skipped");
     expect(workflow).toContain("call `drawio_validate` immediately after authoring and after every later XML edit");
     expect(workflow).toContain(`allow at most ${AUTOMATIC_CORRECTION_LIMIT} correction retries`);
-    expect(workflow).toContain("explicit user approval before any `mode: \"final\"` export");
+    // Fully autonomous: no human gate anywhere in the flow.
+    expect(workflow).toContain("fully autonomous");
+    expect(workflow).toContain("never pause to ask for approval");
+    expect(workflow).not.toMatch(/approval before|explicit user approval|wait for approval/i);
     expect(workflow).toContain("<name>.review-canvas.png");
     expect(workflow).toContain("<name>.review.png");
-    expect(workflow).not.toContain("<name>.review-final.png");
     expect(workflow).toContain("only the latest review image remains");
-    expect(workflow).not.toMatch(/two[- ]round|2 self-check rounds|after 5 rounds/i);
+    // Second-person instructions only: nothing in the message may talk about agents,
+    // and the workflow must be self-contained (no mandatory reference read).
+    expect(workflow).not.toMatch(/agent/i);
+    expect(workflow).not.toContain("Before starting, read");
+    expect(workflow).toContain("report failures as a text result");
   });
 
   it("attaches only the latest successful preview file but keeps final and failure results text-only", async () => {
@@ -98,26 +113,19 @@ describe("extension registration", () => {
       const latestOutput = join(dir, "sample.review-nodes.png");
       const binary = join(dir, "fake-drawio.mjs");
       await writeFile(input, SAMPLE);
-      await writeFile(
-        binary,
-        `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
-const args = process.argv.slice(2);
-if (args.includes("--version")) process.stdout.write("30.0.0\\n");
-else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "base64"));
-`,
-      );
+      await writeFile(binary, FAKE_DRAWIO);
       await chmod(binary, 0o755);
 
       const first = await tools
         .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output: firstOutput, binary });
+        .execute("t", { input, mode: "preview", output: firstOutput, binary }, undefined, undefined, VISION_CTX);
       expect(first.content).toHaveLength(2);
       expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(textOf(first.content[0])).toContain("Preview image attached below");
 
       const latest = await tools
         .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output: latestOutput, binary });
+        .execute("t", { input, mode: "preview", output: latestOutput, binary }, undefined, undefined, VISION_CTX);
       expect(latest.content).toHaveLength(2);
       expect(latest.content[0]).toMatchObject({ type: "text" });
       expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
@@ -138,6 +146,53 @@ else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "ba
       expect(failure.content).toHaveLength(1);
       expect(failure.content[0]).toMatchObject({ type: "text" });
       expect(failure.content.some((block) => block.type === "image")).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("attaches the preview image only when the current model can view images", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const dir = await mkdtemp(join(tmpdir(), "drawme-vision-"));
+    try {
+      const input = join(dir, "sample.drawio");
+      const output = join(dir, "sample.review.png");
+      const binary = join(dir, "fake-drawio.mjs");
+      await writeFile(input, SAMPLE);
+      await writeFile(binary, FAKE_DRAWIO);
+      await chmod(binary, 0o755);
+
+      const textOnly = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output, binary }, undefined, undefined, TEXT_ONLY_CTX);
+      expect(textOnly.content).toHaveLength(1);
+      expect(textOf(textOnly.content[0])).toContain("Preview image NOT attached");
+      expect(textOf(textOnly.content[0])).toContain("cannot view images");
+      expect(textOnly.details).toMatchObject({ imageAttached: false });
+      expect(existsSync(output)).toBe(true); // the file stays on disk for the user
+
+      const vision = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output, binary }, undefined, undefined, VISION_CTX);
+      expect(vision.content).toHaveLength(2);
+      expect(vision.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(textOf(vision.content[0])).toContain("Preview image attached below");
+      expect(vision.details).toMatchObject({ imageAttached: true });
+
+      // Unknown model fails open (image attached), matching Pi's built-in read tool.
+      const unknownModel = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output, binary }, undefined, undefined, {});
+      expect(unknownModel.content).toHaveLength(2);
+      expect(unknownModel.details).toMatchObject({ imageAttached: true });
+
+      // Final exports stay text-only even for vision models.
+      const final = await tools
+        .get("drawio_export")!
+        .execute("t", { input, format: "svg", mode: "final", output: join(dir, "sample.svg"), binary }, undefined, undefined, VISION_CTX);
+      expect(final.content).toHaveLength(1);
+      expect(final.details).toMatchObject({ imageAttached: false });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

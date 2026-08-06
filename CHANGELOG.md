@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- `drawio_export` previews are now vision-aware: the PNG image block is attached only when the active
+  model can view images (checked per call via the extension context, failing open for unknown models),
+  the result text always states whether it was attached, and `details.imageAttached` reports the outcome.
+- Replaced the five mandatory visual passes with a critique-first review: one holistic preview with a
+  structured all-category critique, focused re-previews only for categories with findings, and a final
+  holistic confirmation. Models that cannot view images get an explicit structural-review path
+  (`drawio_validate` + `drawio_explain`) instead of a silent image placeholder.
+- Rewrote the packaged extension reference and workflow text in second person without agent terminology.
+- The `/drawme` run is now fully autonomous: the human approval gate before final export is removed.
+  After the holistic confirmation (or on hitting the five-retry correction limit, reporting the unresolved
+  finding), the workflow proceeds straight to final export; mid-run user feedback is treated as new
+  critique findings rather than a pause point. Docs, packaged troubleshooting guidance, and the example
+  diagrams were updated to match, and the golden asset baseline was intentionally refreshed.
+- The `/drawme` workflow no longer instructs a mandatory reference read: the injected message plus the
+  registered tool descriptions are self-contained (the failure-text and compressed-page rules moved into
+  them), saving a file read and several thousand tokens per run. `docs/agent-guide.md` became
+  `docs/reference.md`, a pure command/tool catalog for other projects; topic references under
+  `assets/references/` are still read on demand.
 - Added focused visual quality passes, stronger deterministic canvas/edge/readability checks, attached PNG
   previews, warning-resolution gates, and explicit approval before final export.
 - Intentionally re-baselined the golden asset hash after adding finite-page sizing, typography, preview

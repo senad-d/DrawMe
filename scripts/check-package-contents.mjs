@@ -56,7 +56,7 @@ const requiredFiles = [
   "SECURITY.md",
   "CHANGELOG.md",
   "tsconfig.json",
-  "docs/agent-guide.md",
+  "docs/reference.md",
   "assets/data/SHAPE-INDEX-NOTICE.md",
   "assets/data/shape-index.json.gz",
   "assets/references/diagram-types.md",

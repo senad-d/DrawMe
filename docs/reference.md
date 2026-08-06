@@ -1,24 +1,10 @@
-# DrawMe Extension Agent Reference
+# DrawMe Extension Reference
 
-> Official operational reference for AI agents using the DrawMe Pi extension.
+> Catalog of the commands and tools the DrawMe Pi extension provides, for any project or session that uses it.
 
 DrawMe turns diagram requirements into editable `.drawio` sources and local PNG, SVG, PDF, or JPG exports. The extension provides commands that start guided workflows and tools for CLI detection, Mermaid conversion, XML layout, structural validation, shape lookup, export, explanation, and file opening.
 
-This document defines the extension's public functionality, options, defaults, decision rules, and expected agent behavior.
-
-## Core operating rules
-
-1. Treat the `.drawio` file as the source of truth. Exports are derived artifacts.
-2. Call `drawio_check` once before conversion, layout, preview, or final export.
-3. Use DrawMe tools for draw.io CLI operations; do not invoke `drawio` through a shell.
-4. Use `drawio_shapesearch` instead of guessing official shape styles.
-5. Keep hand-authored XML uncompressed and structurally valid.
-6. Run `drawio_validate` after every source edit. Fix every error; fix each warning or explicitly record why it was reviewed and accepted.
-7. Inspect one visual category at a time in this order: canvas/composition, nodes/typography, connectors, semantics/polish, then a holistic regression check.
-8. Use `drawio_export` with `mode: "preview"` for visual inspection. A successful PNG preview returns both text/metadata and the actual image; the text path remains the fallback when a model or run mode cannot consume images.
-9. Require explicit user approval before `mode: "final"`. Each successful preview export removes the previous preview file for the same source, leaving only the latest; a successful final export removes that remaining preview. Cleanup warnings do not invalidate the new export.
-10. Inspect every tool's text result. Several tools return failure text rather than throwing a tool-call error.
-11. Offer `drawio_open` for manual fine-tuning; call it only when the user wants a desktop application opened.
+This document lists the extension's public surface: commands, tools, options, defaults, output behavior, and limitations. It is not a workflow guide — the `/drawme` command injects the full authoring workflow itself, and the registered tool descriptions carry the operational rules. Two conventions apply everywhere: the `.drawio` file is the source of truth (exports are derived artifacts), and several tools report failures as a text result (`Export failed`, `Layout failed`, `Mermaid conversion failed`, `Explain failed`, `Open failed`) rather than a tool-call error, so results must always be read.
 
 ## Functional availability
 
@@ -33,17 +19,17 @@ This document defines the extension's public functionality, options, defaults, d
 | `drawio_from_mermaid` | Yes | Yes |
 | `drawio_layout` | Yes | Yes |
 
-When the CLI is unavailable, an agent can still author, edit, validate, explain, and search for shapes. It must skip conversion, layout, preview, and final export.
+When the CLI is unavailable, you can still author, edit, validate, explain, and search for shapes. Skip conversion, layout, preview, and final export.
 
 When the CLI is older than version 30, export remains available. Mermaid conversion and ELK layout do not.
 
 ## Commands
 
-Commands are user-facing shortcuts. Agents should use model-callable tools when they need explicit options or structured results.
+Commands are user-facing shortcuts. Use the model-callable tools when you need explicit options or structured results.
 
 | Command | Functionality |
 | --- | --- |
-| `/drawme <description>` | Starts the full workflow: check, plan, author, validate, focused quality passes, holistic regression review, approval, and final export. |
+| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, critique-first visual review, and final export — no human intervention once started. |
 | `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
 | `/drawme-export <file> [png\|svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. |
 
@@ -123,7 +109,7 @@ Additional behavior:
 - An explicit `width` replaces raster scaling.
 - `scale` is ignored in preview mode and for vector formats.
 - `transparent` has no effect outside PNG.
-- Preview mode defaults to unembedded output suitable for vision inspection. A successful PNG preview tool result contains its normal text/metadata block followed by an `image/png` base64 image block. Text-only models and non-image run modes still receive the usable output path.
+- Preview mode defaults to unembedded output suitable for visual inspection. When the current model can view images, a successful PNG preview tool result contains its normal text/metadata block followed by an `image/png` base64 image block; otherwise the image is omitted. The result text always states which case applies, and the output path in the text stays usable either way.
 - Final exports stay text-only; final PNG, SVG, and PDF default to embedded/editable output.
 - JPG cannot carry editable XML; never set `embed: true` for JPG.
 - Embedded PNG exports are checked for draw.io's known truncated IEND chunk and repaired automatically when necessary.
@@ -133,7 +119,7 @@ Additional behavior:
 #### Use
 
 ```text
-# Vision-safe inspection artifact
+# Inspection preview (image attached when the current model can view images)
 drawio_export({ "input": "architecture.drawio", "mode": "preview" })
 
 # Editable final SVG
@@ -207,7 +193,7 @@ Fix every error and rerun validation. Fix each warning or record an explicit rev
 drawio_validate({ "input": "architecture.drawio" })
 ```
 
-Validation is structural rather than rendered. Its static typography checks are deliberately conservative: it cannot guarantee label fit, correct semantic content, valid rendering of a guessed shape, color contrast, visual balance, or clear auto-routed edges. It does not replace focused preview inspection.
+Validation is structural rather than rendered. Its static typography checks are deliberately conservative: it cannot guarantee label fit, correct semantic content, valid rendering of a guessed shape, color contrast, visual balance, or clear auto-routed edges. It does not replace preview inspection when the current model can view images.
 
 ---
 
@@ -254,7 +240,7 @@ drawio_from_mermaid({
 })
 ```
 
-Continue with validation, the ordered focused visual passes, holistic regression review, explicit approval, and final export.
+The converted file is a normal `.drawio` source: it can be validated, previewed, and exported like any other.
 
 ---
 
@@ -386,112 +372,14 @@ drawio_open({ "path": "architecture.drawio" })
 | Existing diagram only needs validation | `drawio_validate`; no CLI check is necessary. |
 | Existing diagram only needs export | `drawio_check` → `drawio_export`; do not rebuild it. |
 
-DrawMe does not expose a single natural-language-to-file tool. The agent authors or edits Mermaid/XML with normal file tools, then uses DrawMe for conversion, layout, validation, rendering, explanation, or opening.
-
-## Creation workflow
-
-### 1. Check
-
-Call `drawio_check` and record whether export is available and whether Mermaid/layout features are supported.
-
-### 2. Plan
-
-Choose:
-
-- diagram type;
-- components and relations;
-- groups or containers;
-- top-to-bottom or left-to-right direction;
-- Mermaid or XML authoring mode;
-- source path, finite page dimensions (or an intentional infinite canvas), pages, and final formats.
-
-Call `drawio_shapesearch` during planning whenever an exact library shape is required.
-
-### 3. Author
-
-For Mermaid, write concise valid Mermaid and convert it with `drawio_from_mermaid`.
-
-For XML, use an uncompressed `<mxGraphModel>`. The minimum authoring contract is:
-
-- include root cells `id="0"` and `id="1"`;
-- reserve IDs `0` and `1` for those root cells;
-- assign every other cell a unique ID and valid parent;
-- assign every vertex positive geometry;
-- use explicit `page="1"`, `pageScale="1"`, `pageWidth`, and `pageHeight` for deliverables, sized to visible content with at least 20px outer margin (40px recommended); use `page="0"` only for an intentional infinite canvas;
-- assign every edge valid source and target IDs;
-- include `<mxGeometry relative="1" as="geometry" />` in every edge;
-- escape XML attribute characters and use `&#xa;` for label line breaks;
-- use coordinates relative to the actual parent container;
-- leave spacing and routing corridors for labels, edges, and arrowheads.
-
-For large XML graphs on draw.io 30+, run `drawio_layout` and continue using its returned path.
-
-### 4. Validate after every source edit
-
-Run `drawio_validate` immediately after initial authoring, Mermaid conversion, layout, and every later XML/source edit. Fix every error before previewing. Every warning must be fixed or explicitly recorded as reviewed and acceptable with a reason; unresolved or unreviewed warnings block final export.
-
-### 5. Focused visual quality passes
-
-Inspect exactly one category at a time and keep this order. For each pass, export its predictable PNG, inspect only its listed acceptance checks, make a targeted source correction if needed, validate, then replace/re-export that pass preview before advancing:
-
-1. **Canvas and composition** — `<name>.review-canvas.png`: page bounds, margins, clipping, excessive empty space, aspect ratio, major alignment, and balance.
-2. **Nodes and typography** — `<name>.review-nodes.png`: overlap, clipping, wrapping, font readability, contrast, padding, sizing, and alignment.
-3. **Connectors** — `<name>.review-connectors.png`: endpoints, arrowheads, line stacking, crossings, routes through unrelated elements, connector labels, and routing corridors.
-4. **Semantics and final polish** — `<name>.review-semantics.png`: requested components/relationships, hierarchy, consistency, legends, grouping, and remaining regressions.
-5. **Holistic regression check** — `<name>.review.png`: recheck all prior categories and confirm later fixes introduced no regression. This is the one review image retained for approval.
-
-A successful PNG preview result already includes the image block. If the selected model/run mode cannot consume it, use the text path to read or present the artifact. When a new preview for the same source succeeds, the prior preview file is removed automatically; at any point only the latest review artifact should remain. A full-diagram preview is capped at 2000px; if that scaling makes labels unreadable, tighten/simplify the layout, split pages, or use focused review rather than approving unreadable typography.
-
-The five required inspection passes do not consume correction retries. Allow at most **5 automatic correction retries total** across the workflow. One retry is exactly one targeted source edit → `drawio_validate` → replacement preview cycle. Count retries explicitly. At the limit, stop automatic editing, identify the unresolved category, request focused feedback, and offer `drawio_open` instead of looping.
-
-### 6. Human approval and final export
-
-Present the holistic preview, validation status, and reasons for any reviewed/accepted warnings. User feedback triggers a targeted edit, validation, the affected focused pass, and another holistic regression preview. Receive explicit user approval before calling `drawio_export` with `mode: "final"`.
-
-After approval, export each requested format and page. The first successful final export automatically removes the one remaining latest preview for that source. Report:
-
-- source `.drawio` path;
-- validation status and reasons for retained reviewed warnings;
-- focused-pass and holistic-regression outcomes;
-- every final output path and format;
-- whether each output embeds editable XML;
-- preview cleanup warnings, plus any unavailable or skipped functionality.
-
-## Existing-diagram workflows
-
-### Explain
-
-Use `drawio_explain` for a structured read-back. For exact edits, inspect the XML after obtaining the summary.
-
-### Validate
-
-Use `drawio_validate` directly. A CLI check is unnecessary unless an export will follow.
-
-### Edit
-
-1. Preserve the original unless replacement was requested.
-2. Explain and inspect the source.
-3. Make the smallest targeted XML change.
-4. Validate the edited source and resolve/review every warning.
-5. Rerun the affected focused preview, then a holistic regression preview.
-6. Obtain explicit approval and export to a new path unless in-place replacement was requested.
-
-Do not blindly edit compressed pages. The validator and explainer cannot inspect them; they must first be saved as uncompressed XML through a compatible editor.
-
-### Export
-
-Check the CLI, then call `drawio_export` with the requested format and options. Do not reconstruct a valid existing source merely to export it.
-
-### Re-layout
-
-Use `drawio_layout` only for XML-authored or existing native diagrams on draw.io 30+. Preserve the original by using a distinct output unless replacement is intentional. Validate and preview the layout result.
+DrawMe does not expose a single natural-language-to-file tool. Author or edit Mermaid/XML with normal file tools, then use DrawMe for conversion, layout, validation, rendering, explanation, or opening.
 
 ## Output and editability semantics
 
 - `.drawio` is always the canonical editable source.
 - Final PNG, SVG, and PDF embed XML by default and can be reopened in draw.io where supported.
 - JPG cannot embed XML.
-- Preview PNG is intentionally clean and unembedded for vision compatibility. Its successful tool result includes the actual image plus a text-path fallback. Each successful replacement removes the prior same-source preview file, and final export removes the latest remaining preview.
+- Preview PNG is intentionally clean and unembedded for visual inspection. Its successful tool result includes the image when the current model can view images, and the text always states whether it was attached and reports the output path. Each successful replacement removes the prior same-source preview file, and final export removes the latest remaining preview.
 - A final embedded PNG normally uses the `.drawio.png` double extension.
 - Multi-page exports should use `pageIndex` and explicit unique output names.
 - `drawio_explain` returns Markdown as text; it does not write a documentation file.
@@ -502,7 +390,7 @@ Use `drawio_layout` only for XML-authored or existing native diagrams on draw.io
 
 - Validation cannot inspect compressed pages.
 - Explanation cannot describe compressed pages.
-- Deterministic validation cannot replace focused visual inspection; rendered clipping, wrapping, contrast, and automatic routes remain vision concerns.
+- Deterministic validation cannot replace visual inspection; rendered clipping, wrapping, contrast, and automatic routes can only be judged from the preview image. When the current model cannot view images, these remain unverified and must be reported as such.
 - Removing a superseded preview file does not rewrite Pi session history: image blocks already stored in earlier tool-result messages can remain visible in the transcript even though only the latest preview file remains on disk.
 - Route-through and crossing analysis is limited to edges with explicit waypoints; dense auto-routed graphs can validate without connector-route warnings.
 - Shape search covers bundled official draw.io shapes, not arbitrary third-party logos.

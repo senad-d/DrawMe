@@ -50,7 +50,7 @@ Example: content spanning `x=40..1160` and `y=40..720` should normally use `page
 - Size a node for the rendered lines, not only character count. A conservative height is `line count × (fontSize × 1.25) + top/bottom padding`; allow additional room for container title bands and icon shapes.
 - Estimate width from the longest line (`characters × fontSize × 0.6 + left/right padding`), then verify by preview. Insert deliberate `&#xa;` breaks for long labels rather than forcing a very wide node.
 - Prefer two or three concise lines. If a label remains long, enlarge the node, shorten the wording without changing meaning, or split details into a note/legend. Never reduce important body text merely to fit existing geometry.
-- A 2000px full-diagram preview scales the entire page. If labels become unreadable at that width, simplify the layout, tighten the canvas, split the diagram into pages, or use a focused review export; do not treat an unreadable full view as typography approval.
+- A 2000px full-diagram preview scales the entire page. If labels become unreadable at that width, simplify the layout, tighten the canvas, split the diagram into pages, or use a focused review export; never accept an unreadable full view as passing typography.
 
 ### Shape types (vertex)
 

@@ -190,7 +190,7 @@ Acceptance criteria:
 Files:
 
 - `README.md`
-- `docs/agent-guide.md`
+- `docs/reference.md`
 - `CHANGELOG.md`
 - `example/drawme-how-it-works.drawio`
 - `example/drawme-how-it-works.drawio.png`

@@ -17,7 +17,7 @@
 
 ---
 
-DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram and Pi plans it, writes editable `.drawio` XML (or Mermaid on draw.io v30+), lints every source revision, runs ordered visual quality passes, and exports only after approval.
+DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram and Pi plans it, writes editable `.drawio` XML (or Mermaid on draw.io v30+), lints every source revision, critiques the rendered preview when the active model can view images, and exports the final deliverable — fully autonomously, with no human intervention once started.
 
 <table align="center">
   <tr>
@@ -31,9 +31,9 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 </table>
 
 - **Natural-language authoring:** flowcharts, architecture, UML, BPMN, ERD, C4, network, ML — as native `.drawio`, or as Mermaid with automatic layout on v30+.
-- **Guided workflow:** CLI detection, planning, authoring, validation, focused canvas/node/connector/semantic passes, holistic regression review, approval, and final export are coordinated from `/drawme`.
+- **Guided workflow:** CLI detection, planning, authoring, validation, a critique-first visual review across canvas/node/connector/semantic categories, and final export run end to end from a single `/drawme` — no approval pauses.
 - **Deterministic validation:** a structural linter catches dangling edges, duplicate/reserved ids, malformed geometry, page/container overflow, inadequate margins, conservative readability defects, overlaps, and explicit edge-routing defects before you look at a pixel.
-- **Preview in the tool result:** successful PNG previews return text/metadata plus the actual image; each replacement removes the previous same-source preview file so only the latest remains on disk.
+- **Vision-aware previews:** successful PNG previews attach the actual image only when the active model can view images — the result text says which case applies — so text-only models get an honest structural-review path instead of a placeholder; each replacement removes the previous same-source preview file so only the latest remains on disk.
 - **Exact shapes, not guesses:** search 10k+ official AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN styles from a bundled local index.
 - **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, the truncated `-e` PNG chunk is auto-repaired, and final export removes the one remaining latest preview.
 
@@ -42,7 +42,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 ## Table of Contents
 
 - [Implementation Status](#implementation-status)
-- [Agent Reference](#agent-reference)
+- [Extension Reference](#extension-reference)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Commands](#commands)
@@ -64,14 +64,14 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 This checkout implements the DrawMe core loop as a Pi extension:
 
 - Eight model-callable tools (`drawio_check`, `drawio_export`, `drawio_validate`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
-- A guided `/drawme` workflow that steers authoring, validation after every edit, five focused visual passes, human approval, and final multi-format export.
+- A guided `/drawme` workflow that steers authoring, validation after every edit, a critique-first visual review, and autonomous final multi-format export.
 - Pure-TypeScript structural linting, `-e` PNG IEND repair, shape search over a bundled index, and diagram-to-Markdown description — no Python runtime required.
 - draw.io binary resolution across macOS/Linux/Windows/WSL, headless-Linux `xvfb-run` handling, and version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
 - Validation pipeline: golden asset-integrity check, TypeScript typecheck, ESLint, a custom format check, and unit + real-CLI integration tests.
 
-## Agent Reference
+## Extension Reference
 
-[`docs/agent-guide.md`](docs/agent-guide.md) is the official operational reference for AI agents. It documents every command, tool option, default, authoring mode, workflow, output behavior, and functional limitation. The `/drawme` command instructs the agent to read this packaged reference before starting.
+[`docs/reference.md`](docs/reference.md) catalogs the extension's public surface — every command, tool option, default, output behavior, and functional limitation — for other projects and integrations that use DrawMe. It is documentation, not runtime input: the `/drawme` workflow and the registered tool descriptions carry the complete operational instructions themselves.
 
 ## Quick Start
 
@@ -108,7 +108,7 @@ Inside Pi:
 /drawme a flowchart of a user login: enter credentials, validate, then success or retry
 ```
 
-Pi checks the CLI, plans and writes the `.drawio`, validates every revision, inspects focused preview PNGs, performs a holistic regression check, and — only after your explicit approval — exports the final editable deliverable.
+Pi checks the CLI, plans and writes the `.drawio`, validates every revision, critiques the rendered preview when the active model can view images (or reviews structurally when it cannot), and exports the final editable deliverable — all in one run, without asking for approval along the way.
 
 ### Run from a source checkout
 
@@ -134,7 +134,7 @@ pi --no-extensions -e .
 
 | Command | Description |
 | --- | --- |
-| `/drawme <description>` | Kick off authoring, per-edit validation, focused quality passes, holistic review, approval, and final export. |
+| `/drawme <description>` | Kick off authoring, per-edit validation, critique-first visual review, and autonomous final export. |
 | `/drawme-check` | Report whether the draw.io CLI is available, its version, and v30+ feature support. |
 | `/drawme-export <file> [png\|svg\|pdf\|jpg]` | One-shot final export of an existing `.drawio`. |
 
@@ -145,7 +145,7 @@ Registered for the model to call directly.
 | Tool | Purpose |
 | --- | --- |
 | `drawio_check` | Resolve the draw.io binary, version, and whether it supports Mermaid import / `--layout` (v30+). |
-| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG returned as text/metadata plus an image block; each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
+| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG returned as text/metadata, with the image block attached when the active model can view images (the text states which); each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
 | `drawio_validate` | Deterministic lint: dangling edges, duplicate/reserved ids, broken parents, malformed vertex/edge geometry; warnings for page/container bounds, margins, conservative readability, overlap, and explicit routes through/crossing shapes; observations and readability score are reported separately. |
 | `drawio_shapesearch` | Exact official `style=` strings for 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN shapes, from a bundled local index. Use instead of guessing a style. |
 | `drawio_from_mermaid` | Convert Mermaid text (inline or a `.mmd`) to a native `.drawio` with automatic layout. Requires draw.io **v30+**. |
@@ -167,24 +167,25 @@ The extension factory in `src/index.ts` registers the tools and commands. Render
 
 ## The /drawme Workflow
 
-`/drawme` injects a guided eight-step workflow that the model follows using the tools above:
+`/drawme` injects a guided nine-step workflow that the model follows using the tools above:
 
 1. **Check** — resolve the CLI and note the version (v30+ unlocks Mermaid conversion and ELK layout).
 2. **Plan** — pick the diagram type, relationships, finite canvas, and layout direction.
 3. **Author** — write editable uncompressed XML (or Mermaid on v30+), using exact searched shapes and optional ELK layout.
 4. **Validate after every edit** — fix all errors; fix each warning or record why it is reviewed and acceptable.
-5. **Focused quality passes** — inspect one named preview at a time: canvas/composition, nodes/typography, connectors, semantics/final polish, then a holistic regression check. Each successful pass preview removes the previous preview file, leaving only the current image.
-6. **Bound corrections** — the five required inspections do not count as retries; permit at most five targeted edit → validation → replacement-preview correction retries total, then request focused feedback or offer `drawio_open`.
-7. **Human review** — feedback returns through validation, the affected focused pass, and a holistic preview; obtain explicit approval.
-8. **Final export** — only after approval, export requested embedded/editable formats, remove the one remaining latest review preview, and report deliverables plus cleanup warnings.
+5. **Visual review, critique first** — export one holistic preview; the tool result states whether the image is attached. With the image, the model walks all four categories (canvas/composition, nodes/typography, connectors, semantics) and records findings or explicit pass reasons before editing. Without it, the model reviews structurally with validation and explanation instead of describing renders.
+6. **Fix and confirm** — each finding becomes a targeted edit, validation, and a focused category preview; a final holistic preview confirms no regressions. Each successful preview removes the previous preview file, leaving only the current image.
+7. **Bound corrections** — the initial critique and final confirmation do not count as retries; permit at most five targeted edit → validation → replacement-preview correction retries total, then request focused feedback or offer `drawio_open`.
+8. **No human gate** — the run never pauses for approval or feedback; if the user interrupts with feedback, it is handled as new critique findings and the run continues.
+9. **Final export** — immediately after the holistic confirmation, export requested embedded/editable formats, remove the one remaining latest review preview, and report deliverables (including any unresolved finding from the correction limit) plus cleanup warnings.
 
-Deterministic checks cover XML contracts, IDs/references, finite page and container bounds, outer margins, overlaps, explicit waypoint routes, and conservative font/wrapping cases. Vision remains responsible for rendered clipping and wrapping, contrast, typography at full-diagram scale, visual balance, semantics, and draw.io's automatic connector routes. A 2000px preview that makes labels unreadable requires a tighter/simpler layout, page splitting, or focused review—not automatic approval.
+Deterministic checks cover XML contracts, IDs/references, finite page and container bounds, outer margins, overlaps, explicit waypoint routes, and conservative font/wrapping cases. Rendered clipping and wrapping, contrast, typography at full-diagram scale, visual balance, semantics, and draw.io's automatic connector routes can only be judged from the preview image, so they are critiqued when the active model can view images and reported as unverified when it cannot. A 2000px preview that makes labels unreadable requires a tighter/simpler layout, page splitting, or a focused re-export — it must never be accepted as-is.
 
 ## Bundled References and Assets
 
 The model reads these packaged references and assets on demand.
 
-- `docs/agent-guide.md` — official agent-facing command, tool, option, workflow, output, and limitation reference.
+- `docs/reference.md` — catalog of commands, tool options, defaults, output behavior, and limitations (documentation only; not read at runtime).
 - `assets/references/xml-authoring.md` — `.drawio` skeleton, cell/edge forms, containers, palette, spacing.
 - `assets/references/diagram-types.md` — per-type presets (ERD, UML, sequence, C4, architecture, ML, flowchart, SysML, BPMN, network, swimlane).
 - `assets/references/mermaid-authoring.md` — Mermaid authoring for the v30+ conversion path.

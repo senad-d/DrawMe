@@ -8,7 +8,7 @@
  *           drawio_layout · drawio_shapesearch · drawio_explain · drawio_open
  * Commands: /drawme · /drawme-check · /drawme-export
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -30,7 +30,6 @@ import { drawmeWorkflow } from "./workflow";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REF_DIR = resolve(HERE, "..", "assets", "references");
-const AGENT_REFERENCE_PATH = resolve(HERE, "..", "docs", "agent-guide.md");
 
 const FORMAT = Type.Union([Type.Literal("png"), Type.Literal("svg"), Type.Literal("pdf"), Type.Literal("jpg")]);
 const MODE = Type.Union([Type.Literal("preview"), Type.Literal("final")]);
@@ -54,16 +53,26 @@ export type DrawioExportInput = Static<typeof exportParams>;
 
 const textResult = (text: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text }], details });
 
-async function exportResult(text: string, result: Awaited<ReturnType<typeof exportDiagram>>) {
+/**
+ * Whether the active model accepts image blocks. Unknown models fail open
+ * (attach the image) like Pi's built-in read tool; the provider layer replaces
+ * unsupported images with a text placeholder, so failing open is always safe.
+ */
+function modelSupportsImages(ctx: ExtensionContext | undefined): boolean {
+  return ctx?.model?.input.includes("image") ?? true;
+}
+
+async function exportResult(text: string, result: Awaited<ReturnType<typeof exportDiagram>>, attachImage: boolean) {
   const content: (
     | { type: "text"; text: string }
     | { type: "image"; data: string; mimeType: "image/png" }
   )[] = [{ type: "text", text }];
-  if (result.mode === "preview" && result.format === "png") {
+  const imageAttached = result.mode === "preview" && result.format === "png" && attachImage;
+  if (imageAttached) {
     const png = await readFile(result.output);
     content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
   }
-  return { content, details: result };
+  return { content, details: { ...result, imageAttached } };
 }
 
 export default function drawme(pi: ExtensionAPI): void {
@@ -95,13 +104,14 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, never embedded, and attached to the text/metadata tool result for focused visual review. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
     promptSnippet:
-      "Export a .drawio to PNG/SVG/PDF/JPG (each mode:'preview' call attaches the latest review image and removes the previous preview file; mode:'final' creates the deliverable and cleans the remaining preview).",
+      "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' attaches the review image when the current model can view images — the result text says so — and removes the previous preview file; mode:'final' creates the deliverable and cleans the remaining preview).",
     parameters: exportParams,
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
         const r = await exportDiagram(params as ExportOptions);
+        const canView = modelSupportsImages(ctx);
         const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed}`];
         if (r.repaired) lines.push("(repaired truncated -e PNG IEND chunk)");
         if (r.removedPreviews.length > 0) lines.push(`Removed preview artifact(s): ${r.removedPreviews.join(", ")}`);
@@ -110,7 +120,14 @@ export default function drawme(pi: ExtensionAPI): void {
         }
         const versionSuffix = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionSuffix}`);
-        return exportResult(lines.join("\n"), r);
+        if (r.mode === "preview" && r.format === "png") {
+          lines.push(
+            canView
+              ? "Preview image attached below. Critique it category by category before editing the source."
+              : "Preview image NOT attached: the current model cannot view images. Do not describe or judge the render; review structurally with drawio_validate and drawio_explain, and share the exported path so the user can view it.",
+          );
+        }
+        return exportResult(lines.join("\n"), r, canView);
       } catch (e) {
         return textResult(`Export failed: ${(e as Error).message}`, { error: (e as Error).message });
       }
@@ -121,7 +138,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_validate",
     label: "draw.io: validate",
     description:
-      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, and explicit routes through shapes or across edges. Reports observations and a readability score. Deterministic and does not launch draw.io. Run after every source edit and before exporting.",
+      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, and explicit routes through shapes or across edges. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Run after every source edit and before exporting.",
     promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -219,7 +236,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_explain",
     label: "draw.io: explain",
     description:
-      "Describe an existing .drawio as structured Markdown (components grouped by container, relations with edge-label verbs, per page). Useful for a README/PR summary or to read a diagram back before editing. No draw.io CLI needed.",
+      "Describe an existing .drawio as structured Markdown (components grouped by container, relations with edge-label verbs, per page). Useful for a README/PR summary or to read a diagram back before editing. No draw.io CLI needed. Compressed pages cannot be described.",
     promptSnippet: "Describe an existing .drawio as Markdown (components + relations).",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -257,7 +274,7 @@ export default function drawme(pi: ExtensionAPI): void {
         ctx.ui.notify("Usage: /drawme <description of the diagram to create>", "info");
         return;
       }
-      pi.sendUserMessage(drawmeWorkflow(desc, REF_DIR, AGENT_REFERENCE_PATH));
+      pi.sendUserMessage(drawmeWorkflow(desc, REF_DIR));
     },
   });
 
