@@ -151,12 +151,14 @@ export async function fitCanvasFile(options: FitCanvasOptions): Promise<FitCanva
   if (!root) throw new Error("no root element (malformed XML)");
 
   const diagrams = childrenByTag(root, "diagram");
-  const pages: FitPageResult[] =
-    diagrams.length > 0
-      ? diagrams.map((diagram) => fitPage(diagram, margin))
-      : root.tagName === "mxGraphModel"
-        ? [fitModel("?", root, margin)]
-        : [{ page: "?", status: "skipped", reason: "no <diagram> pages and root is not <mxGraphModel>" }];
+  let pages: FitPageResult[];
+  if (diagrams.length > 0) {
+    pages = diagrams.map((diagram) => fitPage(diagram, margin));
+  } else if (root.tagName === "mxGraphModel") {
+    pages = [fitModel("?", root, margin)];
+  } else {
+    pages = [{ page: "?", status: "skipped", reason: "no <diagram> pages and root is not <mxGraphModel>" }];
+  }
 
   const changed = pages.some((page) => page.status === "fitted");
   if (changed || output !== options.input) {
