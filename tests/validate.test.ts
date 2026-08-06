@@ -249,6 +249,29 @@ describe("validateXml", () => {
     );
   });
 
+  it("normalizes HTML-like label markup without counting tags or line breaks as visible text", () => {
+    const formattedShort = vertex(
+      "formatted",
+      0,
+      0,
+      120,
+      40,
+      "rounded=1;",
+      "&lt;span data-description='this attribute is intentionally much longer than the label'&gt;Short&lt;/span&gt;",
+    );
+    const multiline = vertex(
+      "multiline",
+      200,
+      0,
+      120,
+      40,
+      "rounded=1;",
+      "A deliberately lengthy first line&lt;br /&gt;A deliberately lengthy second line",
+    );
+    const result = validateXml(doc(formattedShort + multiline));
+    expect(result.warnings.filter((warning) => warning.includes("long label"))).toEqual([]);
+  });
+
   it("does not claim to analyze dense auto-routed connector crossings without waypoints", () => {
     const nodes = Array.from({ length: 6 }, (_, index) => vertex(`n${index}`, (index % 3) * 200, Math.floor(index / 3) * 160)).join("");
     const edges = [

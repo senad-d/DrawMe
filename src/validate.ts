@@ -358,17 +358,21 @@ function checkEdgeGeometry(cell: DomEl, id: string | null, errors: string[]): vo
   }
 }
 
-/** Per-cell reference and geometry checks. */
-function checkCell(cell: DomEl, ids: ById, errors: string[], warnings: string[]): void {
-  const id = attr(cell, "id");
+function checkCellReferences(cell: DomEl, id: string | null, ids: ById, errors: string[]): void {
   const parent = attr(cell, "parent");
-  const isVertex = cell.getAttribute("vertex") === "1";
-  const isEdge = cell.getAttribute("edge") === "1";
   if (parent !== null && !ids.has(parent)) errors.push(`cell ${repr(id)} parent ${repr(parent)} does not exist`);
   for (const end of ["source", "target"] as const) {
     const reference = attr(cell, end);
     if (reference && !ids.has(reference)) errors.push(`edge ${repr(id)} ${end} ${repr(reference)} does not exist`);
   }
+}
+
+/** Per-cell reference and geometry checks. */
+function checkCell(cell: DomEl, ids: ById, errors: string[], warnings: string[]): void {
+  const id = attr(cell, "id");
+  const isVertex = cell.getAttribute("vertex") === "1";
+  const isEdge = cell.getAttribute("edge") === "1";
+  checkCellReferences(cell, id, ids, errors);
   if ((isVertex || isEdge) && id !== null && RESERVED.has(id)) errors.push(`cell ${repr(id)} reuses reserved id 0/1`);
   if (isVertex && !isEdgeLabel(cell) && !geometryIsRelative(cell)) checkVertexGeometry(cell, id, errors, warnings);
   if (isEdge) checkEdgeGeometry(cell, id, errors);
@@ -452,22 +456,25 @@ function addPointToBounds(bounds: ContentBounds | null, point: Point): ContentBo
   return addRectToBounds(bounds, [point[0], point[1], 0, 0]);
 }
 
+function contentRect(cell: DomEl, ids: ById): Rect | null {
+  if (cell.getAttribute("vertex") !== "1") return null;
+  if (isEdgeLabel(cell)) return explicitEdgeLabelRect(cell, ids);
+  if (geometryIsRelative(cell)) return null;
+  return absRect(cell, ids);
+}
+
+function contentWaypoints(cell: DomEl): Point[] {
+  return cell.getAttribute("edge") === "1" ? edgeWaypoints(cell) : [];
+}
+
 /** Visible vertices/containers, practical edge-label boxes, and explicit waypoints. */
 function contentBounds(cells: DomEl[], ids: ById): ContentBounds | null {
   let bounds: ContentBounds | null = null;
   for (const cell of cells) {
     if (!isVisible(cell, ids)) continue;
-    if (cell.getAttribute("vertex") === "1") {
-      const box = isEdgeLabel(cell)
-        ? explicitEdgeLabelRect(cell, ids)
-        : geometryIsRelative(cell)
-          ? null
-          : absRect(cell, ids);
-      if (box && !hasInvalidNumber(box)) bounds = addRectToBounds(bounds, box);
-    }
-    if (cell.getAttribute("edge") === "1") {
-      for (const point of edgeWaypoints(cell)) bounds = addPointToBounds(bounds, point);
-    }
+    const box = contentRect(cell, ids);
+    if (box && !hasInvalidNumber(box)) bounds = addRectToBounds(bounds, box);
+    for (const point of contentWaypoints(cell)) bounds = addPointToBounds(bounds, point);
   }
   return bounds;
 }
@@ -511,15 +518,16 @@ function pageSettings(model: DomEl, warnings: string[], observations: string[]):
   return { enabled, width, height, scale };
 }
 
-function canvasWarnings(bounds: ContentBounds | null, settings: PageSettings): string[] {
-  if (!bounds || !settings.enabled || settings.width === undefined || settings.height === undefined) return [];
+function boundaryWarnings(bounds: ContentBounds, width: number, height: number): string[] {
   const warnings: string[] = [];
-  const { width, height } = settings;
   if (bounds.minX < 0) warnings.push(`content extends beyond left page boundary by ${-bounds.minX}px`);
   if (bounds.minY < 0) warnings.push(`content extends beyond top page boundary by ${-bounds.minY}px`);
   if (bounds.maxX > width) warnings.push(`content extends beyond right page boundary by ${bounds.maxX - width}px`);
   if (bounds.maxY > height) warnings.push(`content extends beyond bottom page boundary by ${bounds.maxY - height}px`);
+  return warnings;
+}
 
+function outerMarginWarning(bounds: ContentBounds, width: number, height: number): string | null {
   const marginSides: string[] = [];
   if (bounds.minX >= 0 && bounds.minX < MIN_OUTER_MARGIN) marginSides.push(`left ${bounds.minX}px`);
   if (bounds.minY >= 0 && bounds.minY < MIN_OUTER_MARGIN) marginSides.push(`top ${bounds.minY}px`);
@@ -527,81 +535,135 @@ function canvasWarnings(bounds: ContentBounds | null, settings: PageSettings): s
   const bottom = height - bounds.maxY;
   if (right >= 0 && right < MIN_OUTER_MARGIN) marginSides.push(`right ${right}px`);
   if (bottom >= 0 && bottom < MIN_OUTER_MARGIN) marginSides.push(`bottom ${bottom}px`);
-  if (marginSides.length > 0) {
-    warnings.push(`content outer margin is below ${MIN_OUTER_MARGIN}px (${marginSides.join(", ")})`);
-  }
+  return marginSides.length > 0
+    ? `content outer margin is below ${MIN_OUTER_MARGIN}px (${marginSides.join(", ")})`
+    : null;
+}
 
+function excessiveCanvasWarning(bounds: ContentBounds, width: number, height: number): string | null {
   const contentWidth = bounds.maxX - bounds.minX;
   const contentHeight = bounds.maxY - bounds.minY;
-  if (contentWidth > 0 && contentHeight > 0) {
-    const areaRatio = (width * height) / (contentWidth * contentHeight);
-    if (
-      areaRatio >= EXCESSIVE_CANVAS_AREA_RATIO &&
-      contentWidth / width <= EXCESSIVE_CANVAS_AXIS_RATIO &&
-      contentHeight / height <= EXCESSIVE_CANVAS_AXIS_RATIO
-    ) {
-      warnings.push(
-        `canvas has excessive empty space (content ${contentWidth}x${contentHeight}px within ${width}x${height}px page)`,
-      );
-    }
+  if (contentWidth <= 0 || contentHeight <= 0) return null;
+  const areaRatio = (width * height) / (contentWidth * contentHeight);
+  if (
+    areaRatio < EXCESSIVE_CANVAS_AREA_RATIO ||
+    contentWidth / width > EXCESSIVE_CANVAS_AXIS_RATIO ||
+    contentHeight / height > EXCESSIVE_CANVAS_AXIS_RATIO
+  ) {
+    return null;
   }
-  return warnings;
+  return `canvas has excessive empty space (content ${contentWidth}x${contentHeight}px within ${width}x${height}px page)`;
+}
+
+function canvasWarnings(bounds: ContentBounds | null, settings: PageSettings): string[] {
+  if (!bounds || !settings.enabled || settings.width === undefined || settings.height === undefined) return [];
+  const { width, height } = settings;
+  return [
+    ...boundaryWarnings(bounds, width, height),
+    outerMarginWarning(bounds, width, height),
+    excessiveCanvasWarning(bounds, width, height),
+  ].filter((warning): warning is string => warning !== null);
+}
+
+function isWhitespace(character: string): boolean {
+  return character.trim() === "";
+}
+
+function isLineBreakTag(content: string): boolean {
+  if (content.slice(0, 2).toLowerCase() !== "br") return false;
+  let index = 2;
+  while (index < content.length && isWhitespace(content[index])) index++;
+  if (content[index] === "/") index++;
+  while (index < content.length && isWhitespace(content[index])) index++;
+  return index === content.length;
+}
+
+/** Remove draw.io's HTML-like label markup in one pass without regex backtracking. */
+function stripLabelMarkup(value: string): string {
+  const text: string[] = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const open = value.indexOf("<", cursor);
+    if (open === -1) {
+      text.push(value.slice(cursor));
+      break;
+    }
+    text.push(value.slice(cursor, open));
+    const close = value.indexOf(">", open + 1);
+    if (close === -1) {
+      text.push(value.slice(open));
+      break;
+    }
+    if (close === open + 1) {
+      text.push("<");
+      cursor = open + 1;
+      continue;
+    }
+    if (isLineBreakTag(value.slice(open + 1, close))) text.push("\n");
+    cursor = close + 1;
+  }
+  return text.join("");
 }
 
 function labelText(cell: DomEl): string {
-  return (attr(cell, "value") ?? "")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replaceAll("&nbsp;", " ")
-    .trim();
+  return stripLabelMarkup(attr(cell, "value") ?? "").replaceAll("&nbsp;", " ").trim();
+}
+
+function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
+  return (
+    cell.getAttribute("vertex") === "1" &&
+    geometryIsRelative(cell) &&
+    !isEdgeLabel(cell) &&
+    box !== null &&
+    !hasInvalidNumber(box) &&
+    box[2] <= 30 &&
+    box[3] <= 30
+  );
+}
+
+function smallFontWarning(cell: DomEl, box: Rect | null): string | null {
+  const fontSize = styleNum(attr(cell, "style"), "fontSize");
+  const isEdgeText = cell.getAttribute("edge") === "1" || isEdgeLabel(cell);
+  const minimum = isEdgeText ? 9 : 10;
+  if (
+    isCompactBorderPort(cell, box) ||
+    fontSize === undefined ||
+    !Number.isFinite(fontSize) ||
+    fontSize <= 0 ||
+    fontSize >= minimum
+  ) {
+    return null;
+  }
+  return `${isEdgeText ? "connector label" : "vertex"} ${repr(attr(cell, "id"))} has very small explicit fontSize ${fontSize}px`;
+}
+
+function longLabelWarning(cell: DomEl, label: string, box: Rect | null): string | null {
+  if (cell.getAttribute("vertex") !== "1" || isEdgeLabel(cell) || geometryIsRelative(cell)) return null;
+  if (box === null || hasInvalidNumber(box)) return null;
+  const oneLineLength = label.replaceAll("\n", "").length;
+  if (
+    oneLineLength <= 32 ||
+    label.includes("\n") ||
+    box[2] >= 160 ||
+    styleHas(attr(cell, "style"), "whiteSpace", "wrap")
+  ) {
+    return null;
+  }
+  return `vertex ${repr(attr(cell, "id"))} has a long label in narrow geometry without whiteSpace=wrap`;
+}
+
+function cellReadabilityWarnings(cell: DomEl): string[] {
+  const label = labelText(cell);
+  if (!label) return [];
+  const box = rect(cell);
+  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box)].filter(
+    (warning): warning is string => warning !== null,
+  );
 }
 
 /** Conservative static checks only; uncertain typography remains a visual concern. */
 function readabilityWarnings(cells: DomEl[]): string[] {
-  const warnings: string[] = [];
-  for (const cell of cells) {
-    const label = labelText(cell);
-    if (!label) continue;
-    const style = attr(cell, "style");
-    const fontSize = styleNum(style, "fontSize");
-    const isEdgeText = cell.getAttribute("edge") === "1" || isEdgeLabel(cell);
-    const box = rect(cell);
-    const isCompactBorderPort =
-      cell.getAttribute("vertex") === "1" &&
-      geometryIsRelative(cell) &&
-      !isEdgeLabel(cell) &&
-      box !== null &&
-      !hasInvalidNumber(box) &&
-      box[2] <= 30 &&
-      box[3] <= 30;
-    const minimum = isEdgeText ? 9 : 10;
-    if (
-      !isCompactBorderPort &&
-      fontSize !== undefined &&
-      Number.isFinite(fontSize) &&
-      fontSize > 0 &&
-      fontSize < minimum
-    ) {
-      warnings.push(
-        `${isEdgeText ? "connector label" : "vertex"} ${repr(attr(cell, "id"))} has very small explicit fontSize ${fontSize}px`,
-      );
-    }
-
-    if (cell.getAttribute("vertex") === "1" && !isEdgeLabel(cell) && !geometryIsRelative(cell)) {
-      const oneLineLength = label.replaceAll("\n", "").length;
-      if (
-        box &&
-        !hasInvalidNumber(box) &&
-        oneLineLength > 32 &&
-        !label.includes("\n") &&
-        box[2] < 160 &&
-        !styleHas(style, "whiteSpace", "wrap")
-      ) {
-        warnings.push(`vertex ${repr(attr(cell, "id"))} has a long label in narrow geometry without whiteSpace=wrap`);
-      }
-    }
-  }
-  return warnings;
+  return cells.flatMap(cellReadabilityWarnings);
 }
 
 function withPage(name: string, diagnostics: string[]): string[] {
