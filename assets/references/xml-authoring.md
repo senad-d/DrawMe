@@ -33,15 +33,11 @@ Read this **before hand-writing any `.drawio` XML** (workflow step 3). Skip it w
 
 ### Canvas sizing and content bounds
 
-Choose the page from the layout rather than leaving a large default canvas:
+The page follows from the layout, never the reverse: author elements with generous spacing first, then run `drawio_fit_canvas` to resize `pageWidth`/`pageHeight` to the visible content plus a margin (default 40px) and shift content to the margin origin. Run it again after every move, resize, container change, layout pass, legend addition, or waypoint edit, and treat each run as a source edit to validate.
 
-1. Compute every visible top-level vertex/container rectangle as `(x, y, x + width, y + height)`. For a nested child, add every ancestor container's `x` and `y` to the child's local coordinates.
-2. Expand the bounds for separately sized edge labels and explicit waypoints when their positions are known. Automatic edge routes still need preview inspection.
-3. Shift top-level content so the minimum `x` and `y` leave a **40px recommended outer margin**; DrawMe warns below the **20px minimum**.
-4. Set `pageWidth` to the rightmost visible coordinate plus 40px and `pageHeight` to the bottommost visible coordinate plus 40px. Round both up to a multiple of 10. Keep `pageScale="1"` unless a deliberately scaled page is required.
-5. After every move, resize, container change, layout pass, legend addition, or waypoint edit, recalculate the bounds and resize the page. A page much larger than content creates unreadable full-diagram previews and triggers an excessive-empty-space warning.
+When elements overlap or cannot fit, do not shrink or cram them to preserve the current page: move them apart with proper spacing and refit the canvas so the page grows around them. The reverse problem — a page much larger than content — creates unreadable full-diagram previews and an excessive-empty-space warning; the same fit run tightens it.
 
-Example: content spanning `x=40..1160` and `y=40..720` should normally use `pageWidth="1200"` and `pageHeight="760"`. Do not count invisible helpers or intentional relative border ports as page-extending content.
+Background for manual sizing (what the fit computes): visible top-level vertex/container rectangles as `(x, y, x + width, y + height)` with ancestor container offsets added for nested children, expanded by separately sized edge labels and explicit waypoints; content shifted so minimum `x`/`y` sit at the margin (DrawMe warns below the **20px minimum**); `pageWidth`/`pageHeight` set to the bounds plus the margin on each side. Automatic edge routes still need preview inspection, and invisible helpers or intentional relative border ports never count as page-extending content.
 
 ### Typography, padding, and labels
 
@@ -210,7 +206,7 @@ Rules: swatch colors come from the active palette (preset or the table above) wi
 **Grid alignment:** snap all `x`, `y`, `width`, `height` values to **multiples of 10** — this ensures shapes align cleanly on draw.io's default grid and makes manual editing easier.
 
 **General rules:**
-- Recalculate visible content bounds and update `pageWidth`/`pageHeight` after every layout change; retain at least the 20px minimum outer margin (40px recommended)
+- Run `drawio_fit_canvas` after every layout change so `pageWidth`/`pageHeight` track the content; it keeps the recommended 40px outer margin (DrawMe warns below the 20px minimum)
 - Plan a grid before assigning x/y coordinates — sketch node positions on paper/mentally first
 - Group related nodes in the same horizontal or vertical band
 - Use `swimlane` cells for logical grouping with visible borders

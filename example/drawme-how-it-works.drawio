@@ -1,146 +1,166 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="drawio" version="31.1.5">
   <diagram id="drawme-overview" name="How DrawMe Works">
-    <mxGraphModel dx="1920" dy="1280" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1280" math="0" shadow="0" background="#F7F9FC">
+    <mxGraphModel dx="2000" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" math="0" shadow="0" background="#F4F7FB" pageWidth="2000" pageHeight="1730">
       <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="title" value="DrawMe: from a prompt to an editable diagram" style="text;html=1;align=left;verticalAlign=middle;fontSize=32;fontStyle=1;fontColor=#17365D;" vertex="1" parent="1">
-          <mxGeometry x="40" y="22" width="1320" height="48" as="geometry" />
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="DrawMe: from a prompt to an editable diagram" style="text;html=1;align=left;verticalAlign=middle;fontSize=34;fontStyle=1;fontColor=#17365D;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1320" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="subtitle" value="A Pi extension that plans, authors, validates, reviews, and exports draw.io diagrams" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#4F6475;" vertex="1" parent="1">
-          <mxGeometry x="40" y="70" width="1380" height="34" as="geometry" />
+          <mxGeometry x="40" y="92" width="1360" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="badge" value="LOCAL RENDERING  •  EDITABLE  •  FULLY AUTONOMOUS" style="rounded=1;arcSize=22;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#2D5E36;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="1470" y="30" width="410" height="54" as="geometry" />
-        </mxCell>
-
-        <mxCell id="workflow" value="1  END-TO-END WORKFLOW" style="swimlane;horizontal=1;startSize=50;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=18;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="125" width="1840" height="485" as="geometry" />
+        <mxCell id="badge" value="LOCAL RENDERING  •  EDITABLE OUTPUT  •  AUTONOMOUS REVIEW" style="rounded=1;arcSize=22;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=13;fontStyle=1;fontColor=#2D5E36;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="45" width="510" height="54" as="geometry"/>
         </mxCell>
 
-        <mxCell id="phase-prepare" value="PREPARE  ·  STEPS 1–3" style="swimlane;horizontal=1;startSize=44;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#1F4E78;fillColor=#D9EAF7;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="workflow">
-          <mxGeometry x="30" y="78" width="550" height="305" as="geometry" />
-        </mxCell>
-        <mxCell id="step-check" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;01 · CHECK&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Detect the draw.io CLI and gate v30+ features" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
-          <mxGeometry x="18" y="58" width="514" height="62" as="geometry" />
-        </mxCell>
-        <mxCell id="step-plan" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;02 · PLAN&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Choose notation, relationships, canvas, and LR/TB flow" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
-          <mxGeometry x="18" y="134" width="514" height="62" as="geometry" />
-        </mxCell>
-        <mxCell id="step-author" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;03 · AUTHOR&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Create native XML or convert Mermaid; use exact shapes" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
-          <mxGeometry x="18" y="210" width="514" height="62" as="geometry" />
+        <mxCell id="workflow" value="1  END-TO-END WORKFLOW" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="1920" height="800" as="geometry"/>
         </mxCell>
 
-        <mxCell id="phase-quality" value="QUALITY LOOP  ·  STEPS 4–6" style="swimlane;horizontal=1;startSize=44;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#674274;fillColor=#E1D5E7;swimlaneFillColor=#FCF9FD;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="workflow">
-          <mxGeometry x="645" y="78" width="550" height="305" as="geometry" />
+        <mxCell id="phase-prepare" value="PREPARE  ·  STEPS 1–3  ·  LEFT TO RIGHT" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#1F4E78;fillColor=#D9EAF7;swimlaneFillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="workflow">
+          <mxGeometry x="30" y="85" width="1860" height="190" as="geometry"/>
         </mxCell>
-        <mxCell id="step-validate" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;04 · VALIDATE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Lint immediately after every source edit" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
-          <mxGeometry x="18" y="58" width="514" height="62" as="geometry" />
+        <mxCell id="step-check" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;01 · CHECK&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Confirm the draw.io CLI; unlock Mermaid + ELK on v30+" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
+          <mxGeometry x="40" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="step-critique" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;05 · CRITIQUE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Review canvas, nodes, connectors, and semantics" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
-          <mxGeometry x="18" y="134" width="514" height="62" as="geometry" />
+        <mxCell id="step-plan" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;02 · PLAN&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Select notation, relationships, and LR/TB layout" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
+          <mxGeometry x="660" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="step-refine" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;06 · REFINE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Apply targeted fixes; validate and preview again" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
-          <mxGeometry x="18" y="210" width="514" height="62" as="geometry" />
+        <mxCell id="step-author" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;03 · AUTHOR&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Write native XML or convert Mermaid; use exact shapes" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="phase-prepare">
+          <mxGeometry x="1280" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-
-        <mxCell id="phase-ship" value="CONFIRM &amp;amp; SHIP  ·  STEPS 7–9" style="swimlane;horizontal=1;startSize=44;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;swimlaneFillColor=#F8FCF7;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="workflow">
-          <mxGeometry x="1260" y="78" width="550" height="305" as="geometry" />
+        <mxCell id="edge-check-plan" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="phase-prepare" source="step-check" target="step-plan">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="step-guardrail" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;07 · GUARDRAIL&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Cap automatic correction retries at five" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#A5C99D;strokeWidth=1.5;" vertex="1" parent="phase-ship">
-          <mxGeometry x="18" y="58" width="514" height="62" as="geometry" />
-        </mxCell>
-        <mxCell id="step-approve" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;08 · FINAL CONFIRMATION&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Re-check the holistic preview; no human gate, no waiting" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#A5C99D;strokeWidth=1.5;" vertex="1" parent="phase-ship">
-          <mxGeometry x="18" y="134" width="514" height="62" as="geometry" />
-        </mxCell>
-        <mxCell id="step-export" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;09 · FINAL EXPORT&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Export PNG / SVG / PDF / JPG with editable XML" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=16;spacingRight=14;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="phase-ship">
-          <mxGeometry x="18" y="210" width="514" height="62" as="geometry" />
+        <mxCell id="edge-plan-author" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="phase-prepare" source="step-plan" target="step-author">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="edge-check-plan" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-prepare" source="step-check" target="step-plan">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="phase-quality" value="QUALITY LOOP  ·  STEPS 4–6  ·  RIGHT TO LEFT" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#674274;fillColor=#E1D5E7;swimlaneFillColor=#FCF9FD;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="workflow">
+          <mxGeometry x="30" y="300" width="1860" height="245" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-plan-author" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-prepare" source="step-plan" target="step-author">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="step-validate" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;04 · VALIDATE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Lint every edit; fit the canvas around finished content" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
+          <mxGeometry x="1280" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-author-validate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#405E78;strokeWidth=2.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="workflow" source="step-author" target="step-validate">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="step-critique" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;05 · CRITIQUE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Review canvas · typography · connectors · semantics" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
+          <mxGeometry x="660" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-validate-critique" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-quality" source="step-validate" target="step-critique">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="step-refine" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;06 · REFINE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Apply targeted fixes; validate and preview again" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=1.5;" vertex="1" parent="phase-quality">
+          <mxGeometry x="40" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-critique-refine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-quality" source="step-critique" target="step-refine">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="edge-validate-critique" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="phase-quality" source="step-validate" target="step-critique">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-refine-guardrail" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#526C4E;strokeWidth=2.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="workflow" source="step-refine" target="step-guardrail">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="edge-critique-refine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="phase-quality" source="step-critique" target="step-refine">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-guardrail-approve" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-ship" source="step-guardrail" target="step-approve">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-approve-export" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="phase-ship" source="step-approve" target="step-export">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-feedback" value="feedback → edit → revalidate → reconfirm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;endFill=0;dashed=1;dashPattern=8 4;strokeColor=#6C8EBF;strokeWidth=2;fontSize=12;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="step-approve" target="step-author">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1865" y="368" />
-              <mxPoint x="1865" y="560" />
-              <mxPoint x="345" y="560" />
-              <mxPoint x="345" y="475" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="edge-refinement-loop" value="targeted edit  ·  validate again  ·  maximum 5 retries" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=60;html=1;endArrow=open;endFill=0;dashed=1;dashPattern=8 4;strokeColor=#9673A6;strokeWidth=2;fontSize=12;fontColor=#674274;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="phase-quality" source="step-refine" target="step-validate">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="architecture" value="2  ARCHITECTURE AND RESPONSIBILITIES" style="swimlane;horizontal=1;startSize=50;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=18;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="640" width="1840" height="285" as="geometry" />
+        <mxCell id="phase-ship" value="CONFIRM &amp;amp; SHIP  ·  STEPS 7–9  ·  LEFT TO RIGHT" style="swimlane;horizontal=1;startSize=46;rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fontSize=15;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;swimlaneFillColor=#F8FCF7;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="workflow">
+          <mxGeometry x="30" y="570" width="1860" height="190" as="geometry"/>
         </mxCell>
-        <mxCell id="arch-request" value="&lt;font color=&quot;#6B7C8A&quot;&gt;&lt;b&gt;REQUEST&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;Natural-language prompt&lt;/b&gt;&lt;br&gt;Describe it with /drawme" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="architecture">
-          <mxGeometry x="45" y="78" width="260" height="108" as="geometry" />
+        <mxCell id="step-guardrail" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;07 · GUARDRAIL&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Cap retries at five; retain the best validated state" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#A5C99D;strokeWidth=1.5;" vertex="1" parent="phase-ship">
+          <mxGeometry x="40" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="arch-agent" value="&lt;font color=&quot;#6B7C8A&quot;&gt;&lt;b&gt;ORCHESTRATOR&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;Pi AI agent&lt;/b&gt;&lt;br&gt;Plans, authors, and reviews" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="architecture">
-          <mxGeometry x="370" y="78" width="300" height="108" as="geometry" />
+        <mxCell id="step-confirm" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;08 · HOLISTIC CONFIRM&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Re-check the full render; no approval pause" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#A5C99D;strokeWidth=1.5;" vertex="1" parent="phase-ship">
+          <mxGeometry x="660" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="arch-extension" value="&lt;font color=&quot;#1F4E78&quot;&gt;&lt;b&gt;EXTENSION&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;DrawMe&lt;/b&gt;&lt;br&gt;check • validate • search • convert&lt;br&gt;layout • export • explain • open" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#EAF2F8;strokeColor=#1F4E78;strokeWidth=3;shadow=1;" vertex="1" parent="architecture">
-          <mxGeometry x="735" y="70" width="390" height="124" as="geometry" />
+        <mxCell id="step-export" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;09 · FINAL EXPORT&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Embed editable XML in PNG / SVG / PDF / JPG" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=18;spacingRight=16;spacingTop=10;spacingBottom=10;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="phase-ship">
+          <mxGeometry x="1280" y="66" width="540" height="86" as="geometry"/>
         </mxCell>
-        <mxCell id="arch-cli" value="&lt;font color=&quot;#6B7C8A&quot;&gt;&lt;b&gt;RENDERER&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;draw.io desktop CLI&lt;/b&gt;&lt;br&gt;Renders, converts, and exports" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="architecture">
-          <mxGeometry x="1190" y="78" width="285" height="108" as="geometry" />
+        <mxCell id="edge-guardrail-confirm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="phase-ship" source="step-guardrail" target="step-confirm">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="arch-output" value="&lt;font color=&quot;#4E7048&quot;&gt;&lt;b&gt;SOURCE + EXPORTS&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;Editable .drawio&lt;/b&gt;&lt;br&gt;PNG • SVG • PDF • JPG" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="architecture">
-          <mxGeometry x="1540" y="78" width="255" height="108" as="geometry" />
-        </mxCell>
-        <mxCell id="compatibility" value="&lt;b&gt;COMPATIBILITY&lt;/b&gt;  •  Core XML, validation, preview, and export work on older draw.io releases  •  Mermaid conversion + ELK layout require v30+" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontColor=#405466;fillColor=#F3F6F8;strokeColor=#AAB7C4;dashed=1;" vertex="1" parent="architecture">
-          <mxGeometry x="95" y="214" width="1650" height="42" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-request-agent" value="asks" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-request" target="arch-agent">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-agent-extension" value="uses" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-agent" target="arch-extension">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-extension-cli" value="launches" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-extension" target="arch-cli">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-cli-output" value="writes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-cli" target="arch-output">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="edge-confirm-export" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="phase-ship" source="step-confirm" target="step-export">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="capabilities" value="3  CORE CAPABILITIES" style="swimlane;horizontal=1;startSize=50;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=18;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="955" width="1840" height="285" as="geometry" />
+        <mxCell id="edge-author-validate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#405E78;strokeWidth=2.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="workflow" source="step-author" target="step-validate">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="cap-author" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;AUTHOR + UNDERSTAND&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Natural language → editable .drawio&lt;br&gt;• Flowchart • architecture • UML • BPMN • ERD • C4&lt;br&gt;• Mermaid on v30+ or native XML&lt;br&gt;• 10k+ indexed official shapes" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="capabilities">
-          <mxGeometry x="35" y="73" width="420" height="170" as="geometry" />
+        <mxCell id="edge-refine-guardrail" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=50;html=1;endArrow=blockThin;endFill=1;strokeColor=#526C4E;strokeWidth=2.5;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="workflow" source="step-refine" target="step-guardrail">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="cap-quality" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;VALIDATE + REVIEW&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Validate every source revision&lt;br&gt;• Check IDs • parents • endpoints • geometry&lt;br&gt;• Flag bounds • overlap • route defects&lt;br&gt;• Image-aware critique + five-retry guardrail" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#FCF9FD;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="capabilities">
-          <mxGeometry x="485" y="73" width="420" height="170" as="geometry" />
+
+        <mxCell id="architecture" value="2  ARCHITECTURE AND RESPONSIBILITIES" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="990" width="1920" height="360" as="geometry"/>
         </mxCell>
-        <mxCell id="cap-deliver" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;PREVIEW + DELIVER&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Review before final export&lt;br&gt;• PNG • SVG • PDF • JPG&lt;br&gt;• Embed editable XML when supported&lt;br&gt;• Control scale • width • border • page" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="capabilities">
-          <mxGeometry x="935" y="73" width="420" height="170" as="geometry" />
+        <mxCell id="arch-request" value="&lt;font color=&quot;#6B7C8A&quot;&gt;&lt;b&gt;REQUEST&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;Natural-language prompt&lt;/b&gt;&lt;br&gt;Describe it with /drawme" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="architecture">
+          <mxGeometry x="40" y="90" width="260" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="cap-reuse" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;EXTEND + REUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Explain diagrams as Markdown&lt;br&gt;• Apply ELK auto-layout on v30+&lt;br&gt;• Open in draw.io for fine-tuning&lt;br&gt;• macOS • Linux • Windows • WSL • headless Linux" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=18;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#F8FCF7;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="capabilities">
-          <mxGeometry x="1385" y="73" width="420" height="170" as="geometry" />
+        <mxCell id="arch-agent" value="&lt;font color=&quot;#6B7C8A&quot;&gt;&lt;b&gt;ORCHESTRATOR&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;Pi AI agent&lt;/b&gt;&lt;br&gt;Plans · authors · reviews" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="architecture">
+          <mxGeometry x="380" y="90" width="300" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="arch-extension" value="DRAWME EXTENSION" style="swimlane;horizontal=1;startSize=44;rounded=1;arcSize=10;container=1;html=1;fontSize=15;fontStyle=1;fontColor=#1F4E78;fillColor=#D9EAF7;swimlaneFillColor=#F8FBFF;strokeColor=#1F4E78;strokeWidth=3;shadow=1;" vertex="1" parent="architecture">
+          <mxGeometry x="760" y="75" width="760" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="arch-core" value="&lt;font color=&quot;#1F4E78&quot;&gt;&lt;b&gt;DETERMINISTIC CORE&lt;/b&gt;&lt;/font&gt;&lt;br&gt;validate · fit canvas&lt;br&gt;shape search · explain&lt;br&gt;&lt;font color=&quot;#6B7C8A&quot;&gt;no renderer needed&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=13;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#9EB9D6;strokeWidth=1.5;" vertex="1" parent="arch-extension">
+          <mxGeometry x="20" y="65" width="340" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="arch-bridge" value="&lt;font color=&quot;#9A5B13&quot;&gt;&lt;b&gt;DRAW.IO + OS BRIDGE&lt;/b&gt;&lt;/font&gt;&lt;br&gt;check · Mermaid import · ELK layout&lt;br&gt;preview · export · open" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=13;fontColor=#263746;fillColor=#FFF4E6;strokeColor=#D79B00;strokeWidth=1.5;" vertex="1" parent="arch-extension">
+          <mxGeometry x="400" y="65" width="340" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="arch-output" value="&lt;font color=&quot;#4E7048&quot;&gt;&lt;b&gt;EDITABLE OUTPUTS&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;.drawio source&lt;/b&gt;&lt;br&gt;PNG · SVG · PDF · JPG" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="architecture">
+          <mxGeometry x="1600" y="90" width="240" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="compatibility" value="&lt;b&gt;LOCAL-FIRST&lt;/b&gt;  •  Validation, canvas fitting, shape search, and explanation run in TypeScript  •  draw.io v30+ unlocks Mermaid import + ELK layout" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=8;fontSize=13;fontColor=#405466;fillColor=#F3F6F8;strokeColor=#AAB7C4;dashed=1;" vertex="1" parent="architecture">
+          <mxGeometry x="60" y="290" width="1740" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-request-agent" value="asks" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-request" target="arch-agent">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-agent-extension" value="uses" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-agent" target="arch-extension">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-extension-output" value="creates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="architecture" source="arch-extension" target="arch-output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="summary" value="3  WHY IT WORKS" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1390" width="1920" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-editable" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;EDITABLE FIRST&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Natural language → native .drawio&lt;br&gt;• Mermaid conversion or hand-authored XML&lt;br&gt;• 10k+ indexed official shapes" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=16;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#F8FBFF;strokeColor=#9EB9D6;strokeWidth=2;" vertex="1" parent="summary">
+          <mxGeometry x="40" y="75" width="540" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-quality" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;QUALITY BUILT IN&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Validate every source revision&lt;br&gt;• Critique four visual + semantic dimensions&lt;br&gt;• Bound autonomous refinement to five retries" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=16;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#FCF9FD;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="summary">
+          <mxGeometry x="660" y="75" width="540" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-local" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;LOCAL DELIVERY&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Render and export on your machine&lt;br&gt;• Embed editable XML when supported&lt;br&gt;• Open in draw.io for fine-tuning" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingTop=16;spacingLeft=18;spacingRight=16;fontSize=14;fontColor=#263746;fillColor=#F8FCF7;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="summary">
+          <mxGeometry x="1280" y="75" width="540" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="" style="rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fillColor=#F7F9FC;strokeColor=#C7D1DC;" vertex="1" parent="summary">
+          <mxGeometry x="40" y="235" width="1780" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-title" value="COLOR KEY" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#405466;" vertex="1" parent="legend">
+          <mxGeometry x="20" y="8" width="90" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-blue" value="" style="rounded=1;arcSize=6;html=1;fillColor=#D9EAF7;strokeColor=#6C8EBF;" vertex="1" parent="legend">
+          <mxGeometry x="130" y="14" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-blue-text" value="Prepare / deterministic core" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
+          <mxGeometry x="155" y="8" width="250" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-purple" value="" style="rounded=1;arcSize=6;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;" vertex="1" parent="legend">
+          <mxGeometry x="450" y="14" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-purple-text" value="Quality / review" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
+          <mxGeometry x="475" y="8" width="190" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-green" value="" style="rounded=1;arcSize=6;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="legend">
+          <mxGeometry x="710" y="14" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-green-text" value="Confirm / delivery" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
+          <mxGeometry x="735" y="8" width="190" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-orange" value="" style="rounded=1;arcSize=6;html=1;fillColor=#FFF4E6;strokeColor=#D79B00;" vertex="1" parent="legend">
+          <mxGeometry x="970" y="14" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-orange-text" value="draw.io + OS bridge" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
+          <mxGeometry x="995" y="8" width="210" height="28" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

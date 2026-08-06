@@ -69,6 +69,8 @@ const requiredFiles = [
   "src/dom.ts",
   "src/drawio.ts",
   "src/explain.ts",
+  "src/fitcanvas.ts",
+  "src/geometry.ts",
   "src/index.ts",
   "src/png.ts",
   "src/shapesearch.ts",

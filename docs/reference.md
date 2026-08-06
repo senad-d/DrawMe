@@ -4,7 +4,7 @@
 
 DrawMe turns diagram requirements into editable `.drawio` sources and local PNG, SVG, PDF, or JPG exports. The extension provides commands that start guided workflows and tools for CLI detection, Mermaid conversion, XML layout, structural validation, shape lookup, export, explanation, and file opening.
 
-This document lists the extension's public surface: commands, tools, options, defaults, output behavior, and limitations. It is not a workflow guide — the `/drawme` command injects the full authoring workflow itself, and the registered tool descriptions carry the operational rules. Two conventions apply everywhere: the `.drawio` file is the source of truth (exports are derived artifacts), and several tools report failures as a text result (`Export failed`, `Layout failed`, `Mermaid conversion failed`, `Explain failed`, `Open failed`) rather than a tool-call error, so results must always be read.
+This document lists the extension's public surface: commands, tools, options, defaults, output behavior, and limitations. It is not a workflow guide — the `/drawme` command injects the full authoring workflow itself, and the registered tool descriptions carry the operational rules. Two conventions apply everywhere: the `.drawio` file is the source of truth (exports are derived artifacts), and several tools report failures as a text result (`Export failed`, `Layout failed`, `Mermaid conversion failed`, `Fit canvas failed`, `Explain failed`, `Open failed`) rather than a tool-call error, so results must always be read.
 
 ## Functional availability
 
@@ -12,6 +12,7 @@ This document lists the extension's public surface: commands, tools, options, de
 | --- | --- | --- |
 | Write or edit uncompressed `.drawio` XML with normal file tools | No | No |
 | `drawio_validate` | No | No |
+| `drawio_fit_canvas` | No | No |
 | `drawio_shapesearch` | No | No |
 | `drawio_explain` | No | No |
 | `drawio_open` | No CLI check; requires an OS file handler | No |
@@ -29,7 +30,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 
 | Command | Functionality |
 | --- | --- |
-| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, critique-first visual review, and final export — no human intervention once started. |
+| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, critique-first visual review, and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
 | `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
 | `/drawme-export <file> [png\|svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. |
 
@@ -37,7 +38,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 
 ## Tools
 
-DrawMe registers eight model-callable tools.
+DrawMe registers nine model-callable tools.
 
 ### `drawio_check`
 
@@ -194,6 +195,38 @@ drawio_validate({ "input": "architecture.drawio" })
 ```
 
 Validation is structural rather than rendered. Its static typography checks are deliberately conservative: it cannot guarantee label fit, correct semantic content, valid rendering of a guessed shape, color contrast, visual balance, or clear auto-routed edges. It does not replace preview inspection when the current model can view images.
+
+---
+
+### `drawio_fit_canvas`
+
+Resizes each page's canvas to its visible content plus an outer margin, without launching draw.io.
+
+#### Options
+
+| Option | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `input` | string | Yes | — | Path to the `.drawio` file. |
+| `margin` | number | No | `40` | Outer margin in px between content and page edge. |
+| `output` | string | No | Overwrites `input` | Destination path. |
+
+#### Behavior
+
+Per page:
+
+- computes the visible content bounding box (nested containers, explicit edge waypoints, and separately sized edge labels included);
+- sets `pageWidth`/`pageHeight` to the content size plus twice the margin, honoring `pageScale`;
+- shifts top-level content (absolute vertices, edge waypoints, floating edge endpoints) so the content origin lands exactly at the margin — children of containers and relative geometry move with their parents and are untouched;
+- grows cramped pages and tightens oversized ones; element sizes and relative positions never change;
+- skips compressed pages, intentional infinite canvases (`page="0"`), and pages without measurable content;
+- reports old → new dimensions and any applied shift per page.
+
+The result is a source edit: validate afterwards and re-export previews. Use it whenever content overflows the page, margins fall below the minimum, the canvas has excessive empty space, or elements need more room — spread elements apart and refit the canvas instead of shrinking content.
+
+```text
+drawio_fit_canvas({ "input": "architecture.drawio" })
+drawio_fit_canvas({ "input": "architecture.drawio", "margin": 60 })
+```
 
 ---
 

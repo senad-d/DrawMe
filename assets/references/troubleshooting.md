@@ -10,7 +10,7 @@ Read this when something looks wrong in the output (rendering, export, layout, e
 | `--` inside XML comments | Illegal per XML spec — use single hyphens or rephrase |
 | Special characters in `value` | Use XML entities: `&amp;` `&lt;` `&gt;` `&quot;` |
 | Literal `\n` in label text | Use `&#xa;` for line breaks in `value` attributes |
-| Overlapping shapes | Scale spacing with complexity (200–350px); leave routing corridors |
+| Overlapping shapes | Scale spacing with complexity (200–350px) and leave routing corridors; move elements apart and run `drawio_fit_canvas` so the page grows around the content — never shrink elements to fit the page |
 | Edges crossing through shapes | Add waypoints, distribute entry/exit points, or increase spacing |
 | Arrowhead overlaps bend | Final edge segment before target must be ≥20px — increase spacing or add waypoints |
 | Automatic correction loop reaches its limit | The initial critique pass and the final holistic confirmation do not consume retries. Allow at most **5 correction retries total**; each retry is one targeted source edit → `drawio_validate` → replacement preview cycle. If a finding remains at the limit, stop editing, keep the best validated state, continue to final export, and name the unresolved finding and its category in the final report — never loop or wait for input. |

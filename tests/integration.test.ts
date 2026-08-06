@@ -60,6 +60,7 @@ describe("extension registration", () => {
       "drawio_check",
       "drawio_explain",
       "drawio_export",
+      "drawio_fit_canvas",
       "drawio_from_mermaid",
       "drawio_layout",
       "drawio_open",
@@ -88,6 +89,10 @@ describe("extension registration", () => {
     expect(workflow).toContain("cannot view images");
     expect(workflow).toContain("rendered inspection was skipped");
     expect(workflow).toContain("call `drawio_validate` immediately after authoring and after every later XML edit");
+    // Canvas fitting: page dimensions follow content, never the reverse.
+    expect(workflow).toContain("drawio_fit_canvas");
+    expect(workflow).toContain("do NOT fix page dimensions up front");
+    expect(workflow).toContain("never shrink or squeeze elements");
     expect(workflow).toContain(`allow at most ${AUTOMATIC_CORRECTION_LIMIT} correction retries`);
     // Fully autonomous: no human gate anywhere in the flow.
     expect(workflow).toContain("fully autonomous");
@@ -101,6 +106,14 @@ describe("extension registration", () => {
     expect(workflow).not.toMatch(/agent/i);
     expect(workflow).not.toContain("Before starting, read");
     expect(workflow).toContain("report failures as a text result");
+    // The CLI check result and topic references are embedded — no upfront tool calls or reads.
+    expect(workflow).toContain("CLI status (already checked");
+    expect(workflow).toContain("# Packaged references (pre-loaded — do not re-read these files)");
+    expect(workflow).toContain("## Reference: diagram types (pre-loaded from");
+    expect(workflow).toContain("## Reference: XML authoring (pre-loaded from");
+    // Only troubleshooting stays on-demand.
+    expect(workflow).toContain("troubleshooting.md` (the one reference kept on-demand)");
+    expect(workflow).not.toContain("first read");
   });
 
   it("attaches only the latest successful preview file but keeps final and failure results text-only", async () => {
@@ -252,6 +265,9 @@ describe("extension registration", () => {
       .get("drawio_layout")!
       .execute("t", { input: missing, preset: "invalid" }, undefined, undefined, {});
     expect(textOf(laidOut.content[0])).toContain("Layout failed: unknown layout preset");
+
+    const fitted = await tools.get("drawio_fit_canvas")!.execute("t", { input: missing }, undefined, undefined, {});
+    expect(textOf(fitted.content[0])).toContain("Fit canvas failed:");
 
     const shapes = await tools.get("drawio_shapesearch")!.execute("t", { query: "no-such-shape-xyz" }, undefined, undefined, {});
     expect(textOf(shapes.content[0])).toContain("No shapes matched");

@@ -6,7 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- New `drawio_fit_canvas` tool: deterministically resizes each page's canvas to its visible content plus
+  a margin (default 40px) and shifts content to the margin origin — the fix for cramped pages where
+  elements overlap because they were squeezed into a too-small canvas. The workflow now defers page
+  dimensions until content exists (author with generous spacing → fit the canvas), and validation/docs
+  direct overlap and bounds findings to "spread elements, then refit" instead of shrinking content.
+  Shared `.drawio` geometry moved into `src/geometry.ts`.
+
 ### Changed
+
+- `/drawme` now pre-loads its context: the command handler resolves the draw.io CLI itself and embeds the
+  check result plus the diagram-types, XML-authoring, and (v30+) Mermaid references directly into the
+  injected workflow message. The references remain editable Markdown files under `assets/references/`;
+  they are just no longer read via tool calls at run start. Only the rarely needed troubleshooting
+  reference stays on-demand.
 
 - `drawio_export` previews are now vision-aware: the PNG image block is attached only when the active
   model can view images (checked per call via the extension context, failing open for unknown models),

@@ -4,8 +4,9 @@
  * CLI. It exposes the authoring workflow as plain commands and model-callable
  * tools.
  *
- * Tools:    drawio_check · drawio_export · drawio_validate · drawio_from_mermaid
- *           drawio_layout · drawio_shapesearch · drawio_explain · drawio_open
+ * Tools:    drawio_check · drawio_export · drawio_validate · drawio_fit_canvas
+ *           drawio_from_mermaid · drawio_layout · drawio_shapesearch
+ *           drawio_explain · drawio_open
  * Commands: /drawme · /drawme-check · /drawme-export
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -24,6 +25,7 @@ import {
   type LayoutPreset,
 } from "./drawio";
 import { validateFile } from "./validate";
+import { fitCanvasFile } from "./fitcanvas";
 import { searchShapes } from "./shapesearch";
 import { explainFile } from "./explain";
 import { drawmeWorkflow } from "./workflow";
@@ -138,7 +140,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_validate",
     label: "draw.io: validate",
     description:
-      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, and explicit routes through shapes or across edges. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Run after every source edit and before exporting.",
+      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, and explicit routes through shapes or across edges. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
     promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -154,6 +156,47 @@ export default function drawme(pi: ExtensionAPI): void {
         `${r.errors.length} error(s), ${r.warnings.length} unresolved warning(s)`,
       ];
       return textResult(lines.join("\n"), r);
+    },
+  });
+
+  pi.registerTool({
+    name: "drawio_fit_canvas",
+    label: "draw.io: fit canvas",
+    description:
+      "Resize each page's canvas to fit its content: sets pageWidth/pageHeight to the content bounding box plus a margin (default 40px) and shifts content so it starts exactly at that margin. Grows cramped pages and tightens oversized ones without changing element sizes or relative positions. Use when validation reports boundary, outer-margin, or empty-space warnings, or when elements need more room — spread elements apart, then fit the canvas; never shrink or cram elements to fit a page. Deterministic, no draw.io CLI. Skips compressed pages and intentional infinite canvases (page=\"0\"). Writes in place unless `output` is given; treat the result as a source edit and validate it.",
+    promptSnippet:
+      "Fit each page's canvas to its content plus a margin (default 40px) — enlarge the page instead of cramming elements; validate after.",
+    parameters: Type.Object({
+      input: Type.String({ description: "Path to the .drawio file" }),
+      margin: Type.Optional(Type.Number({ description: "Outer margin in px between content and page edge (default 40)" })),
+      output: Type.Optional(Type.String({ description: "Output path (default: overwrite the input)" })),
+    }),
+    async execute(_id, params) {
+      try {
+        const r = await fitCanvasFile(params);
+        const lines = r.pages.map((page) => {
+          if (page.status === "skipped") return `page '${page.page}': skipped (${page.reason ?? "unknown"})`;
+          const beforeText =
+            page.before?.width !== undefined && page.before?.height !== undefined
+              ? `${page.before.width}x${page.before.height}`
+              : "unset";
+          const afterText = `${page.after!.width}x${page.after!.height}`;
+          if (page.status === "unchanged") return `page '${page.page}': already fitted (${afterText})`;
+          const shiftText =
+            page.shift && (page.shift.dx !== 0 || page.shift.dy !== 0)
+              ? `, content shifted by (${page.shift.dx}, ${page.shift.dy})`
+              : "";
+          return `page '${page.page}': ${beforeText} → ${afterText} (margin ${r.margin}px${shiftText})`;
+        });
+        lines.push(
+          r.changed
+            ? `Wrote ${r.output}. This is a source edit: run drawio_validate next, then re-export the preview.`
+            : "No changes were needed.",
+        );
+        return textResult(lines.join("\n"), r);
+      } catch (e) {
+        return textResult(`Fit canvas failed: ${(e as Error).message}`, { error: (e as Error).message });
+      }
     },
   });
 
@@ -274,7 +317,21 @@ export default function drawme(pi: ExtensionAPI): void {
         ctx.ui.notify("Usage: /drawme <description of the diagram to create>", "info");
         return;
       }
-      pi.sendUserMessage(drawmeWorkflow(desc, REF_DIR));
+      const readReference = async (name: string): Promise<string | null> => {
+        try {
+          return await readFile(resolve(REF_DIR, name), "utf8");
+        } catch {
+          return null;
+        }
+      };
+      const cli = await resolveBinary();
+      pi.sendUserMessage(
+        drawmeWorkflow(desc, REF_DIR, cli, {
+          diagramTypes: await readReference("diagram-types.md"),
+          xmlAuthoring: await readReference("xml-authoring.md"),
+          mermaidAuthoring: cli.supportsMermaid ? await readReference("mermaid-authoring.md") : null,
+        }),
+      );
     },
   });
 

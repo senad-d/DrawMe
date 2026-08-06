@@ -28,6 +28,11 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
       <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-how-it-works.drawio.png" alt="DrawMe: from a prompt to an editable diagram" title="DrawMe" width="820">
     </td>
   </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-installation-guide.drawio.png" alt="DrawMe: Installation guide" title="DrawMe" width="820">
+    </td>
+  </tr>
 </table>
 
 - **Natural-language authoring:** flowcharts, architecture, UML, BPMN, ERD, C4, network, ML — as native `.drawio`, or as Mermaid with automatic layout on v30+.
@@ -63,7 +68,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 
 This checkout implements the DrawMe core loop as a Pi extension:
 
-- Eight model-callable tools (`drawio_check`, `drawio_export`, `drawio_validate`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
+- Nine model-callable tools (`drawio_check`, `drawio_export`, `drawio_validate`, `drawio_fit_canvas`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
 - A guided `/drawme` workflow that steers authoring, validation after every edit, a critique-first visual review, and autonomous final multi-format export.
 - Pure-TypeScript structural linting, `-e` PNG IEND repair, shape search over a bundled index, and diagram-to-Markdown description — no Python runtime required.
 - draw.io binary resolution across macOS/Linux/Windows/WSL, headless-Linux `xvfb-run` handling, and version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
@@ -147,6 +152,7 @@ Registered for the model to call directly.
 | `drawio_check` | Resolve the draw.io binary, version, and whether it supports Mermaid import / `--layout` (v30+). |
 | `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG returned as text/metadata, with the image block attached when the active model can view images (the text states which); each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
 | `drawio_validate` | Deterministic lint: dangling edges, duplicate/reserved ids, broken parents, malformed vertex/edge geometry; warnings for page/container bounds, margins, conservative readability, overlap, and explicit routes through/crossing shapes; observations and readability score are reported separately. |
+| `drawio_fit_canvas` | Fit each page's canvas to its content plus a margin (default 40px): grows cramped pages, tightens oversized ones, and shifts content to the margin origin — instead of shrinking or cramming elements. Deterministic, no CLI. |
 | `drawio_shapesearch` | Exact official `style=` strings for 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN shapes, from a bundled local index. Use instead of guessing a style. |
 | `drawio_from_mermaid` | Convert Mermaid text (inline or a `.mmd`) to a native `.drawio` with automatic layout. Requires draw.io **v30+**. |
 | `drawio_layout` | Re-place nodes / route edges with an ELK preset (`verticalFlow`, `horizontalFlow`, `verticalTree`, `horizontalTree`, `radialTree`, `organic`) for large graphs. Requires draw.io **v30+**. |
@@ -169,7 +175,7 @@ The extension factory in `src/index.ts` registers the tools and commands. Render
 
 `/drawme` injects a guided nine-step workflow that the model follows using the tools above:
 
-1. **Check** — resolve the CLI and note the version (v30+ unlocks Mermaid conversion and ELK layout).
+1. **Check** — the command itself resolves the CLI and embeds the result plus the authoring references into the workflow message (v30+ unlocks Mermaid conversion and ELK layout), so the run starts with everything in context — no upfront tool calls or file reads.
 2. **Plan** — pick the diagram type, relationships, finite canvas, and layout direction.
 3. **Author** — write editable uncompressed XML (or Mermaid on v30+), using exact searched shapes and optional ELK layout.
 4. **Validate after every edit** — fix all errors; fix each warning or record why it is reviewed and acceptable.
@@ -183,7 +189,7 @@ Deterministic checks cover XML contracts, IDs/references, finite page and contai
 
 ## Bundled References and Assets
 
-The model reads these packaged references and assets on demand.
+These stay plain Markdown files for easy editing. `/drawme` embeds the diagram-types, XML-authoring, and (on v30+) Mermaid references directly into its workflow message, so the model starts with them in context; the troubleshooting reference is read on demand when an export fails.
 
 - `docs/reference.md` — catalog of commands, tool options, defaults, output behavior, and limitations (documentation only; not read at runtime).
 - `assets/references/xml-authoring.md` — `.drawio` skeleton, cell/edge forms, containers, palette, spacing.
