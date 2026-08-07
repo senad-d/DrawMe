@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="31.1.5">
+  <diagram id="drawme-validation-tree" name="Validation Decision Tree">
+    <mxGraphModel dx="2000" dy="2400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" math="0" shadow="0" background="#F4F7FB" pageWidth="2050" pageHeight="2448">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="DrawMe validation decision tree" style="text;html=1;align=left;verticalAlign=middle;fontSize=34;fontStyle=1;fontColor=#17365D;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1180" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="How each source revision earns a quality export — or carries an explicit, bounded exception" style="text;html=1;align=left;verticalAlign=middle;fontSize=17;fontColor=#4F6475;" vertex="1" parent="1">
+          <mxGeometry x="40" y="92" width="1240" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="badge" value="VALIDATE EVERY EDIT  •  4 REVIEW PASSES  •  MAX 8 CORRECTION RETRIES" style="rounded=1;arcSize=22;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=13;fontStyle=1;fontColor=#674274;fillColor=#F4ECF7;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="48" width="560" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="revalidate-junction" value="&lt;b&gt;REVALIDATE&lt;/b&gt;&lt;br&gt;restart the gate" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=13;fontColor=#405466;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1830" y="200" width="180" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="phase-structural" value="1  DETERMINISTIC STRUCTURAL GATE" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#1F4E78;fillColor=#D9EAF7;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="760" y="155" width="420" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="revision" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;SOURCE REVISION&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Author · edit · Mermaid conversion · layout · canvas fit" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="225" width="580" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="validate" value="&lt;b&gt;Run drawio_validate immediately&lt;/b&gt;&lt;br&gt;Check XML, IDs, endpoints, geometry, bounds, margins,&lt;br&gt;containment, overlaps, routes, and conservative readability" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=15;fontColor=#263746;fillColor=#EEF6FC;strokeColor=#1F4E78;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="680" y="375" width="580" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="errors" value="Any structural&lt;br&gt;&lt;b&gt;errors&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#8B2E2E;fillColor=#F8CECC;strokeColor=#B85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="805" y="550" width="330" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="fix-errors" value="&lt;b&gt;&lt;font color=&quot;#8B2E2E&quot;&gt;BLOCK PREVIEW&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Repair malformed XML, duplicate/reserved IDs,&lt;br&gt;broken parents, dangling edges, or geometry" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#FFF2F1;strokeColor=#B85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="570" width="470" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="warnings" value="Any unresolved&lt;br&gt;&lt;b&gt;warnings&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#9A5B13;fillColor=#FFE6CC;strokeColor=#D79B00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="805" y="765" width="330" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="resolve-warning" value="&lt;b&gt;&lt;font color=&quot;#9A5B13&quot;&gt;RESOLVE EACH WARNING&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;b&gt;Fix&lt;/b&gt; it and revalidate, or &lt;b&gt;record&lt;/b&gt; why it is&lt;br&gt;reviewed and acceptable. Unreviewed warnings block export." style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#FFF8ED;strokeColor=#D79B00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="775" width="470" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="structural-pass" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;STRUCTURAL GATE PASSES&lt;/font&gt;&lt;/b&gt;&lt;br&gt;0 errors · warnings fixed or explicitly accepted" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="680" y="990" width="580" height="92" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="phase-rendered" value="2  RENDERED + SEMANTIC QUALITY GATE" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#674274;fillColor=#E1D5E7;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="735" y="1140" width="470" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="preview" value="&lt;b&gt;Export a focused PNG preview&lt;/b&gt;&lt;br&gt;One page at a time · width-capped for review · latest preview retained" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1215" width="580" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="image-attached" value="Preview image&lt;br&gt;&lt;b&gt;attached&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#674274;fillColor=#E1D5E7;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="805" y="1375" width="330" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="fallback-review" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;TEXT-ONLY FALLBACK&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Cross-check validation + drawio_explain&lt;br&gt;against the request. Keep the preview for the user;&lt;br&gt;report rendered inspection as skipped." style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#EEF6FC;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1380" width="500" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="visual-passes" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;RUN 4 GATED PASSES IN ORDER&lt;/font&gt;&lt;/b&gt;&lt;br&gt;1  Fit &amp;amp; sizing  →  2  Element placement&lt;br&gt;3  Connections  →  4  Typography, semantics &amp;amp; regression&lt;br&gt;&lt;font color=&quot;#6B7C8A&quot;&gt;Log each defect as F1, F2, … with affected cell IDs.&lt;/font&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="1370" width="500" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="finding" value="Any unresolved&lt;br&gt;quality &lt;b&gt;finding&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#674274;fillColor=#E1D5E7;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="805" y="1615" width="330" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="retry-limit" value="Correction retries&lt;br&gt;&lt;b&gt;used &amp;lt; 8&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#9A5B13;fillColor=#FFE6CC;strokeColor=#D79B00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="1615" width="300" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="correction-cycle" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;ONE CORRECTION RETRY&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Targeted source edit → validate → replacement preview&lt;br&gt;Compare before/after: &lt;b&gt;fixed · not fixed · regressed&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#6B7C8A&quot;&gt;A source change alone never proves a visual fix.&lt;/font&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="1835" width="520" height="155" as="geometry"/>
+        </mxCell>
+        <mxCell id="quality-pass" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;QUALITY GATES COMPLETE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;All findings fixed or explicitly accepted" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1845" width="580" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="limit-reached" value="&lt;b&gt;&lt;font color=&quot;#9A5B13&quot;&gt;LIMIT REACHED&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Stop automatic editing · keep the best validated state&lt;br&gt;Finish remaining passes inspection-only and report&lt;br&gt;each unresolved finding with its last verdict." style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=18;fontSize=15;fontColor=#263746;fillColor=#FFF8ED;strokeColor=#D79B00;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1835" width="500" height="155" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="phase-delivery" value="3  AUTONOMOUS DELIVERY" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="800" y="2055" width="340" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="final-export" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;FINAL EXPORT — NO APPROVAL PAUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;PNG by default · SVG / PDF / JPG on request · editable XML embedded&lt;br&gt;Remove the latest preview and report outputs, accepted warnings,&lt;br&gt;unresolved findings, and cleanup warnings." style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=16;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#4E8A45;strokeWidth=3;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="2135" width="660" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="footer" value="&lt;b&gt;Decision rule:&lt;/b&gt; errors block preview · unreviewed warnings block export · visual findings trigger bounded correction · the final report never hides an accepted or unresolved issue" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=14;fontColor=#405466;fillColor=#FFFFFF;strokeColor=#AAB7C4;dashed=1;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="160" y="2350" width="1620" height="58" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge-revision-validate" value="every source edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="revision" target="validate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-validate-errors" value="lint result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="validate" target="errors">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-errors-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#B85450;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#8B2E2E;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="errors" target="fix-errors">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-errors-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="errors" target="warnings">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-fix-errors-loop" value="edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#B85450;strokeWidth=2;dashed=1;dashPattern=8 4;fontSize=12;fontColor=#8B2E2E;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0.25;entryY=1;" edge="1" parent="1" source="fix-errors" target="revalidate-junction">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1875" y="626"/>
+              <mxPoint x="1875" y="310"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-warnings-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="warnings" target="resolve-warning">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-warnings-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="warnings" target="structural-pass">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-warning-fix-loop" value="FIXED · source changed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2;dashed=1;dashPattern=8 4;fontSize=12;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.35;entryX=0.5;entryY=1;" edge="1" parent="1" source="resolve-warning" target="revalidate-junction">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1920" y="820"/>
+              <mxPoint x="1920" y="310"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-warning-accepted" value="ACCEPTED · reason recorded" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#9A5B13;strokeWidth=2;fontSize=12;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=0;exitY=0.75;entryX=1;entryY=0.5;" edge="1" parent="1" source="resolve-warning" target="structural-pass">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1330" y="872"/>
+              <mxPoint x="1330" y="1036"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-pass-preview" value="safe to render" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="structural-pass" target="preview">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-preview-attached" value="tool reports attachment state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="preview" target="image-attached">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-image-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#1F4E78;labelBackgroundColor=#F4F7FB;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="image-attached" target="fallback-review">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-image-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="image-attached" target="visual-passes">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-fallback-finding" value="structural / semantic result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=12;fontColor=#1F4E78;labelBackgroundColor=#F4F7FB;exitX=1;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="fallback-review" target="finding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="620" y="1580"/>
+              <mxPoint x="620" y="1690"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-visual-finding" value="finding ledger" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="visual-passes" target="finding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1320" y="1580"/>
+              <mxPoint x="1320" y="1690"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-finding-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="finding" target="quality-pass">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-finding-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="finding" target="retry-limit">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-retry-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="retry-limit" target="correction-cycle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-retry-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="retry-limit" target="limit-reached">
+          <mxGeometry x="-0.9" y="0" relative="1" as="geometry">
+            <mxPoint x="8" y="-12" as="offset"/>
+            <Array as="points">
+              <mxPoint x="1900" y="1690"/>
+              <mxPoint x="1900" y="1795"/>
+              <mxPoint x="320" y="1795"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-correction-loop" value="source edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;dashed=1;dashPattern=8 4;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0.75;entryY=1;" edge="1" parent="1" source="correction-cycle" target="revalidate-junction">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1965" y="1913"/>
+              <mxPoint x="1965" y="310"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-revalidate-revision" value="run drawio_validate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#405E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="revalidate-junction" target="revision">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-quality-export" value="ship" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=12;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" edge="1" parent="1" source="quality-pass" target="final-export">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1190" y="2020"/>
+              <mxPoint x="1190" y="2115"/>
+              <mxPoint x="1102" y="2115"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-limit-export" value="ship with explicit exceptions" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#9A5B13;strokeWidth=2.5;fontSize=12;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="limit-reached" target="final-export">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="2115"/>
+              <mxPoint x="805" y="2115"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

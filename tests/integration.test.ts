@@ -70,7 +70,7 @@ describe("extension registration", () => {
     expect([...commands.keys()].sort()).toEqual(["drawme", "drawme-check", "drawme-export"]);
   });
 
-  it("/drawme injects the critique-first, fully autonomous workflow", async () => {
+  it("/drawme injects the gated multi-pass, fully autonomous workflow", async () => {
     const { pi, commands, sent } = makeMockPi();
     drawme(pi as never);
     await commands.get("drawme")!.handler("a flowchart of login", {});
@@ -78,11 +78,35 @@ describe("extension registration", () => {
 
     const workflow = sent[0];
     expect(workflow).toContain("a flowchart of login");
-    const categories = ["Canvas and composition", "Nodes and typography", "Connectors", "Semantics"];
-    for (let i = 0; i < categories.length - 1; i++) {
-      expect(workflow.indexOf(categories[i])).toBeLessThan(workflow.indexOf(categories[i + 1]));
+    const passes = [
+      "Pass 1 — fit and sizing",
+      "Pass 2 — element placement",
+      "Pass 3 — connections",
+      "Pass 4 — typography, semantics, and regression",
+    ];
+    for (let i = 0; i < passes.length - 1; i++) {
+      expect(workflow.indexOf(passes[i])).toBeGreaterThan(-1);
+      expect(workflow.indexOf(passes[i])).toBeLessThan(workflow.indexOf(passes[i + 1]));
     }
+    // Each pass answers its questions explicitly and gates the next one.
+    expect(workflow).toContain("does the diagram fit its page, and does the canvas or any element need resizing?");
+    expect(workflow).toContain("is every element positioned correctly, and is there a visibly better arrangement?");
+    expect(workflow).toContain("anchored to the middle of the element side it faces wherever possible?");
+    expect(workflow).toContain("Do not start the next pass until every finding of the current one is verified");
+    expect(workflow).toContain("every pass must be complete before final export");
     expect(workflow).toContain("structured critique");
+    // The critique is a defect hunt that narrows problems to cells and verifies fixes visually.
+    expect(workflow).toContain("Read every label word for word");
+    expect(workflow).toContain("Trace every edge from source to target");
+    expect(workflow).toContain("numbered ledger");
+    expect(workflow).toContain("what is visibly wrong and where in the image");
+    expect(workflow).toContain("**fixed**");
+    expect(workflow).toContain("**not fixed**");
+    expect(workflow).toContain("**regressed**");
+    expect(workflow).toContain("Never mark a finding fixed because the XML changed");
+    // Multi-page files are reviewed and exported page by page.
+    expect(workflow).toContain("for a multi-page file, export one preview per page with `pageIndex`");
+    expect(workflow).toContain("export each page with `pageIndex` and a distinct `output`");
     expect(workflow).toContain("states whether the preview image is attached");
     expect(workflow).toContain("Image attached");
     expect(workflow).toContain("Image NOT attached");
@@ -98,7 +122,9 @@ describe("extension registration", () => {
     expect(workflow).toContain("fully autonomous");
     expect(workflow).toContain("never pause to ask for approval");
     expect(workflow).not.toMatch(/approval before|explicit user approval|wait for approval/i);
-    expect(workflow).toContain("<name>.review-canvas.png");
+    expect(workflow).toContain("<name>.review-fit.png");
+    expect(workflow).toContain("<name>.review-layout.png");
+    expect(workflow).toContain("<name>.review-connectors.png");
     expect(workflow).toContain("<name>.review.png");
     expect(workflow).toContain("only the latest review image remains");
     // Second-person instructions only: nothing in the message may talk about agents,
@@ -135,6 +161,7 @@ describe("extension registration", () => {
       expect(first.content).toHaveLength(2);
       expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
       expect(textOf(first.content[0])).toContain("Preview image attached below");
+      expect(textOf(first.content[0])).toContain("Critique it against the current review pass's checklist");
 
       const latest = await tools
         .get("drawio_export")!
@@ -143,8 +170,20 @@ describe("extension registration", () => {
       expect(latest.content[0]).toMatchObject({ type: "text" });
       expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
       expect(textOf(latest.content[0])).toContain(`Removed preview artifact(s): ${firstOutput}`);
+      // A replacement preview demands a before/after verdict instead of a fresh critique.
+      expect(textOf(latest.content[0])).toContain("It replaces the previous preview");
+      expect(textOf(latest.content[0])).toContain("fixed, not fixed, or regressed");
       expect(existsSync(firstOutput)).toBe(false);
       expect(existsSync(latestOutput)).toBe(true);
+
+      // Re-exporting over the same path removes nothing from disk but is still a replacement:
+      // the verdict nudge must not fall back to the first-critique text.
+      const samePath = await tools
+        .get("drawio_export")!
+        .execute("t", { input, mode: "preview", output: latestOutput, binary }, undefined, undefined, VISION_CTX);
+      expect(textOf(samePath.content[0])).not.toContain("Removed preview artifact(s)");
+      expect(textOf(samePath.content[0])).toContain("It replaces the previous preview");
+      expect(samePath.details).toMatchObject({ replacedPreview: true });
 
       const final = await tools
         .get("drawio_export")!

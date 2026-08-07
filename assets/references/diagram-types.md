@@ -2,6 +2,8 @@
 
 When the user requests a specific diagram type, apply the matching preset below for shapes, styles, and layout conventions. These presets focus on **structural** style keywords, such as ERD's `shape=table;childLayout=tableLayout`; adapt colors and typography to the user's requested visual style.
 
+Each preset ends with a **Review:** line — the type-specific defects to hunt during the visual review's holistic pass, on top of the generic fit, placement, connection, and typography checks.
+
 Read this file when:
 - The user names one of these diagram types (ERD, UML class, sequence, C4, architecture, ML/DL model, flowchart, SysML, BPMN, network topology, cross-functional/swimlane)
 - You're choosing shape vocabulary or layout direction for a new diagram
@@ -18,6 +20,8 @@ For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relation
 | FK relationship | Dashed edge: `dashed=1;endArrow=ERmandOne;startArrow=ERmandOne;` | Use ER notation arrows |
 | Layout | TB, tables spaced 300px apart | Group related tables vertically |
 
+**Review:** every column row fully readable inside its table; relationship lines meet tables at row level on the sides, never through the title band; ER end markers visible at both ends and clear of the table border; PK/FK markers present; relationship lines don't cross tables they don't join.
+
 ## UML Class Diagram
 
 | Element | Style | Notes |
@@ -29,6 +33,8 @@ For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relation
 | Composition | `endArrow=diamondThin;endFill=1;` | Filled diamond |
 | Aggregation | `endArrow=diamondThin;endFill=0;` | Hollow diamond |
 | Layout | TB, classes 250px apart | Interfaces above implementations |
+
+**Review:** all three compartments visible with separators intact; attribute/method text left-aligned and unclipped; hollow inheritance triangles point at the parent; diamonds sit at the owning end; multiplicity labels clear of their lines and of each other.
 
 ## Sequence Diagram
 
@@ -42,6 +48,8 @@ Prefer Mermaid conversion for a standard sequence diagram on draw.io 30+. Use th
 | Return message | `html=1;verticalAlign=bottom;endArrow=open;dashed=1;strokeColor=#999999;` | Grey dashed |
 | Activation box | `shape=umlFrame;whiteSpace=wrap;` on the lifeline | Narrow rectangle on lifeline |
 | Layout | LR, lifelines spaced 200px apart | Time flows top to bottom |
+
+**Review:** lifelines parallel, evenly spaced, and long enough for every message; messages horizontal with each label just above its own arrow, touching nothing; message order reads top→bottom as the described flow; activation boxes span exactly the messages they cover; returns dashed and grey.
 
 ## C4 Model (System Context / Container / Component)
 
@@ -60,6 +68,8 @@ Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard s
 | Drill-down | wrap the element in `<UserObject link="data:page/id,<pageId>">` | Click jumps to the child page in draw.io / viewer |
 | Layout | TB, one `<diagram>` page per level | Export a single page with `--page-index <n>` (1-based) |
 
+**Review:** every element shows its full three-line label inside the shape; relationship labels readable on their white background and clear of other lines; person shapes unclipped; one consistent color per C4 level; external systems visibly grey.
+
 ## Architecture Diagram
 
 | Element | Style | Notes |
@@ -71,6 +81,8 @@ Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard s
 | Gateway/LB | `shape=mxgraph.aws4.resourceIcon;` or `rounded=1;` with orange | Orange palette |
 | External | `rounded=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;` | Dashed border for external systems |
 | Layout | TB or LR by tier count; ≥4 tiers → TB | Hub nodes centered |
+
+**Review:** every child fully inside its tier container with padding on all sides; tier titles not overlapped by children or edges; hub/bus nodes reachable with short direct edges; no edge passes through an unrelated service; colors match the legend.
 
 ## ML / Deep Learning Model Diagram
 
@@ -90,6 +102,8 @@ For neural network architecture diagrams — ideal for papers targeting NeurIPS,
 | Layout | TB (data flows top→bottom), layers 150px apart | Group encoder/decoder as swimlanes |
 
 **Tensor shape convention:** annotate each layer with input/output tensor dimensions in `(B, C, H, W)` or `(B, T, D)` format. Place dimensions as the second line of the label using `&#xa;`.
+
+**Review:** layer blocks aligned on the flow axis; both label lines (name + tensor shape) readable in every block; skip connections curve clear of blocks and labels; encoder/decoder swimlanes don't clip their children; colors follow the layer-type mapping.
 
 ## SysML (Block Definition / Internal Block / Requirement / Parametric)
 
@@ -137,6 +151,8 @@ draw.io ships a native SysML 1.x shape library (`mxgraph.sysml.*`, ~60 shapes). 
 | Value property | `rounded=0;whiteSpace=wrap;html=1;` | Label `name : Type` |
 | Layout | LR, value properties on the outside, constraints centered | |
 
+**Review (all SysML views):** guillemets render as « » (not raw `&#171;`); stereotype line visible on every element; compartment text unclipped; connector end symbols (diamonds, hollow triangles, crosshair circle) fully visible at the correct end; ports pinned on borders without overlapping labels; dashed dependency labels (`«satisfy»`, `«verify»`, …) clear of their lines.
+
 ## BPMN (Business Process)
 
 draw.io ships ~200 native BPMN 2.0 shapes (`mxgraph.bpmn.*`). The official styles carry a long `points=[...]` connection-point list — call `drawio_shapesearch` with `bpmn <element>` for the full string; the styles below omit it for brevity and still render correctly.
@@ -157,6 +173,8 @@ draw.io ships ~200 native BPMN 2.0 shapes (`mxgraph.bpmn.*`). The official style
 | Data object | `shape=mxgraph.bpmn.data2;size=15;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;` 40×60 | Dashed dotted-arrow association |
 | Annotation | `html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;` | Open bracket + dashed line |
 | Layout | LR inside lanes, events/gateways vertically centered on the flow line | Sequence flows never cross pool borders; message flows never stay inside one |
+
+**Review:** event and gateway labels sit below their symbols without touching lanes or flows; every gateway branch labeled; sequence flows stay inside their pool and message flows only run between pools; lane titles readable; the flow line runs through the vertical center of events and gateways.
 
 ## Network Topology
 
@@ -180,6 +198,8 @@ Shared prefix (every node below): `fontColor=#0066CC;verticalAlign=top;verticalL
 | Logical/VPN link | `html=1;endArrow=none;dashed=1;` | Dashed |
 | Layout | TB by tier: Internet → edge (router/firewall) → distribution (switch/LB) → servers/clients | Group each subnet in a zone container; label links with CIDR/port |
 
+**Review:** device labels below their icons, fully readable, and clear of links; every zone container fully encloses its devices with padding; link labels (interface/VLAN/CIDR) beside the line, never on it; tiers read top→bottom; no link passes through a device it doesn't terminate at.
+
 ## Cross-Functional Flowchart (Swimlane)
 
 A flowchart split by **who does what** — one lane per role/department. Node vocabulary reuses the Flowchart preset below; only the container skeleton differs.
@@ -192,6 +212,8 @@ A flowchart split by **who does what** — one lane per role/department. Node vo
 | Handoff edge | `edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;` | Edges crossing lanes are the handoffs — the diagram's point |
 | Layout | LR flow inside horizontal lanes; time flows left → right | Keep each step inside its actor's lane; ≥160px horizontal spacing |
 
+**Review:** every step fully inside its own lane; lane titles readable and unobstructed; handoff edges cross lane borders cleanly instead of running along them; the flow reads left→right without backtracking; decision branches labeled.
+
 ## Flowchart (enhanced)
 
 | Element | Style | Notes |
@@ -203,3 +225,5 @@ A flowchart split by **who does what** — one lane per role/department. Node vo
 | Subprocess | `rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;` + double border | Purple |
 | Yes/No labels | `value="Yes"` / `value="No"` on decision edges | Always label decision branches |
 | Layout | TB, 200px vertical gap | Decisions branch LR, merge back to center |
+
+**Review:** flow reads top→bottom without backtracking; every decision has labeled Yes/No branches leaving different sides, with each label beside its own line; merge-back edges route around nodes through free corridors; start and end shapes visually distinct from process steps.

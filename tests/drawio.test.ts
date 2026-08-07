@@ -123,14 +123,21 @@ describe("exportDiagram preview cleanup", () => {
         expect(existsSync(previews[index])).toBe(true);
         expect(previews.slice(0, index).every((output) => !existsSync(output))).toBe(true);
         expect(result.removedPreviews).toEqual(index === 0 ? [] : [previews[index - 1]]);
+        expect(result.replacedPreview).toBe(index > 0);
         expect(result.previewCleanupWarnings).toEqual([]);
       }
+
+      // A same-path re-export removes nothing but still counts as a replacement.
+      const samePath = await exportDiagram({ input, mode: "preview", output: previews.at(-1)!, binary });
+      expect(samePath.removedPreviews).toEqual([]);
+      expect(samePath.replacedPreview).toBe(true);
 
       const result = await exportDiagram({ input, format: "svg", mode: "final", output: finalOutput, binary });
 
       expect(existsSync(finalOutput)).toBe(true);
       expect(previews.every((output) => !existsSync(output))).toBe(true);
       expect(result.removedPreviews).toEqual([previews.at(-1)]);
+      expect(result.replacedPreview).toBe(false);
       expect(result.previewCleanupWarnings).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });

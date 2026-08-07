@@ -30,7 +30,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 
 | Command | Functionality |
 | --- | --- |
-| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, critique-first visual review, and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
+| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, gated multi-pass visual review (fit/sizing → element placement → connections → holistic confirmation), and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
 | `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
 | `/drawme-export <file> [png\|svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. |
 
@@ -110,7 +110,7 @@ Additional behavior:
 - An explicit `width` replaces raster scaling.
 - `scale` is ignored in preview mode and for vector formats.
 - `transparent` has no effect outside PNG.
-- Preview mode defaults to unembedded output suitable for visual inspection. When the current model can view images, a successful PNG preview tool result contains its normal text/metadata block followed by an `image/png` base64 image block; otherwise the image is omitted. The result text always states which case applies, and the output path in the text stays usable either way.
+- Preview mode defaults to unembedded output suitable for visual inspection. When the current model can view images, a successful PNG preview tool result contains its normal text/metadata block followed by an `image/png` base64 image block; otherwise the image is omitted. The result text always states which case applies, and the output path in the text stays usable either way. A first preview asks for a critique against the current review pass's checklist; a preview that replaces an earlier one instead asks for a before/after comparison with a fixed / not fixed / regressed verdict per addressed finding.
 - Final exports stay text-only; final PNG, SVG, and PDF default to embedded/editable output.
 - JPG cannot carry editable XML; never set `embed: true` for JPG.
 - Embedded PNG exports are checked for draw.io's known truncated IEND chunk and repaired automatically when necessary.

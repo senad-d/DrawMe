@@ -106,7 +106,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
     promptSnippet:
       "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' attaches the review image when the current model can view images — the result text says so — and removes the previous preview file; mode:'final' creates the deliverable and cleans the remaining preview).",
     parameters: exportParams,
@@ -123,11 +123,17 @@ export default function drawme(pi: ExtensionAPI): void {
         const versionSuffix = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionSuffix}`);
         if (r.mode === "preview" && r.format === "png") {
-          lines.push(
-            canView
-              ? "Preview image attached below. Critique it category by category before editing the source."
-              : "Preview image NOT attached: the current model cannot view images. Do not describe or judge the render; review structurally with drawio_validate and drawio_explain, and share the exported path so the user can view it.",
-          );
+          if (!canView) {
+            lines.push(
+              "Preview image NOT attached: the current model cannot view images. Do not describe or judge the render; review structurally with drawio_validate and drawio_explain, and share the exported path so the user can view it.",
+            );
+          } else if (r.replacedPreview) {
+            lines.push(
+              "Preview image attached below. It replaces the previous preview, whose image is still visible earlier in this conversation: compare the two at each finding you addressed and record a verdict — fixed, not fixed, or regressed — before editing further.",
+            );
+          } else {
+            lines.push("Preview image attached below. Critique it against the current review pass's checklist before editing the source.");
+          }
         }
         return exportResult(lines.join("\n"), r, canView);
       } catch (e) {

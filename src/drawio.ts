@@ -163,6 +163,12 @@ export interface ExportResult {
   version?: string;
   /** True if the truncated `-e` PNG IEND chunk was repaired after export. */
   repaired: boolean;
+  /**
+   * True when this preview replaced an earlier tracked preview for the same
+   * source — including a re-export over the same output path, where nothing is
+   * removed from disk. Always false for final exports.
+   */
+  replacedPreview: boolean;
   /** Superseded preview artifacts removed after this successful preview or final export. */
   removedPreviews: string[];
   /** Best-effort preview cleanup failures; the export itself still succeeded. */
@@ -186,6 +192,8 @@ function sourceKey(input: string): string {
 interface PreviewCleanup {
   removed: string[];
   warnings: string[];
+  /** A tracked preview for the same source existed before this export (even at the same path). */
+  replaced: boolean;
 }
 
 /**
@@ -215,13 +223,13 @@ async function replaceTrackedPreview(input: string, latestOutput: string): Promi
   }
 
   previewOutputs.set(key, retained);
-  return { removed, warnings };
+  return { removed, warnings, replaced: previous.size > 0 };
 }
 
 async function removeTrackedPreviews(input: string, finalOutput: string): Promise<PreviewCleanup> {
   const key = sourceKey(input);
   const previews = previewOutputs.get(key);
-  if (!previews) return { removed: [], warnings: [] };
+  if (!previews) return { removed: [], warnings: [], replaced: false };
 
   previewOutputs.delete(key);
   const finalPath = resolve(finalOutput);
@@ -243,7 +251,7 @@ async function removeTrackedPreviews(input: string, finalOutput: string): Promis
   }
 
   if (retry.size > 0) previewOutputs.set(key, retry);
-  return { removed, warnings };
+  return { removed, warnings, replaced: false };
 }
 
 async function withSourceExportQueue<T>(input: string, action: () => Promise<T>): Promise<T> {
@@ -331,6 +339,7 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
     binary: info.binary,
     version: info.version,
     repaired,
+    replacedPreview: cleanup.replaced,
     removedPreviews: cleanup.removed,
     previewCleanupWarnings: cleanup.warnings,
     command,

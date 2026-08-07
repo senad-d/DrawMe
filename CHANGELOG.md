@@ -17,6 +17,27 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- The visual review now runs as gated passes with visually verified fixes. When the active model can view
+  images, three focused passes — fit and sizing, element placement, connections — each answer explicit
+  questions on their own preview (per page for multi-page files), followed by a holistic pass covering
+  typography (every label read word for word), semantics, the diagram type's review checklist, and
+  regressions; a pass must be clean before the next one starts, and all passes before final export. Each
+  pass names the concrete rendered defects to hunt (overlapping or clipped labels, text struck through by
+  lines, floating or buried edge endpoints, asymmetric or off-center anchors, stacked edges, unreadable
+  full-diagram previews, …), findings go into a numbered ledger naming the affected cells and planned fix,
+  and every correction is judged by comparing the replacement preview against the previous image with an
+  explicit fixed / not fixed / regressed verdict — an XML edit alone never counts as a fix. `drawio_export`
+  replacement previews prompt that before/after comparison directly in the tool result. The automatic
+  correction limit rises from 5 to 8 retries to give the gated passes room to actually resolve findings.
+  The diagram-types reference gains a per-type `Review:` checklist for the holistic pass, and the XML
+  authoring reference a defect→fix recipe table (including edge-label offset positioning), so vision
+  findings map to concrete source edits. Multi-page files are now reviewed and finally exported page by
+  page (`pageIndex`), closing the gap where only page 1 of e.g. a multi-page C4 file was ever inspected.
+  `ExportResult` gains `replacedPreview`, true whenever a preview supersedes an earlier tracked one —
+  including a re-export over the same output path — so the replacement-preview verdict prompt no longer
+  misses same-name re-exports. Models that cannot view images skip the visual passes entirely and review
+  structurally, as before. The golden asset baseline was intentionally refreshed for these reference
+  changes.
 - `/drawme` now pre-loads its context: the command handler resolves the draw.io CLI itself and embeds the
   check result plus the diagram-types, XML-authoring, and (v30+) Mermaid references directly into the
   injected workflow message. The references remain editable Markdown files under `assets/references/`;

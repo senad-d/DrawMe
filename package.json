@@ -1,6 +1,6 @@
 {
   "name": "@senad-d/drawme",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Pi extension for authoring, validating, and exporting editable draw.io diagrams from natural-language descriptions.",
   "type": "module",
   "license": "MIT",

@@ -48,6 +48,34 @@ Background for manual sizing (what the fit computes): visible top-level vertex/c
 - Prefer two or three concise lines. If a label remains long, enlarge the node, shorten the wording without changing meaning, or split details into a note/legend. Never reduce important body text merely to fit existing geometry.
 - A 2000px full-diagram preview scales the entire page. If labels become unreadable at that width, simplify the layout, tighten the canvas, split the diagram into pages, or use a focused review export; never accept an unreadable full view as passing typography.
 
+### Fix recipes: visual defect → source edit
+
+When the preview critique narrows a finding down to specific cells, apply the matching recipe — then validate, re-export, and confirm the defect is gone in the new image:
+
+| Visual defect (seen in the preview) | Fix |
+|-------------------------------------|-----|
+| Two shapes (or their labels) touch or overlap | Move the shapes apart per the spacing table, then `drawio_fit_canvas` — never shrink content |
+| Label text touches or crosses its own shape border | Enlarge the node per the sizing formulas above, add `spacing=10;`, or insert `&#xa;` breaks |
+| Label text clipped / cut off mid-word | Same as above — the node is too small for the rendered lines |
+| Edge label struck through by its own line, or hugging it | Lift the label off the line with an offset in the edge's label geometry (example below) and add `labelBackgroundColor=#ffffff;` |
+| Edge label overlaps another edge, label, or shape | Slide it along the edge (geometry `x` between `-1` and `1`) toward a clear stretch, plus the offset/background above |
+| Any text with a line running underneath it | Reroute the edge around the text with waypoints, or move the label — text over lines is never acceptable |
+| Arrowhead buried in a bend or hidden by a shape | Keep the final segment before the target ≥20px: move the last waypoint or increase spacing |
+| Edge passes through a shape it does not connect | Add waypoints around it, or move the shape out of the routing corridor |
+| Two edges stacked on the same path | Spread their entry/exit points (see the distribution table below) |
+| Icon shape's label overlaps the icon artwork | Move the label outside: `verticalLabelPosition=bottom;verticalAlign=top;labelBackgroundColor=#ffffff;` |
+| Content touching a page edge, uneven margins, or big empty areas | Re-space the elements if needed, then run `drawio_fit_canvas` |
+
+**Positioning an edge label** — the edge's own label is placed by its geometry: `x` runs along the edge from `-1` (source) through `0` (center) to `1` (target), and an `<mxPoint as="offset">` shifts it in page pixels (negative `y` = up):
+
+```xml
+<mxCell id="e2" value="HTTP/REST" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="2" target="3">
+  <mxGeometry x="-0.25" relative="1" as="geometry">
+    <mxPoint as="offset" x="0" y="-12" />
+  </mxGeometry>
+</mxCell>
+```
+
 ### Shape types (vertex)
 
 | Style keyword | Use for |
