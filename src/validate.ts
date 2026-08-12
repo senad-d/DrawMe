@@ -16,6 +16,8 @@ import {
   collectCells,
   contentBounds,
   edgeRoute,
+  edgeWaypoints,
+  endpoint,
   geometryIsRelative,
   hasInvalidNumber,
   isEdgeLabel,
@@ -36,7 +38,7 @@ export interface ValidateResult {
   /** Informational limitations/settings that do not require a source correction. */
   observations: string[];
   /** Readability score (lower is better); comparable only across variants of the same graph. */
-  score: { total: number; through: number; crossings: number; overlaps: number };
+  score: { total: number; through: number; crossings: number; overlaps: number; anchors: number };
 }
 
 /** Quote an optional attribute consistently in diagnostic messages. */
@@ -154,11 +156,178 @@ function routeCrossWarnings(routed: RoutedEdge[]): string[] {
   }
   return warnings;
 }
+type Side = "top" | "bottom" | "left" | "right";
+
+/** Side a pinned connection point sits on, or null when interior/corner/unpinned. */
+function pinnedSide(style: string, end: "source" | "target"): Side | null {
+  const x = styleNum(style, end === "source" ? "exitX" : "entryX");
+  const y = styleNum(style, end === "source" ? "exitY" : "entryY");
+  if (x === undefined && y === undefined) return null;
+  const xb = x === 0 || x === 1;
+  const yb = y === 0 || y === 1;
+  if (xb && !yb) return x === 0 ? "left" : "right";
+  if (yb && !xb) return y === 0 ? "top" : "bottom";
+  return null; // corner (both axes on borders) or interior point — too ambiguous to judge
+}
+
+function describeDir(dx: number, dy: number): string {
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "to the right" : "to the left";
+  return dy > 0 ? "below" : "above";
+}
+
+/** Style hint for the side that faces the peer (used in the diagnostic). */
+function sideStyleHint(side: Side): string {
+  switch (side) {
+    case "top":
+      return "exitY=0";
+    case "bottom":
+      return "exitY=1";
+    case "left":
+      return "exitX=0";
+    case "right":
+      return "exitX=1";
+  }
+}
+
+/** Side of `source` that faces `target`, by dominant axis of the center-to-center vector. */
+function suggestedSide(dx: number, dy: number): Side {
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "bottom" : "top";
+}
+
+/**
+ * Warn when an edge's pinned entry/exit anchor faces away from its peer vertex.
+ * Only edges that explicitly pin an anchor on a border are judged; auto-routed
+ * and center anchors are left to draw.io. Fires only when the peer is clearly
+ * off the pinned side (axis dominance beyond a size-relative tolerance), so
+ * near-level peers do not trip it. Targets the common defect where re-pinning
+ * the anchor would shorten the route and remove a 90° bend.
+ */
+function anchorFacingWarnings(cells: DomEl[], ids: ById): string[] {
+  const warnings: string[] = [];
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
+    const sid = attr(cell, "source");
+    const tid = attr(cell, "target");
+    if (!sid || !tid || !ids.has(sid) || !ids.has(tid)) continue;
+    const sBox = absRect(ids.get(sid)!, ids);
+    const tBox = absRect(ids.get(tid)!, ids);
+    if (!sBox || !tBox) continue;
+    const dx = tBox[0] + tBox[2] / 2 - (sBox[0] + sBox[2] / 2);
+    const dy = tBox[1] + tBox[3] / 2 - (sBox[1] + sBox[3] / 2);
+    const tol = Math.max(sBox[2], sBox[3], tBox[2], tBox[3]) * 0.15;
+    const style = attr(cell, "style") ?? "";
+    const id = repr(attr(cell, "id"));
+
+    const exitSide = pinnedSide(style, "source");
+    if (exitSide) {
+      const bad =
+        (exitSide === "top" && dy > tol) ||
+        (exitSide === "bottom" && dy < -tol) ||
+        (exitSide === "left" && dx > tol) ||
+        (exitSide === "right" && dx < -tol);
+      if (bad) {
+        const sug = suggestedSide(dx, dy);
+        warnings.push(
+          `edge ${id}: source exit pinned to ${exitSide} but target is ${describeDir(dx, dy)}; re-pin to ${sug} (${sideStyleHint(sug)}) to shorten the route and reduce bends`,
+        );
+      }
+    }
+
+    const entrySide = pinnedSide(style, "target");
+    if (entrySide) {
+      // entry faces the source: judge against the reversed center-to-center vector
+      const bad =
+        (entrySide === "top" && dy < -tol) ||
+        (entrySide === "bottom" && dy > tol) ||
+        (entrySide === "left" && dx < -tol) ||
+        (entrySide === "right" && dx > tol);
+      if (bad) {
+        const sug = suggestedSide(-dx, -dy);
+        warnings.push(
+          `edge ${id}: target entry pinned to ${entrySide} but source is ${describeDir(-dx, -dy)}; re-pin to ${sug} (${sideStyleHint(sug)}) to shorten the route and reduce bends`,
+        );
+      }
+    }
+  }
+  return warnings;
+}
+
+/** A segment that enters and exits a rectangle — crosses two distinct borders. */
+function segmentPiercesRect(p1: Point, p2: Point, box: Rect): boolean {
+  const [x, y, w, h] = box;
+  const corners: Point[] = [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+  const borders: [Point, Point][] = corners.map((corner, index) => [corner, corners[(index + 1) % 4]]);
+  let crossings = 0;
+  for (const [a, b] of borders) if (segmentsCross(p1, p2, a, b)) crossings++;
+  if (crossings >= 2) return true;
+  return crossings >= 1 && (pointInRect(p1, box) || pointInRect(p2, box));
+}
+
+/** True if `cell` is a descendant of `ancestorId` in the parent chain. */
+function isDescendantOf(cell: DomEl, ancestorId: string | null, ids: ById): boolean {
+  const seen = new Set<string>();
+  let parent = attr(cell, "parent");
+  while (parent && ids.has(parent) && !seen.has(parent)) {
+    if (parent === ancestorId) return true;
+    seen.add(parent);
+    parent = attr(ids.get(parent)!, "parent");
+  }
+  return false;
+}
+
+/** Floating text annotation (`text;` leading style) — a line crossing it is idiomatic, not a routing defect. */
+function isTextAnnotation(cell: DomEl): boolean {
+  return (attr(cell, "style") ?? "").split(";")[0]?.trim() === "text";
+}
+
+/**
+ * Predicted route-through for auto-routed edges (no explicit waypoints). Makes
+ * no claim about draw.io's real orthogonal router; it flags only the clear case
+ * where the straight line between connection points deeply pierces an unrelated
+ * solid leaf vertex. Emitted as an observation (not a warning): the straight
+ * line is a necessary-but-not-sufficient signal, so it steers the preview review
+ * without blocking export. Excludes the endpoints' own descendants (e.g. a
+ * parent shape's decorative child ring) and floating text annotations.
+ */
+function predictedRouteThroughWarnings(cells: DomEl[], ids: ById, leaves: LeafBox[]): string[] {
+  const notes: string[] = [];
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
+    if (edgeWaypoints(cell).length > 0) continue;
+    const sid = attr(cell, "source");
+    const tid = attr(cell, "target");
+    const src = endpoint(cell, "source", ids);
+    const tgt = endpoint(cell, "target", ids);
+    if (!src || !tgt) continue;
+    for (const [vid, box] of leaves) {
+      if (vid === null || vid === sid || vid === tid) continue;
+      const vCell = ids.get(vid);
+      if (!vCell || isTextAnnotation(vCell)) continue;
+      if (isDescendantOf(vCell, sid, ids) || isDescendantOf(vCell, tid, ids)) continue;
+      if (segmentPiercesRect(src, tgt, box)) {
+        notes.push(
+          `edge ${repr(attr(cell, "id"))} may pass over vertex ${repr(vid)} (predicted from the straight line — verify in the preview, then add waypoints or move the shape)`,
+        );
+      }
+    }
+  }
+  return notes;
+}
 
 function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
   const routed = collectRoutedEdges(cells, ids);
   const leaves = collectLeafBoxes(cells, ids, parents);
-  return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed)];
+  return [
+    ...routeThroughWarnings(routed, leaves),
+    ...routeCrossWarnings(routed),
+    ...anchorFacingWarnings(cells, ids),
+  ];
 }
 
 /** Map every cell by id (blank key for id-less cells); report duplicate ids as errors. */
@@ -425,7 +594,7 @@ function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
 function smallFontWarning(cell: DomEl, box: Rect | null): string | null {
   const fontSize = styleNum(attr(cell, "style"), "fontSize");
   const isEdgeText = cell.getAttribute("edge") === "1" || isEdgeLabel(cell);
-  const minimum = isEdgeText ? 9 : 10;
+  const minimum = isEdgeText ? 10 : 11;
   if (
     isCompactBorderPort(cell, box) ||
     fontSize === undefined ||
@@ -453,18 +622,39 @@ function longLabelWarning(cell: DomEl, label: string, box: Rect | null): string 
   return `vertex ${repr(attr(cell, "id"))} has a long label in narrow geometry without whiteSpace=wrap`;
 }
 
-function cellReadabilityWarnings(cell: DomEl): string[] {
+/**
+ * Warn when a plain labeled vertex is much wider than its label needs. Estimates
+ * the natural one-line text width (`chars × fontSize × 0.6 + padding`) and flags
+ * only egregious over-boxing (≥3× the text and ≥140px of slack), so snug fits,
+ * wrapped multi-line nodes, and intentionally wide banners/legends are not
+ * disturbed. Containers (vertices with children) are skipped — their size follows
+ * their children, not their own title.
+ */
+function oversizedBoxWarning(cell: DomEl, label: string, box: Rect | null, parents: Set<string | null>): string | null {
+  if (cell.getAttribute("vertex") !== "1" || isEdgeLabel(cell) || geometryIsRelative(cell)) return null;
+  if (parents.has(attr(cell, "id"))) return null;
+  if (box === null || hasInvalidNumber(box)) return null;
+  const chars = label.replaceAll("\n", "").length;
+  if (chars === 0) return null;
+  const fontSize = styleNum(attr(cell, "style"), "fontSize") ?? 12;
+  const naturalWidth = chars * fontSize * 0.6 + 24;
+  const width = box[2];
+  if (width < naturalWidth * 3 || width - naturalWidth < 140) return null;
+  return `vertex ${repr(attr(cell, "id"))} is much wider than its label (~${Math.round(naturalWidth)}px of text in ${Math.round(width)}px) — shrink to fit the content, then run drawio_fit_canvas`;
+}
+
+function cellReadabilityWarnings(cell: DomEl, parents: Set<string | null>): string[] {
   const label = labelText(cell);
   if (!label) return [];
   const box = rect(cell);
-  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box)].filter(
+  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box), oversizedBoxWarning(cell, label, box, parents)].filter(
     (warning): warning is string => warning !== null,
   );
 }
 
 /** Conservative static checks only; uncertain typography remains a visual concern. */
-function readabilityWarnings(cells: DomEl[]): string[] {
-  return cells.flatMap(cellReadabilityWarnings);
+function readabilityWarnings(cells: DomEl[], parents: Set<string | null>): string[] {
+  return cells.flatMap((cell) => cellReadabilityWarnings(cell, parents));
 }
 
 function withPage(name: string, diagnostics: string[]): string[] {
@@ -492,8 +682,9 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
     ...overlapWarnings(cells, ids, parents),
     ...geometryWarnings(cells, ids, parents),
     ...containmentWarnings(cells, ids),
-    ...readabilityWarnings(cells),
+    ...readabilityWarnings(cells, parents),
   );
+  observations.push(...predictedRouteThroughWarnings(cells, ids, collectLeafBoxes(cells, ids, parents)));
   const settings = pageSettings(model, warnings, observations);
   warnings.push(...canvasWarnings(contentBounds(cells, ids), settings));
   return [withPage(name, errors), withPage(name, warnings), withPage(name, observations)];
@@ -519,16 +710,17 @@ export function validateXml(xml: string): ValidateResult {
   const through = warnings.filter((warning) => warning.includes("routes through")).length;
   const crossings = warnings.filter((warning) => warning.endsWith(" cross")).length;
   const overlaps = warnings.filter((warning) => warning.endsWith(" overlap")).length;
+  const anchors = warnings.filter((warning) => warning.endsWith("reduce bends")).length;
   return {
     errors,
     warnings,
     observations,
-    score: { total: 20 * through + 10 * crossings + 5 * overlaps, through, crossings, overlaps },
+    score: { total: 20 * through + 10 * crossings + 5 * overlaps + 8 * anchors, through, crossings, overlaps, anchors },
   };
 }
 
 function emptyScore(): ValidateResult["score"] {
-  return { total: 0, through: 0, crossings: 0, overlaps: 0 };
+  return { total: 0, through: 0, crossings: 0, overlaps: 0, anchors: 0 };
 }
 
 /** Read and lint a `.drawio` file. Read/parse failures are returned as errors, never thrown. */

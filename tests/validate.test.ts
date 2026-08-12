@@ -141,6 +141,59 @@ describe("validateXml", () => {
     expect(crossing.score).toMatchObject({ total: 10, crossings: 1 });
   });
 
+  it("predicts route-through for auto-routed edges whose direct path pierces a shape", () => {
+    const result = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 400, 0) + vertex("blocker", 180, 0, 80, 40) + edge("e1", "a", "b")),
+    );
+    expect(result.observations).toContain(
+      "page 'Page-1': edge 'e1' may pass over vertex 'blocker' (predicted from the straight line — verify in the preview, then add waypoints or move the shape)",
+    );
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("does not predict route-through when the corridor is clear", () => {
+    const result = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 400, 0) + vertex("aside", 180, 200, 80, 60) + edge("e1", "a", "b")),
+    );
+    expect(result.observations.filter((observation) => observation.includes("may pass over"))).toEqual([]);
+  });
+
+  it("flags a pinned anchor that faces away from its peer", () => {
+    const result = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b", "exitX=0.5;exitY=0")),
+    );
+    expect(result.warnings).toContain(
+      "page 'Page-1': edge 'e1': source exit pinned to top but target is below; re-pin to bottom (exitY=1) to shorten the route and reduce bends",
+    );
+    expect(result.score.anchors).toBe(1);
+  });
+
+  it("does not flag a correctly pinned or unpinned anchor", () => {
+    const correct = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b", "exitX=0.5;exitY=1;entryX=0.5;entryY=0")),
+    );
+    expect(correct.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+    const unpinned = validateXml(doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b")));
+    expect(unpinned.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+  });
+
+  it("flags a box much wider than its short label", () => {
+    const result = validateXml(doc(vertex("login", 0, 0, 300, 60, "fontSize=14;", "Login")));
+    expect(result.warnings).toContain(
+      "page 'Page-1': vertex 'login' is much wider than its label (~66px of text in 300px) — shrink to fit the content, then run drawio_fit_canvas",
+    );
+  });
+
+  it("does not flag a snug box, a long-label box, or a container", () => {
+    const snug = validateXml(doc(vertex("login", 0, 0, 90, 40, "fontSize=14;", "Login")));
+    expect(snug.warnings.filter((warning) => warning.includes("much wider than its label"))).toEqual([]);
+    // container with a child is sized by its children, not its title
+    const container = `<mxCell id="box" value="Login" vertex="1" parent="1" style="fontSize=14;"><mxGeometry x="0" y="0" width="300" height="60" as="geometry"/></mxCell>`;
+    const child = `<mxCell id="c" value="x" vertex="1" parent="box"><mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>`;
+    const withContainer = validateXml(doc(container + child));
+    expect(withContainer.warnings.filter((warning) => warning.includes("much wider than its label"))).toEqual([]);
+  });
+
   it("warns on right and bottom page overflow", () => {
     const result = validateXml(
       doc(vertex("outside", 250, 170, 80, 60), `page="1" pageScale="1" pageWidth="300" pageHeight="200"`),

@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format is based on
   dimensions until content exists (author with generous spacing → fit the canvas), and validation/docs
   direct overlap and bounds findings to "spread elements, then refit" instead of shrinking content.
   Shared `.drawio` geometry moved into `src/geometry.ts`.
+- `drawio_validate` flags three more layout-quality defects: pinned exit/entry anchors that face away from the peer vertex (with a re-pin hint to shorten the route and remove a bend), auto-routed edges whose straight-line path pierces an unrelated solid vertex (reported as an observation, since the straight line is necessary but not sufficient), and plain labeled vertices far wider than their label (≥3× the text width and ≥140px of slack). The readability score gains an `anchors` dimension (`20·through + 10·crossings + 5·overlaps + 8·anchors`) and the minimum font sizes that trigger a too-small warning rise to 10px for connector labels and 11px for vertices. The XML-authoring reference adds default font sizes (14px for node labels, 12px for connector labels), an anchor-side selection table, and defect→fix rows for detouring edges and oversized boxes; the golden baseline is refreshed for that asset change.
 
 ### Changed
 
