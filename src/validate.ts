@@ -18,10 +18,12 @@ import {
   edgeRoute,
   geometryIsRelative,
   hasInvalidNumber,
+  explicitEdgeLabelRect,
   isEdgeLabel,
   isVisible,
   pyFloat,
   rect,
+  routePointAt,
   styleNum,
 } from "./geometry";
 
@@ -159,6 +161,21 @@ function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>
   const routed = collectRoutedEdges(cells, ids);
   const leaves = collectLeafBoxes(cells, ids, parents);
   return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed)];
+}
+
+/** Edges the route checks above cannot see: no explicit waypoints, so the renderer routes them blindly. */
+function autoRoutedEdgeWarning(cells: DomEl[], ids: ById): string | null {
+  const unrouted: string[] = [];
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") === "1" && isVisible(cell, ids) && edgeRoute(cell, ids) === null) {
+      unrouted.push(repr(attr(cell, "id")));
+    }
+  }
+  if (unrouted.length === 0) return null;
+  return (
+    `${unrouted.length} auto-routed edge(s) cannot be route-checked (no explicit waypoints): ${unrouted.join(", ")}; ` +
+    "add waypoints and pinned anchors, or verify their routing visually"
+  );
 }
 
 /** Map every cell by id (blank key for id-less cells); report duplicate ids as errors. */
@@ -410,6 +427,75 @@ function labelText(cell: DomEl): string {
   return stripLabelMarkup(attr(cell, "value") ?? "").replaceAll("&nbsp;", " ").trim();
 }
 
+const DEFAULT_FONT_SIZE = 11;
+const CHAR_WIDTH_FACTOR = 0.6;
+const LINE_HEIGHT_FACTOR = 1.4;
+
+function labelOffset(cell: DomEl): Point | null {
+  const geometry = firstByTag(cell, "mxGeometry");
+  const offset = geometry
+    ? childrenByTag(geometry, "mxPoint").find((point) => attr(point, "as") === "offset")
+    : undefined;
+  if (!offset) return null;
+  const x = pyFloat(attr(offset, "x") ?? "0");
+  const y = pyFloat(attr(offset, "y") ?? "0");
+  if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return [x, y];
+}
+
+/** Estimated box of an edge's inline label, centered on its explicit route like draw.io renders it. */
+function inlineEdgeLabelRect(edge: DomEl, ids: ById): Rect | null {
+  const label = labelText(edge);
+  if (!label) return null;
+  const route = edgeRoute(edge, ids);
+  if (!route) return null;
+  const geometry = firstByTag(edge, "mxGeometry");
+  const along = geometry ? pyFloat(attr(geometry, "x") ?? "0") : 0;
+  const fraction = along !== undefined && Number.isFinite(along) ? Math.min(1, Math.max(0, (along + 1) / 2)) : 0.5;
+  const [centerX, centerY] = routePointAt(route, fraction);
+  const [offsetX, offsetY] = labelOffset(edge) ?? [0, 0];
+  const fontSize = styleNum(attr(edge, "style"), "fontSize") ?? DEFAULT_FONT_SIZE;
+  const lines = label.split("\n");
+  const width = Math.max(...lines.map((line) => line.length)) * fontSize * CHAR_WIDTH_FACTOR;
+  const height = lines.length * fontSize * LINE_HEIGHT_FACTOR;
+  return [centerX + offsetX - width / 2, centerY + offsetY - height / 2, width, height];
+}
+
+function edgeLabelBox(cell: DomEl, ids: ById): [string | null, Rect] | null {
+  if (cell.getAttribute("edge") === "1") {
+    const box = inlineEdgeLabelRect(cell, ids);
+    return box ? [attr(cell, "id"), box] : null;
+  }
+  if (isEdgeLabel(cell) && labelText(cell)) {
+    const box = explicitEdgeLabelRect(cell, ids);
+    return box ? [attr(cell, "id"), box] : null;
+  }
+  return null;
+}
+
+/** Edge-label text lying on top of a shape; sizes are estimated, so phrased as "likely". */
+function labelOverlapWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
+  const leaves = collectLeafBoxes(cells, ids, parents);
+  const warnings: string[] = [];
+  for (const cell of cells) {
+    if (!isVisible(cell, ids)) continue;
+    const labeled = edgeLabelBox(cell, ids);
+    if (!labeled || hasInvalidNumber(labeled[1])) continue;
+    const [id, box] = labeled;
+    for (const [vertexId, vertexBox] of leaves) {
+      if (overlap(box, vertexBox)) warnings.push(`edge label ${repr(id)} likely overlaps vertex ${repr(vertexId)}`);
+    }
+  }
+  return warnings;
+}
+
+function labelOnLineWarning(cell: DomEl): string | null {
+  if (cell.getAttribute("edge") !== "1" || !labelText(cell)) return null;
+  if ((attr(cell, "style") ?? "").includes("labelBackgroundColor=")) return null;
+  if (labelOffset(cell)) return null;
+  return `edge ${repr(attr(cell, "id"))} label sits directly on its line; add an offset or labelBackgroundColor`;
+}
+
 function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
   return (
     cell.getAttribute("vertex") === "1" &&
@@ -457,7 +543,7 @@ function cellReadabilityWarnings(cell: DomEl): string[] {
   const label = labelText(cell);
   if (!label) return [];
   const box = rect(cell);
-  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box)].filter(
+  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box), labelOnLineWarning(cell)].filter(
     (warning): warning is string => warning !== null,
   );
 }
@@ -491,9 +577,12 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
   warnings.push(
     ...overlapWarnings(cells, ids, parents),
     ...geometryWarnings(cells, ids, parents),
+    ...labelOverlapWarnings(cells, ids, parents),
     ...containmentWarnings(cells, ids),
     ...readabilityWarnings(cells),
   );
+  const autoRouted = autoRoutedEdgeWarning(cells, ids);
+  if (autoRouted) warnings.push(autoRouted);
   const settings = pageSettings(model, warnings, observations);
   warnings.push(...canvasWarnings(contentBounds(cells, ids), settings));
   return [withPage(name, errors), withPage(name, warnings), withPage(name, observations)];

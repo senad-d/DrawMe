@@ -72,12 +72,10 @@ export function styleNum(style: string | null, key: string): number | undefined 
   return undefined;
 }
 
-/** Absolute (x, y, w, h) of a non-relative vertex, summing parent-container offsets. */
-export function absRect(cell: DomEl, byId: ById): Rect | null {
-  const r = rect(cell);
-  if (r === null || hasInvalidNumber(r)) return null;
-  let [x, y] = r;
-  const [, , w, h] = r;
+/** Accumulated origin of a cell's ancestor containers — the offset from parent-relative to absolute coordinates. */
+export function parentOrigin(cell: DomEl, byId: ById): Point {
+  let dx = 0;
+  let dy = 0;
   let parent = attr(cell, "parent");
   const seen = new Set<string>();
   while (parent && byId.has(parent) && !seen.has(parent)) {
@@ -86,13 +84,21 @@ export function absRect(cell: DomEl, byId: ById): Rect | null {
     if (p.getAttribute("vertex") === "1" && !geometryIsRelative(p)) {
       const pr = rect(p);
       if (pr && !hasInvalidNumber(pr)) {
-        x += pr[0];
-        y += pr[1];
+        dx += pr[0];
+        dy += pr[1];
       }
     }
     parent = attr(p, "parent");
   }
-  return [x, y, w, h];
+  return [dx, dy];
+}
+
+/** Absolute (x, y, w, h) of a non-relative vertex, summing parent-container offsets. */
+export function absRect(cell: DomEl, byId: ById): Rect | null {
+  const r = rect(cell);
+  if (r === null || hasInvalidNumber(r)) return null;
+  const [ox, oy] = parentOrigin(cell, byId);
+  return [r[0] + ox, r[1] + oy, r[2], r[3]];
 }
 
 /** Absolute point where `edge` meets its source/target vertex (honours exit/entry). */
@@ -122,17 +128,19 @@ export function edgeWaypoints(edge: DomEl): Point[] {
   return points;
 }
 
-/** Absolute polyline for a waypointed edge, or null when auto-routed / unresolved. */
+/** Absolute polyline for a waypointed edge, or null when auto-routed / unresolved. Waypoints are stored relative to the edge's parent. */
 export function edgeRoute(edge: DomEl, byId: ById): Point[] | null {
   const waypoints = edgeWaypoints(edge);
   if (waypoints.length === 0) return null;
   const source = endpoint(edge, "source", byId);
   const target = endpoint(edge, "target", byId);
   if (source === null || target === null) return null;
-  return [source, ...waypoints, target];
+  const [ox, oy] = parentOrigin(edge, byId);
+  return [source, ...waypoints.map(([x, y]): Point => [x + ox, y + oy]), target];
 }
 
-export function routeMidpoint(points: Point[]): Point {
+/** Point at `fraction` (0..1) of the route's arc length. */
+export function routePointAt(points: Point[], fraction: number): Point {
   const lengths: number[] = [];
   let total = 0;
   for (let i = 0; i < points.length - 1; i++) {
@@ -140,7 +148,7 @@ export function routeMidpoint(points: Point[]): Point {
     lengths.push(length);
     total += length;
   }
-  let remaining = total / 2;
+  let remaining = total * fraction;
   for (let i = 0; i < lengths.length; i++) {
     if (remaining <= lengths[i]) {
       const fraction = lengths[i] === 0 ? 0 : remaining / lengths[i];
@@ -152,6 +160,10 @@ export function routeMidpoint(points: Point[]): Point {
     remaining -= lengths[i];
   }
   return points.at(-1) ?? [0, 0];
+}
+
+export function routeMidpoint(points: Point[]): Point {
+  return routePointAt(points, 0.5);
 }
 
 /** Conservative box for a separately sized label on an explicitly routed edge. */
@@ -253,7 +265,11 @@ export function contentBounds(cells: DomEl[], ids: ById): ContentBounds | null {
     if (!isVisible(cell, ids)) continue;
     const box = contentRect(cell, ids);
     if (box && !hasInvalidNumber(box)) bounds = addRectToBounds(bounds, box);
-    for (const point of contentWaypoints(cell)) bounds = addPointToBounds(bounds, point);
+    const waypoints = contentWaypoints(cell);
+    if (waypoints.length > 0) {
+      const [ox, oy] = parentOrigin(cell, ids);
+      for (const [x, y] of waypoints) bounds = addPointToBounds(bounds, [x + ox, y + oy]);
+    }
   }
   return bounds;
 }

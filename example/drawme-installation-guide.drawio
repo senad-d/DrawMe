@@ -47,44 +47,44 @@
           <mxGeometry x="40" y="360" width="1780" height="80" as="geometry"/>
         </mxCell>
         <mxCell id="edge-scope-user" value="all projects" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-user">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="860" y="190"/><mxPoint x="310" y="190"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-scope-project" value="this project" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-project">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="930" y="190"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-scope-trial" value="current run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-trial">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1000" y="190"/><mxPoint x="1550" y="190"/></Array></mxGeometry>
         </mxCell>
 
         <mxCell id="use" value="3  LOAD, VERIFY, DESCRIBE  ·  DRAWME DOES THE REST" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#674274;swimlaneFillColor=#FCF9FD;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="40" y="965" width="1920" height="340" as="geometry"/>
         </mxCell>
         <mxCell id="use-load" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;01 · LOAD&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Start Pi after installation&lt;br&gt;Already open? Use &lt;font face=&quot;Courier New&quot;&gt;/reload&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="40" y="95" width="320" height="170" as="geometry"/>
+          <mxGeometry x="40" y="95" width="300" height="170" as="geometry"/>
         </mxCell>
         <mxCell id="use-verify" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;02 · VERIFY&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;/drawme-check&lt;/font&gt;&lt;br&gt;Confirm path · version · v30+ features" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="410" y="95" width="320" height="170" as="geometry"/>
+          <mxGeometry x="410" y="95" width="300" height="170" as="geometry"/>
         </mxCell>
         <mxCell id="use-describe" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;03 · DESCRIBE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;/drawme a login flow with retry&lt;/font&gt;&lt;br&gt;Use plain language" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="780" y="95" width="320" height="170" as="geometry"/>
+          <mxGeometry x="780" y="95" width="300" height="170" as="geometry"/>
         </mxCell>
         <mxCell id="use-autonomous" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;04 · AUTONOMOUS RUN&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;plan → author → validate → critique&lt;br&gt;refine (≤5) → confirm → export&lt;br&gt;&lt;font color=&quot;#6B7C8A&quot;&gt;no approval pause&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=3;shadow=1;" vertex="1" parent="use">
-          <mxGeometry x="1150" y="95" width="320" height="170" as="geometry"/>
+          <mxGeometry x="1150" y="95" width="300" height="170" as="geometry"/>
         </mxCell>
         <mxCell id="use-delivered" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;05 · DELIVERED&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Editable .drawio source&lt;br&gt;PNG by default&lt;br&gt;SVG · PDF · JPG when requested" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;shadow=1;" vertex="1" parent="use">
-          <mxGeometry x="1520" y="95" width="320" height="170" as="geometry"/>
+          <mxGeometry x="1520" y="95" width="300" height="170" as="geometry"/>
         </mxCell>
         <mxCell id="edge-use-load-verify" value="loaded" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-load" target="use-verify">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="375" y="180"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-use-verify-describe" value="CLI ready" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-verify" target="use-describe">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="745" y="180"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-use-describe-autonomous" value="one prompt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-describe" target="use-autonomous">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1115" y="180"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-use-autonomous-delivered" value="automatic" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-autonomous" target="use-delivered">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1485" y="180"/></Array></mxGeometry>
         </mxCell>
 
         <mxCell id="support" value="TROUBLESHOOTING, TRUST, AND COMPATIBILITY" style="swimlane;horizontal=1;startSize=56;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=18;fontStyle=1;fontColor=#FFFFFF;fillColor=#405466;swimlaneFillColor=#F8FAFB;strokeColor=#7E8E9E;strokeWidth=2;" vertex="1" parent="1">

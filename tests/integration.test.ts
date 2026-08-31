@@ -35,7 +35,7 @@ const SAMPLE = `<mxfile><diagram name="Page-1"><mxGraphModel><root>
   <mxCell id="0"/><mxCell id="1" parent="0"/>
   <mxCell id="a" value="Start" vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell>
   <mxCell id="b" value="End" vertex="1" parent="1"><mxGeometry x="320" y="40" width="120" height="60" as="geometry"/></mxCell>
-  <mxCell id="e1" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry"/></mxCell>
+  <mxCell id="e1" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="240" y="70"/></Array></mxGeometry></mxCell>
 </root></mxGraphModel></diagram></mxfile>`;
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);

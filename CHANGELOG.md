@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `drawio_validate` no longer stays silent about what it cannot see: auto-routed edges (no explicit
+  waypoints) are reported as an actionable warning naming each edge, because the renderer routes them
+  blindly and the route-through/crossing checks skip them — the main way visibly broken routing used to
+  pass a "clean" validation. New deterministic edge-label checks: an estimated box for each inline edge
+  label (and the practical box of separate edge-label vertices) is tested against shapes and reported as
+  "likely overlaps", and a labeled edge with neither a label offset nor `labelBackgroundColor` is flagged
+  as sitting directly on its line. Edge waypoints and routes now honor the parent container's origin
+  (they are stored parent-relative), fixing route checks and content bounds for edges inside containers.
+  Example diagrams carry explicit waypoints so route checks engage on them; their remaining reviewed
+  findings are baselined in the test suite.
+
 - New `drawio_fit_canvas` tool: deterministically resizes each page's canvas to its visible content plus
   a margin (default 40px) and shifts content to the margin origin — the fix for cramped pages where
   elements overlap because they were squeezed into a too-small canvas. The workflow now defers page

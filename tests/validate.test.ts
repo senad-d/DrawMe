@@ -24,12 +24,19 @@ const routedEdge = (id: string, source: string, target: string, x: number, y: nu
 const hasDiagnostic = (diagnostics: string[], suffix: string) => diagnostics.some((diagnostic) => diagnostic.endsWith(suffix));
 
 describe("validateXml", () => {
-  it("passes a clean two-node, one-edge diagram when page dimensions are omitted", () => {
-    const result = validateXml(doc(vertex("a", 0, 0) + vertex("b", 200, 0) + edge("e1", "a", "b")));
+  it("passes a clean two-node, one-waypointed-edge diagram when page dimensions are omitted", () => {
+    const result = validateXml(doc(vertex("a", 0, 0) + vertex("b", 200, 0) + routedEdge("e1", "a", "b", 140, 20)));
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.observations).toContain(
       "page 'Page-1': page dimensions are omitted or invalid; boundary, outer-margin, and empty-space checks require both pageWidth and pageHeight",
+    );
+  });
+
+  it("warns when edges are auto-routed and cannot be route-checked", () => {
+    const result = validateXml(doc(vertex("a", 0, 0) + vertex("b", 200, 0) + edge("e1", "a", "b")));
+    expect(result.warnings).toContain(
+      "page 'Page-1': 1 auto-routed edge(s) cannot be route-checked (no explicit waypoints): 'e1'; add waypoints and pinned anchors, or verify their routing visually",
     );
   });
 
@@ -282,13 +289,47 @@ describe("validateXml", () => {
     ].join("");
     const result = validateXml(doc(nodes + edges));
     expect(result.warnings.filter((warning) => warning.includes(" cross") || warning.includes("routes through"))).toEqual([]);
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("4 auto-routed edge(s) cannot be route-checked (no explicit waypoints): 'e1', 'e2', 'e3', 'e4'"),
+      ),
+    ).toBe(true);
   });
 
-  it("keeps the checked-in clean examples free of structural findings", () => {
-    for (const name of ["drawme-how-it-works.drawio", "drawme-installation-guide.drawio", "git-graph-example.drawio"]) {
+  it("warns when an edge label likely overlaps a vertex, keyed on the estimated label box", () => {
+    const nodes = vertex("a", 0, 100) + vertex("b", 400, 100) + vertex("victim", 200, 30);
+    const labeled = (offsetY: number) =>
+      `<mxCell id="e1" edge="1" parent="1" source="a" target="b" value="DATA TRANSFER" style="labelBackgroundColor=#ffffff;"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="240" y="120"/></Array><mxPoint as="offset" x="0" y="${offsetY}"/></mxGeometry></mxCell>`;
+    const overlapping = validateXml(doc(nodes + labeled(-60)));
+    expect(overlapping.warnings).toContain("page 'Page-1': edge label 'e1' likely overlaps vertex 'victim'");
+
+    const clear = validateXml(doc(nodes + labeled(60)));
+    expect(clear.warnings.filter((warning) => warning.includes("likely overlaps"))).toEqual([]);
+  });
+
+  it("warns when an inline edge label has neither an offset nor a background", () => {
+    const nodes = vertex("a", 0, 0) + vertex("b", 200, 0);
+    const bare = validateXml(doc(nodes + edge("e1", "a", "b", "", "HTTP")));
+    expect(bare.warnings).toContain(
+      "page 'Page-1': edge 'e1' label sits directly on its line; add an offset or labelBackgroundColor",
+    );
+
+    const backgrounded = validateXml(doc(nodes + edge("e1", "a", "b", "labelBackgroundColor=#ffffff;", "HTTP")));
+    expect(backgrounded.warnings.filter((warning) => warning.includes("sits directly on its line"))).toEqual([]);
+  });
+
+  it("keeps the checked-in examples warning-free", () => {
+    const accepted: Record<string, string[]> = {
+      "drawme-extension-waterfall-overview.drawio": [],
+      "drawme-how-it-works.drawio": [],
+      "drawme-installation-guide.drawio": [],
+      "drawme-validation-decision-tree.drawio": [],
+      "git-graph-example.drawio": [],
+    };
+    for (const [name, expected] of Object.entries(accepted)) {
       const result = validateXml(readFileSync(resolve("example", name), "utf8"));
       expect(result.errors, name).toEqual([]);
-      expect(result.warnings, name).toEqual([]);
+      expect(result.warnings, name).toEqual(expected);
     }
   });
 

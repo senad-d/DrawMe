@@ -46,7 +46,7 @@
         </mxCell>
 
         <mxCell id="phase-rendered" value="2  RENDERED + SEMANTIC QUALITY GATE" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#674274;fillColor=#E1D5E7;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="735" y="1140" width="470" height="42" as="geometry"/>
+          <mxGeometry x="70" y="1140" width="470" height="42" as="geometry"/>
         </mxCell>
         <mxCell id="preview" value="&lt;b&gt;Export a focused PNG preview&lt;/b&gt;&lt;br&gt;One page at a time · width-capped for review · latest preview retained" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=2.5;" vertex="1" parent="1">
           <mxGeometry x="680" y="1215" width="580" height="100" as="geometry"/>
@@ -88,16 +88,16 @@
         </mxCell>
 
         <mxCell id="edge-revision-validate" value="every source edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="revision" target="validate">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="348"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-validate-errors" value="lint result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="validate" target="errors">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="521"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-errors-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#B85450;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#8B2E2E;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="errors" target="fix-errors">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1253" y="625"/><mxPoint x="1253" y="626"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-errors-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="errors" target="warnings">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="733"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-fix-errors-loop" value="edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#B85450;strokeWidth=2;dashed=1;dashPattern=8 4;fontSize=12;fontColor=#8B2E2E;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0.25;entryY=1;" edge="1" parent="1" source="fix-errors" target="revalidate-junction">
           <mxGeometry relative="1" as="geometry">
@@ -108,10 +108,10 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="edge-warnings-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="warnings" target="resolve-warning">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1253" y="840"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-warnings-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="warnings" target="structural-pass">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="953"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-warning-fix-loop" value="FIXED · source changed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2;dashed=1;dashPattern=8 4;fontSize=12;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.35;entryX=0.5;entryY=1;" edge="1" parent="1" source="resolve-warning" target="revalidate-junction">
           <mxGeometry relative="1" as="geometry">
@@ -130,16 +130,16 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="edge-pass-preview" value="safe to render" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="structural-pass" target="preview">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="1149"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-preview-attached" value="tool reports attachment state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=12;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="preview" target="image-attached">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="1345"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-image-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#1F4E78;labelBackgroundColor=#F4F7FB;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="image-attached" target="fallback-review">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="688" y="1450"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-image-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="image-attached" target="visual-passes">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1253" y="1450"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-fallback-finding" value="structural / semantic result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=12;fontColor=#1F4E78;labelBackgroundColor=#F4F7FB;exitX=1;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="fallback-review" target="finding">
           <mxGeometry relative="1" as="geometry">
@@ -158,21 +158,22 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="edge-finding-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="finding" target="quality-pass">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="1805"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-finding-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="finding" target="retry-limit">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1298" y="1690"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-retry-yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#674274;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="retry-limit" target="correction-cycle">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1610" y="1800"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="edge-retry-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="retry-limit" target="limit-reached">
+        <mxCell id="edge-retry-no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#D79B00;strokeWidth=2.5;fontSize=13;fontStyle=1;fontColor=#9A5B13;labelBackgroundColor=#F4F7FB;exitX=0;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="retry-limit" target="limit-reached">
           <mxGeometry x="-0.9" y="0" relative="1" as="geometry">
             <mxPoint x="8" y="-12" as="offset"/>
             <Array as="points">
-              <mxPoint x="1900" y="1690"/>
-              <mxPoint x="1900" y="1795"/>
-              <mxPoint x="320" y="1795"/>
+              <mxPoint x="1305" y="1765"/>
+              <mxPoint x="1305" y="2320"/>
+              <mxPoint x="50" y="2320"/>
+              <mxPoint x="50" y="1913"/>
             </Array>
           </mxGeometry>
         </mxCell>
@@ -185,7 +186,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="edge-revalidate-revision" value="run drawio_validate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#405E78;strokeWidth=2.5;fontSize=12;fontColor=#405466;labelBackgroundColor=#F4F7FB;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="revalidate-junction" target="revision">
-          <mxGeometry relative="1" as="geometry"/>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1545" y="245"/><mxPoint x="1545" y="273"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="edge-quality-export" value="ship" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2.5;fontSize=12;fontColor=#2D5E36;labelBackgroundColor=#F4F7FB;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" edge="1" parent="1" source="quality-pass" target="final-export">
           <mxGeometry relative="1" as="geometry">
