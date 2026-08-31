@@ -146,7 +146,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_validate",
     label: "draw.io: validate",
     description:
-      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, explicit routes through shapes or across edges, edge labels likely overlapping shapes, labels sitting on their own line, and auto-routed edges (no waypoints) whose routing cannot be checked — give every edge pinned anchors and explicit waypoints so route checks engage. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
+      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, explicit routes through shapes or across edges, pinned anchors facing away from the next route direction, edge labels likely overlapping shapes, labels sitting on their own line, and auto-routed edges (no waypoints) whose routing cannot be checked. Auto-routed edges whose direct path pierces a shape are called out as preview-review observations. Give every edge facing-side anchors and explicit waypoints so deterministic route checks engage. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
     promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -158,7 +158,7 @@ export default function drawme(pi: ExtensionAPI): void {
         ...(r.warnings.length > 0 ? r.warnings.map((warning) => `- ${warning}`) : ["- none"]),
         `Informational observations (${r.observations.length}):`,
         ...(r.observations.length > 0 ? r.observations.map((observation) => `- ${observation}`) : ["- none"]),
-        `Readability score: ${r.score.total} (route-through=${r.score.through}, crossings=${r.score.crossings}, overlaps=${r.score.overlaps}; lower is better for variants of this graph)`,
+        `Readability score: ${r.score.total} (route-through=${r.score.through}, crossings=${r.score.crossings}, overlaps=${r.score.overlaps}, anchors=${r.score.anchors}; lower is better for variants of this graph)`,
         `${r.errors.length} error(s), ${r.warnings.length} unresolved warning(s)`,
       ];
       return textResult(lines.join("\n"), r);

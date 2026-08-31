@@ -26,7 +26,7 @@
         <mxCell id="revision" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;SOURCE REVISION&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Author · edit · Mermaid conversion · layout · canvas fit" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=16;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="680" y="225" width="580" height="96" as="geometry"/>
         </mxCell>
-        <mxCell id="validate" value="&lt;b&gt;Run drawio_validate immediately&lt;/b&gt;&lt;br&gt;Check XML, IDs, endpoints, geometry, bounds, margins,&lt;br&gt;containment, overlaps, routes, and conservative readability" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=15;fontColor=#263746;fillColor=#EEF6FC;strokeColor=#1F4E78;strokeWidth=3;" vertex="1" parent="1">
+        <mxCell id="validate" value="&lt;b&gt;Run drawio_validate immediately&lt;/b&gt;&lt;br&gt;Check XML, IDs, endpoints, geometry, bounds, margins,&lt;br&gt;containment, overlaps, labels, routes, anchors, and readability" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=15;fontColor=#263746;fillColor=#EEF6FC;strokeColor=#1F4E78;strokeWidth=3;" vertex="1" parent="1">
           <mxGeometry x="680" y="375" width="580" height="116" as="geometry"/>
         </mxCell>
         <mxCell id="errors" value="Any structural&lt;br&gt;&lt;b&gt;errors&lt;/b&gt;?" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=17;fontColor=#8B2E2E;fillColor=#F8CECC;strokeColor=#B85450;strokeWidth=2;" vertex="1" parent="1">
@@ -79,7 +79,7 @@
         <mxCell id="phase-delivery" value="3  AUTONOMOUS DELIVERY" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#2D5E36;fillColor=#D5E8D4;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="800" y="2055" width="340" height="42" as="geometry"/>
         </mxCell>
-        <mxCell id="final-export" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;FINAL EXPORT — NO APPROVAL PAUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;PNG by default · SVG / PDF / JPG on request · editable XML embedded&lt;br&gt;Remove the latest preview and report outputs, accepted warnings,&lt;br&gt;unresolved findings, and cleanup warnings." style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=16;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#4E8A45;strokeWidth=3;shadow=1;" vertex="1" parent="1">
+        <mxCell id="final-export" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;FINAL EXPORT — NO APPROVAL PAUSE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;PNG by default · SVG / PDF / JPG on request · .drawio source retained&lt;br&gt;Editable XML embedded in PNG / SVG / PDF&lt;br&gt;Remove the latest preview and report outputs, accepted warnings,&lt;br&gt;unresolved findings, and cleanup warnings." style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=16;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#4E8A45;strokeWidth=3;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="640" y="2135" width="660" height="150" as="geometry"/>
         </mxCell>
 

@@ -16,6 +16,8 @@ import {
   collectCells,
   contentBounds,
   edgeRoute,
+  edgeWaypoints,
+  endpoint,
   geometryIsRelative,
   hasInvalidNumber,
   explicitEdgeLabelRect,
@@ -38,7 +40,7 @@ export interface ValidateResult {
   /** Informational limitations/settings that do not require a source correction. */
   observations: string[];
   /** Readability score (lower is better); comparable only across variants of the same graph. */
-  score: { total: number; through: number; crossings: number; overlaps: number };
+  score: { total: number; through: number; crossings: number; overlaps: number; anchors: number };
 }
 
 /** Quote an optional attribute consistently in diagnostic messages. */
@@ -157,10 +159,204 @@ function routeCrossWarnings(routed: RoutedEdge[]): string[] {
   return warnings;
 }
 
+type Side = "top" | "bottom" | "left" | "right";
+
+/** Side containing a pinned connection point, or null for an interior, corner, or unpinned point. */
+function pinnedSide(style: string, end: "source" | "target"): Side | null {
+  const x = styleNum(style, end === "source" ? "exitX" : "entryX");
+  const y = styleNum(style, end === "source" ? "exitY" : "entryY");
+  if (x === undefined && y === undefined) return null;
+  const xBorder = x === 0 || x === 1;
+  const yBorder = y === 0 || y === 1;
+  if (xBorder && !yBorder) return x === 0 ? "left" : "right";
+  if (yBorder && !xBorder) return y === 0 ? "top" : "bottom";
+  return null;
+}
+
+function directionDescription(dx: number, dy: number): string {
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "to the right" : "to the left";
+  return dy > 0 ? "below" : "above";
+}
+
+function facingSide(dx: number, dy: number): Side {
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "bottom" : "top";
+}
+
+function sideStyleHint(side: Side, end: "source" | "target"): string {
+  const prefix = end === "source" ? "exit" : "entry";
+  switch (side) {
+    case "top":
+      return `${prefix}X=0.5;${prefix}Y=0`;
+    case "bottom":
+      return `${prefix}X=0.5;${prefix}Y=1`;
+    case "left":
+      return `${prefix}X=0;${prefix}Y=0.5`;
+    case "right":
+      return `${prefix}X=1;${prefix}Y=0.5`;
+  }
+}
+
+function sideFacesAway(side: Side, dx: number, dy: number, tolerance: number): boolean {
+  return (
+    (side === "top" && dy > tolerance) ||
+    (side === "bottom" && dy < -tolerance) ||
+    (side === "left" && dx > tolerance) ||
+    (side === "right" && dx < -tolerance)
+  );
+}
+
+interface AnchorDirection {
+  end: "source" | "target";
+  reference: Point;
+  center: Point;
+  subject: string;
+}
+
+function rectCenter(box: Rect): Point {
+  return [box[0] + box[2] / 2, box[1] + box[3] / 2];
+}
+
+function anchorDirectionWarning(
+  cell: DomEl,
+  style: string,
+  tolerance: number,
+  direction: AnchorDirection,
+): string | null {
+  const dx = direction.reference[0] - direction.center[0];
+  const dy = direction.reference[1] - direction.center[1];
+  const side = pinnedSide(style, direction.end);
+  if (!side || !sideFacesAway(side, dx, dy, tolerance)) return null;
+  const suggested = facingSide(dx, dy);
+  const endLabel = direction.end === "source" ? "source exit" : "target entry";
+  return `edge ${repr(attr(cell, "id"))}: ${endLabel} pinned to ${side} but ${direction.subject} is ${directionDescription(dx, dy)}; re-pin to ${suggested} (${sideStyleHint(suggested, direction.end)}) to shorten the route and reduce bends`;
+}
+
+/** Warn when a pinned border anchor faces away from its adjacent waypoint, or its peer when auto-routed. */
+function edgeAnchorFacingWarnings(cell: DomEl, ids: ById): string[] {
+  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) return [];
+  const sourceId = attr(cell, "source");
+  const targetId = attr(cell, "target");
+  if (!sourceId || !targetId) return [];
+  const source = ids.get(sourceId);
+  const target = ids.get(targetId);
+  if (!source || !target || geometryIsRelative(source) || geometryIsRelative(target)) return [];
+  const sourceBox = absRect(source, ids);
+  const targetBox = absRect(target, ids);
+  if (!sourceBox || !targetBox) return [];
+
+  const sourceCenter = rectCenter(sourceBox);
+  const targetCenter = rectCenter(targetBox);
+  const route = edgeRoute(cell, ids);
+  const directions: AnchorDirection[] = [
+    {
+      end: "source",
+      reference: route?.[1] ?? targetCenter,
+      center: sourceCenter,
+      subject: route ? "first waypoint" : "target",
+    },
+    {
+      end: "target",
+      reference: route?.at(-2) ?? sourceCenter,
+      center: targetCenter,
+      subject: route ? "last waypoint" : "source",
+    },
+  ];
+  const tolerance = Math.max(sourceBox[2], sourceBox[3], targetBox[2], targetBox[3]) * 0.15;
+  const style = attr(cell, "style") ?? "";
+  return directions
+    .map((direction) => anchorDirectionWarning(cell, style, tolerance, direction))
+    .filter((warning): warning is string => warning !== null);
+}
+
+function anchorFacingWarnings(cells: DomEl[], ids: ById): string[] {
+  return cells.flatMap((cell) => edgeAnchorFacingWarnings(cell, ids));
+}
+
+/** A segment that enters and exits a rectangle rather than merely touching its boundary. */
+function segmentPiercesRect(start: Point, end: Point, box: Rect): boolean {
+  const [x, y, width, height] = box;
+  const corners: Point[] = [
+    [x, y],
+    [x + width, y],
+    [x + width, y + height],
+    [x, y + height],
+  ];
+  const borders: [Point, Point][] = corners.map((corner, index) => [corner, corners[(index + 1) % 4]]);
+  let crossings = 0;
+  for (const [a, b] of borders) if (segmentsCross(start, end, a, b)) crossings++;
+  if (crossings >= 2) return true;
+  return crossings === 1 && (pointInRect(start, box) || pointInRect(end, box));
+}
+
+function isDescendantOf(cell: DomEl, ancestorId: string | null, ids: ById): boolean {
+  const seen = new Set<string>();
+  let parent = attr(cell, "parent");
+  while (parent && ids.has(parent) && !seen.has(parent)) {
+    if (parent === ancestorId) return true;
+    seen.add(parent);
+    parent = attr(ids.get(parent)!, "parent");
+  }
+  return false;
+}
+
+function isTextAnnotation(cell: DomEl): boolean {
+  return (attr(cell, "style") ?? "").split(";").some((token) => token.trim() === "text");
+}
+
+interface AutoRouteContext {
+  edgeId: string | null;
+  sourceId: string;
+  targetId: string;
+  sourcePoint: Point;
+  targetPoint: Point;
+}
+
+function autoRouteContext(cell: DomEl, ids: ById): AutoRouteContext | null {
+  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids) || edgeWaypoints(cell).length > 0) return null;
+  const sourceId = attr(cell, "source");
+  const targetId = attr(cell, "target");
+  if (!sourceId || !targetId) return null;
+  const source = ids.get(sourceId);
+  const target = ids.get(targetId);
+  if (!source || !target || geometryIsRelative(source) || geometryIsRelative(target)) return null;
+  const sourcePoint = endpoint(cell, "source", ids);
+  const targetPoint = endpoint(cell, "target", ids);
+  if (!sourcePoint || !targetPoint) return null;
+  return { edgeId: attr(cell, "id"), sourceId, targetId, sourcePoint, targetPoint };
+}
+
+function routeThroughObservation(context: AutoRouteContext, leaf: LeafBox, ids: ById): string | null {
+  const [vertexId, box] = leaf;
+  if (vertexId === null || vertexId === context.sourceId || vertexId === context.targetId) return null;
+  const vertex = ids.get(vertexId);
+  if (!vertex || isTextAnnotation(vertex)) return null;
+  if (isDescendantOf(vertex, context.sourceId, ids) || isDescendantOf(vertex, context.targetId, ids)) return null;
+  if (!segmentPiercesRect(context.sourcePoint, context.targetPoint, box)) return null;
+  return `edge ${repr(context.edgeId)} may pass over vertex ${repr(vertexId)} (predicted from the direct line; verify in the preview, then add waypoints or move the shape if needed)`;
+}
+
+function edgeRouteThroughObservations(cell: DomEl, ids: ById, leaves: LeafBox[]): string[] {
+  const context = autoRouteContext(cell, ids);
+  if (!context) return [];
+  return leaves
+    .map((leaf) => routeThroughObservation(context, leaf, ids))
+    .filter((observation): observation is string => observation !== null);
+}
+
+/**
+ * Identify auto-routed edges whose direct connection line pierces an unrelated
+ * leaf vertex. This is only a preview-review hint because draw.io may route the
+ * actual orthogonal connector around the shape.
+ */
+function predictedRouteThroughObservations(cells: DomEl[], ids: ById, leaves: LeafBox[]): string[] {
+  return cells.flatMap((cell) => edgeRouteThroughObservations(cell, ids, leaves));
+}
+
 function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
   const routed = collectRoutedEdges(cells, ids);
   const leaves = collectLeafBoxes(cells, ids, parents);
-  return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed)];
+  return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed), ...anchorFacingWarnings(cells, ids)];
 }
 
 /** Edges the route checks above cannot see: no explicit waypoints, so the renderer routes them blindly. */
@@ -511,7 +707,7 @@ function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
 function smallFontWarning(cell: DomEl, box: Rect | null): string | null {
   const fontSize = styleNum(attr(cell, "style"), "fontSize");
   const isEdgeText = cell.getAttribute("edge") === "1" || isEdgeLabel(cell);
-  const minimum = isEdgeText ? 9 : 10;
+  const minimum = isEdgeText ? 10 : 11;
   if (
     isCompactBorderPort(cell, box) ||
     fontSize === undefined ||
@@ -581,6 +777,7 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
     ...containmentWarnings(cells, ids),
     ...readabilityWarnings(cells),
   );
+  observations.push(...predictedRouteThroughObservations(cells, ids, collectLeafBoxes(cells, ids, parents)));
   const autoRouted = autoRoutedEdgeWarning(cells, ids);
   if (autoRouted) warnings.push(autoRouted);
   const settings = pageSettings(model, warnings, observations);
@@ -608,16 +805,17 @@ export function validateXml(xml: string): ValidateResult {
   const through = warnings.filter((warning) => warning.includes("routes through")).length;
   const crossings = warnings.filter((warning) => warning.endsWith(" cross")).length;
   const overlaps = warnings.filter((warning) => warning.endsWith(" overlap")).length;
+  const anchors = warnings.filter((warning) => warning.endsWith("reduce bends")).length;
   return {
     errors,
     warnings,
     observations,
-    score: { total: 20 * through + 10 * crossings + 5 * overlaps, through, crossings, overlaps },
+    score: { total: 20 * through + 10 * crossings + 5 * overlaps + 8 * anchors, through, crossings, overlaps, anchors },
   };
 }
 
 function emptyScore(): ValidateResult["score"] {
-  return { total: 0, through: 0, crossings: 0, overlaps: 0 };
+  return { total: 0, through: 0, crossings: 0, overlaps: 0, anchors: 0 };
 }
 
 /** Read and lint a `.drawio` file. Read/parse failures are returned as errors, never thrown. */

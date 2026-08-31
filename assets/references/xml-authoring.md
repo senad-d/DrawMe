@@ -41,10 +41,10 @@ Background for manual sizing (what the fit computes): visible top-level vertex/c
 
 ### Typography, padding, and labels
 
-- Use at least **12px for body/node labels** and **10px for connector labels**. Headings usually need 16px or more. Compact border ports and notation-mandated annotations may use 8–9px when their short labels remain legible; record the exception during review.
+- Default to **14px for body/node labels** and **12px for connector labels** — set `fontSize=14;` on nodes and `fontSize=12;` on connectors instead of relying on draw.io's smaller default. Headings and title/hub nodes usually need 16–18px. Compact border ports and notation-mandated annotations may use 9–10px when their short labels remain legible; record the exception during review.
 - Add `whiteSpace=wrap;html=1;` to labeled nodes. Use about 10–16px visual padding (`spacing=10;` or directional spacing) between text and shape borders.
 - Size a node for the rendered lines, not only character count. A conservative height is `line count × (fontSize × 1.25) + top/bottom padding`; allow additional room for container title bands and icon shapes.
-- Estimate width from the longest line (`characters × fontSize × 0.6 + left/right padding`), then verify by preview. Insert deliberate `&#xa;` breaks for long labels rather than forcing a very wide node.
+- Estimate width from the longest line (`characters × fontSize × 0.6 + left/right padding`), then verify by preview. Keep boxes visually snug: for a short label, prefer the estimated width plus about 24px total padding over a large reused default. Preserve intentional uniform sizing among peer nodes when it improves alignment. Insert deliberate `&#xa;` breaks for long labels rather than forcing a very wide node.
 - Prefer two or three concise lines. If a label remains long, enlarge the node, shorten the wording without changing meaning, or split details into a note/legend. Never reduce important body text merely to fit existing geometry.
 - A 2000px full-diagram preview scales the entire page. If labels become unreadable at that width, simplify the layout, tighten the canvas, split the diagram into pages, or use a focused review export; never accept an unreadable full view as passing typography.
 
@@ -63,6 +63,8 @@ When the preview critique narrows a finding down to specific cells, apply the ma
 | Arrowhead buried in a bend or hidden by a shape | Keep the final segment before the target ≥20px: move the last waypoint or increase spacing |
 | Edge passes through a shape it does not connect | Add waypoints around it, or move the shape out of the routing corridor |
 | Two edges stacked on the same path | Spread their entry/exit points (see the distribution table below) |
+| Edge detours or makes needless 90° bends | Re-pin its exit/entry to the side facing the peer (see the facing table below); add waypoints only if a shape still blocks the corridor |
+| Box has excessive empty side margins | Tighten it using the label-width estimate while preserving deliberate uniform sizing among peer nodes, then `drawio_fit_canvas` |
 | Icon shape's label overlaps the icon artwork | Move the label outside: `verticalLabelPosition=bottom;verticalAlign=top;labelBackgroundColor=#ffffff;` |
 | Content touching a page edge, uneven margins, or big empty areas | Re-space the elements if needed, then run `drawio_fit_canvas` |
 
@@ -184,6 +186,19 @@ When multiple edges connect to the same shape, assign different entry/exit point
 | Left center | 0 | 0.5 | connecting to node on left |
 
 **Rule:** if a shape has N connections on one side, space them evenly (e.g., 3 connections on bottom → exitX = 0.25, 0.5, 0.75)
+
+### Choosing the anchor side by relative position
+
+Before spreading multiple edges on one side, pick the side that faces the peer. A wrong side forces the connector to backtrack around the shape, adding length and bends. Use the dominant center-to-center direction from source to target:
+
+| Target relative to source | Source exit | Target entry |
+|---------------------------|-------------|--------------|
+| Right (`dx` dominant) | `exitX=1` | `entryX=0` |
+| Left (`dx` dominant) | `exitX=0` | `entryX=1` |
+| Below (`dy` dominant) | `exitY=1` | `entryY=0` |
+| Above (`dy` dominant) | `exitY=0` | `entryY=1` |
+
+`drawio_validate` warns when a pinned border anchor faces away from its adjacent waypoint, or from its peer when the edge has no waypoints, and suggests complete side-center `exit*` or `entry*` properties. Keep the facing side when distributing several connections; spread their positions along that side rather than moving them to non-facing sides. Leave the anchor unpinned when the relative direction is genuinely ambiguous so draw.io can choose it.
 
 ### Color palette (fillColor / strokeColor)
 

@@ -19,6 +19,14 @@ All notable changes to this project are documented here. The format is based on
   Example diagrams carry explicit waypoints so route checks engage on them; their remaining reviewed
   findings are baselined in the test suite.
 
+- `drawio_validate` now warns when a pinned source exit or target entry faces away from its adjacent
+  waypoint (or its peer on an auto-route) and includes a complete side-center `exit*` or `entry*` repair hint. Auto-routed edges whose direct connection line
+  pierces an unrelated shape gain a focused informational observation for preview review while retaining
+  the existing unchecked-route warning. The readability score adds an `anchors` dimension, and explicit
+  font sizes below 11px for nodes or 10px for connector labels are reported as very small. Authoring
+  guidance now defaults to 14px node and 12px connector labels, documents facing-side anchor selection,
+  and recommends snug boxes without penalizing intentional uniform peer sizing.
+
 - New `drawio_fit_canvas` tool: deterministically resizes each page's canvas to its visible content plus
   a margin (default 40px) and shifts content to the margin origin — the fix for cramped pages where
   elements overlap because they were squeezed into a too-small canvas. The workflow now defers page

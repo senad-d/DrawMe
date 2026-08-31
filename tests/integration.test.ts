@@ -92,6 +92,8 @@ describe("extension registration", () => {
     expect(workflow).toContain("does the diagram fit its page, and does the canvas or any element need resizing?");
     expect(workflow).toContain("is every element positioned correctly, and is there a visibly better arrangement?");
     expect(workflow).toContain("anchored to the middle of the element side it faces wherever possible?");
+    expect(workflow).toContain("re-pin an exit or entry to the suggested facing side");
+    expect(workflow).toContain("predicted route-through observations as focused preview-review hints");
     expect(workflow).toContain("Do not start the next pass until every finding of the current one is verified");
     expect(workflow).toContain("every pass must be complete before final export");
     expect(workflow).toContain("structured critique");
@@ -262,6 +264,7 @@ describe("extension registration", () => {
     expect(text).toContain("Actionable warnings (0):");
     expect(text).toContain("Informational observations (1):");
     expect(text).toContain("Readability score: 0");
+    expect(text).toContain("anchors=0");
     expect(text).toContain("0 error(s), 0 unresolved warning(s)");
     await rm(dir, { recursive: true, force: true });
   });

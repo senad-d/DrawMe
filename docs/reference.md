@@ -174,17 +174,21 @@ Actionable warnings include:
 - a canvas conservatively detected as substantially larger than its visible content;
 - very small explicit label fonts and long labels in narrow nodes without wrapping;
 - explicitly waypointed edges routed through unrelated vertices or crossing one another;
+- pinned source exits or target entries that face away from their adjacent waypoint, or their peer on an auto-route;
+- edge labels likely overlapping shapes or sitting directly on their own connector;
+- auto-routed edges whose missing waypoints prevent deterministic route checks;
 - compressed pages that cannot be inspected.
 
-Informational observations identify checks intentionally skipped for infinite canvases or omitted/invalid page dimensions. All normal-page diagnostics are page-specific. Content bounds account for nested container offsets, visible nodes/containers, explicit waypoints, and separately sized edge labels on resolvable explicit routes where practical.
+Informational observations identify checks intentionally skipped for infinite canvases or omitted/invalid page dimensions. They also identify auto-routed edges whose direct connection line pierces an unrelated shape so the rendered route can receive focused preview review. All normal-page diagnostics are page-specific. Content bounds account for nested container offsets, visible nodes/containers, explicit waypoints, and separately sized edge labels on resolvable explicit routes where practical.
 
 The result text and details also include a readability score:
 
 - route through vertex: 20 points;
 - edge crossing: 10 points;
-- overlap: 5 points.
+- overlap: 5 points;
+- anchor facing away from its next route direction: 8 points.
 
-Lower is better, but scores are meaningful only when comparing layout variants of the same graph. Canvas, containment, and typography warnings do not change this established score. The text result separately reports error, unresolved-warning, and observation counts.
+Lower is better, but scores are meaningful only when comparing layout variants of the same graph. Canvas, containment, typography, and predicted auto-route observations do not affect the score. The text result separately reports error, unresolved-warning, and observation counts.
 
 #### Use
 

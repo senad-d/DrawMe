@@ -148,6 +148,64 @@ describe("validateXml", () => {
     expect(crossing.score).toMatchObject({ total: 10, crossings: 1 });
   });
 
+  it("reports likely route-through for auto-routed edges as a preview observation", () => {
+    const result = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 400, 0) + vertex("blocker", 180, 0, 80, 40) + edge("e1", "a", "b")),
+    );
+    expect(result.observations).toContain(
+      "page 'Page-1': edge 'e1' may pass over vertex 'blocker' (predicted from the direct line; verify in the preview, then add waypoints or move the shape if needed)",
+    );
+    expect(result.warnings.some((warning) => warning.includes("1 auto-routed edge(s) cannot be route-checked"))).toBe(true);
+
+    const clear = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 400, 0) + vertex("aside", 180, 200, 80, 60) + edge("e1", "a", "b")),
+    );
+    expect(clear.observations.filter((observation) => observation.includes("may pass over"))).toEqual([]);
+  });
+
+  it("flags source and target anchors that face away from their peers", () => {
+    const sourceWrong = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b", "exitX=0.5;exitY=0")),
+    );
+    expect(sourceWrong.warnings).toContain(
+      "page 'Page-1': edge 'e1': source exit pinned to top but target is below; re-pin to bottom (exitX=0.5;exitY=1) to shorten the route and reduce bends",
+    );
+    expect(sourceWrong.score).toMatchObject({ total: 8, anchors: 1 });
+
+    const targetWrong = validateXml(
+      doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b", "entryX=0.5;entryY=1")),
+    );
+    expect(targetWrong.warnings).toContain(
+      "page 'Page-1': edge 'e1': target entry pinned to bottom but source is above; re-pin to top (entryX=0.5;entryY=0) to shorten the route and reduce bends",
+    );
+    expect(targetWrong.score).toMatchObject({ total: 8, anchors: 1 });
+  });
+
+  it("does not flag correctly pinned, unpinned, or relative-port anchors", () => {
+    const correct = validateXml(
+      doc(
+        vertex("a", 0, 0) +
+          vertex("b", 0, 200) +
+          edge("e1", "a", "b", "exitX=0.5;exitY=1;entryX=0.5;entryY=0"),
+      ),
+    );
+    expect(correct.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+
+    const unpinned = validateXml(doc(vertex("a", 0, 0) + vertex("b", 0, 200) + edge("e1", "a", "b")));
+    expect(unpinned.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+
+    const detoured = `<mxCell id="detour" edge="1" parent="1" source="a" target="b" style="entryX=0;entryY=0.5;"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="-100" y="220"/></Array></mxGeometry></mxCell>`;
+    const waypointFacing = validateXml(doc(vertex("a", 300, 0) + vertex("b", 0, 200) + detoured));
+    expect(waypointFacing.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+
+    const container = vertex("box", 0, 0, 200, 120);
+    const port = `<mxCell id="port" vertex="1" parent="box"><mxGeometry x="0.5" y="1" width="10" height="10" relative="1" as="geometry"/></mxCell>`;
+    const relativePort = validateXml(
+      doc(container + port + vertex("b", 0, 250) + edge("e1", "port", "b", "exitX=0.5;exitY=0")),
+    );
+    expect(relativePort.warnings.filter((warning) => warning.endsWith("reduce bends"))).toEqual([]);
+  });
+
   it("warns on right and bottom page overflow", () => {
     const result = validateXml(
       doc(vertex("outside", 250, 170, 80, 60), `page="1" pageScale="1" pageWidth="300" pageHeight="200"`),
@@ -254,6 +312,21 @@ describe("validateXml", () => {
     expect(result.warnings).toContain(
       "page 'Page-1': vertex 'long' has a long label in narrow geometry without whiteSpace=wrap",
     );
+
+    const thresholds = validateXml(
+      doc(
+        vertex("node10", 0, 100, 80, 40, "fontSize=10;", "Node") +
+          vertex("node11", 200, 100, 80, 40, "fontSize=11;", "Node") +
+          edge("edge9", "node10", "node11", "fontSize=9;", "9") +
+          edge("edge10", "node10", "node11", "fontSize=10;", "10"),
+      ),
+    );
+    expect(thresholds.warnings).toContain("page 'Page-1': vertex 'node10' has very small explicit fontSize 10px");
+    expect(thresholds.warnings).toContain(
+      "page 'Page-1': connector label 'edge9' has very small explicit fontSize 9px",
+    );
+    expect(thresholds.warnings.some((warning) => warning.includes("vertex 'node11'") && warning.includes("fontSize"))).toBe(false);
+    expect(thresholds.warnings.some((warning) => warning.includes("label 'edge10'") && warning.includes("fontSize"))).toBe(false);
   });
 
   it("normalizes HTML-like label markup without counting tags or line breaks as visible text", () => {
