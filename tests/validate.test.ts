@@ -201,6 +201,32 @@ describe("validateXml", () => {
     expect(crossing.score).toMatchObject({ total: 10, crossings: 1 });
   });
 
+  it("warns when a connector label lands on a bend of its own route or on another connector", () => {
+    const orthogonal = "edgeStyle=orthogonalEdgeStyle;fontSize=12;labelBackgroundColor=#ffffff;";
+    const labeled = (offset: string, extra = "") =>
+      `<mxCell id="e1" edge="1" parent="1" source="user" target="hub" value="commands" style="${orthogonal}exitX=0.5;exitY=1;entryX=0.5;entryY=0;"><mxGeometry relative="1" as="geometry">${offset}<Array as="points"><mxPoint x="40" y="120"/><mxPoint x="340" y="120"/></Array></mxGeometry></mxCell>${extra}`;
+    const shapes = vertex("user", 0, 0) + vertex("hub", 300, 200);
+    const onBend = "edge label 'e1' likely sits on a bend or another segment of its own connector";
+
+    // Centered on its horizontal run: the background color handles the line underneath.
+    expect(validateXml(doc(shapes + labeled(""))).warnings.some((warning) => warning.includes(onBend))).toBe(false);
+    // An offset that pushes the text onto the vertical leg of its own route.
+    const pushed = validateXml(doc(shapes + labeled('<mxPoint x="-150" y="-15" as="offset"/>')));
+    expect(pushed.warnings.some((warning) => warning.includes(onBend))).toBe(true);
+
+    // Another connector whose vertical leg runs through the label.
+    const crossing = `<mxCell id="e2" edge="1" parent="1" source="side" target="hub" style="${orthogonal}exitX=0.5;exitY=1;entryX=0;entryY=0.5;"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="190" y="60"/><mxPoint x="190" y="220"/></Array></mxGeometry></mxCell>`;
+    const both = validateXml(doc(shapes + vertex("side", 150, -100) + labeled("", crossing)));
+    expect(hasDiagnostic(both.warnings, "edge label 'e1' likely overlaps edge 'e2'")).toBe(true);
+  });
+
+  it("ignores collinear waypoints and 1px jogs when checking label placement", () => {
+    const style = "edgeStyle=orthogonalEdgeStyle;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;";
+    const jog = `<mxCell id="e1" edge="1" parent="1" source="a" target="b" value="YES" style="${style}"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="160" y="20"/><mxPoint x="160" y="21"/></Array></mxGeometry></mxCell>`;
+    const result = validateXml(doc(vertex("a", 0, 0) + vertex("b", 240, 1) + jog));
+    expect(result.warnings.filter((warning) => warning.includes("edge label"))).toEqual([]);
+  });
+
   it("reports likely route-through for auto-routed edges as a preview observation", () => {
     const result = validateXml(
       doc(vertex("a", 0, 0) + vertex("b", 400, 0) + vertex("blocker", 180, 0, 80, 40) + edge("e1", "a", "b")),

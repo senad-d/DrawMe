@@ -6,11 +6,16 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { repairPng } from "./png";
 import { enhanceAnimatedSvg, type AnimatedSvgSummary } from "./animation";
+import { DEFAULT_FIT_MARGIN } from "./fitcanvas";
+import { DOMParser } from "@xmldom/xmldom";
+import { type DomEl, childrenByTag, firstByTag } from "./dom";
+import { collectCellsWithIds, contentBounds } from "./geometry";
+import { finishSvgFile } from "./svgexport";
 
 export type ExportFormat = "png" | "svg" | "pdf" | "jpg";
 export type ExportMode = "preview" | "final";
@@ -53,6 +58,8 @@ export interface ExportPlan {
   input: string;
   /** Flags that must go AFTER the input path on Linux (draw.io argument-parsing quirk). */
   linuxExtra: string[];
+  /** SVG only: outer margin DrawMe adds after export (draw.io's own SVG border is uneven). */
+  svgMargin: number;
 }
 
 /** Candidate binary names and paths in resolution order. */
@@ -129,8 +136,17 @@ export function deriveOutput(input: string, format: ExportFormat, embed: boolean
  * - animated → final SVG only; defaults the format to SVG and verifies motion after export
  * - `--width` and `-s` are never combined; an explicit width/height wins
  * - `-t` (transparent) is PNG-only; `--page-index` is 1-based
+ * - the outer margin defaults to the canvas-fit margin in diagram units. draw.io
+ *   applies `-b` unevenly with `-s` (left/top get border × scale) and with SVG
+ *   (the canvas grows by 3 × border), so a scaled raster is sized with `--width`
+ *   from `contentWidth`, and SVG is exported borderless and padded afterwards.
  */
-export function planExport(opts: ExportOptions, plat: string = platform(), isRoot = false): ExportPlan {
+export function planExport(
+  opts: ExportOptions,
+  plat: string = platform(),
+  isRoot = false,
+  contentWidth?: number,
+): ExportPlan {
   const animated = opts.animated ?? false;
   const format = opts.format ?? (animated ? "svg" : "png");
   const mode = opts.mode ?? "final";
@@ -140,15 +156,27 @@ export function planExport(opts: ExportOptions, plat: string = platform(), isRoo
   const output = opts.output ?? deriveOutput(opts.input, format, embed);
   const raster = format === "png" || format === "jpg";
 
+  const margin = opts.border ?? DEFAULT_FIT_MARGIN;
+  let border = margin;
   const args: string[] = ["-x", "-f", format];
   if (embed) args.push("-e");
   if (opts.width != null) args.push("--width", String(opts.width));
   else if (opts.height != null) args.push("--height", String(opts.height));
   else if (raster) {
     if (mode === "preview") args.push("--width", "2000");
-    else args.push("-s", String(opts.scale ?? 2));
+    else {
+      const scale = opts.scale ?? 2;
+      if (contentWidth !== undefined && contentWidth > 0 && scale !== 1) {
+        // With --width the border is in output pixels and applied evenly.
+        border = Math.round(margin * scale);
+        args.push("--width", String(Math.round(contentWidth * scale + 2 * border)));
+      } else {
+        args.push("-s", String(scale));
+      }
+    }
   }
-  args.push("-b", String(opts.border ?? 10));
+  // draw.io crops exports to the content, so the border is the image's only outer margin.
+  args.push("-b", String(format === "svg" ? 0 : border));
   if (opts.transparent && format === "png") args.push("-t");
   if (opts.pageIndex != null) args.push("--page-index", String(opts.pageIndex));
   args.push("-o", output);
@@ -159,7 +187,7 @@ export function planExport(opts: ExportOptions, plat: string = platform(), isRoo
     linuxExtra.push("--disable-gpu");
     if (isRoot) linuxExtra.push("--no-sandbox");
   }
-  return { format, mode, embed, animated, output, args, input: opts.input, linuxExtra };
+  return { format, mode, embed, animated, output, args, input: opts.input, linuxExtra, svgMargin: format === "svg" ? margin : 0 };
 }
 
 export interface ExportResult {
@@ -284,6 +312,23 @@ async function withSourceExportQueue<T>(input: string, action: () => Promise<T>)
   }
 }
 
+/** Width of the visible content of a page in diagram units, or undefined when it cannot be measured. */
+export async function pageContentWidth(input: string, pageIndex: number): Promise<number | undefined> {
+  try {
+    const root = new DOMParser().parseFromString(await readFile(input, "utf8"), "text/xml").documentElement as unknown as DomEl | null;
+    if (!root) return undefined;
+    const pages = childrenByTag(root, "diagram");
+    const page = pages.length > 0 ? pages[pageIndex - 1] : root;
+    const model = page && (page.tagName === "mxGraphModel" ? page : firstByTag(page, "mxGraphModel"));
+    if (!model) return undefined;
+    const { cells, ids } = collectCellsWithIds(firstByTag(model, "root"));
+    const bounds = contentBounds(cells, ids);
+    return bounds ? bounds.maxX - bounds.minX : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isRootUser(): boolean {
   const getuid = (process as NodeJS.Process & { getuid?: () => number }).getuid;
   return typeof getuid === "function" && getuid() === 0;
@@ -323,7 +368,7 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
     );
   }
 
-  const plan = planExport(opts, platform(), isRootUser());
+  const plan = planExport(opts, platform(), isRootUser(), await pageContentWidth(opts.input, opts.pageIndex ?? 1));
   const fullArgs = [...plan.args, plan.input, ...plan.linuxExtra];
 
   let command: string;
@@ -338,6 +383,15 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
   }
 
   const repaired = plan.embed && plan.format === "png" ? await repairPng(plan.output) : false;
+  // Every SVG gets an even outer margin and shows its authored colors, matching PNG/PDF output in any viewer.
+  if (plan.format === "svg") {
+    try {
+      await finishSvgFile(plan.output, plan.svgMargin);
+    } catch (error) {
+      await rm(plan.output, { force: true });
+      throw new Error(`SVG post-processing failed: ${(error as Error).message}`, { cause: error });
+    }
+  }
   let animation: AnimatedSvgSummary | undefined;
   if (plan.animated) {
     try {

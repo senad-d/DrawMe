@@ -66,21 +66,21 @@
     "dev": "pi --no-extensions -e ."
   },
   "dependencies": {
-    "@xmldom/xmldom": "^0.9.8"
+    "@xmldom/xmldom": "^0.9.12"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
     "typebox": "1.3.25",
-    "typescript": "^7.0.2",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.10.0",
     "vitest": "^5.0.0"
   }

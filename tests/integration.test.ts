@@ -46,6 +46,7 @@ const FAKE_DRAWIO = `#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) process.stdout.write("30.0.0\\n");
+else if (args[args.indexOf("-f") + 1] === "svg") writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>');
 else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "base64"));
 `;
 
@@ -57,6 +58,7 @@ describe("extension registration", () => {
     const { pi, tools, commands } = makeMockPi();
     drawme(pi as never);
     expect([...tools.keys()].sort()).toEqual([
+      "drawio_animate",
       "drawio_check",
       "drawio_explain",
       "drawio_export",
@@ -127,6 +129,13 @@ describe("extension registration", () => {
     expect(workflow).toContain("`animated: true`");
     expect(workflow).toContain("`Animation verified`");
     expect(workflow).toContain("static PNG fallback");
+    expect(workflow).toContain("`drawio_animate`");
+    expect(workflow).toContain("storyboard frame by frame");
+    // A style preset is chosen up front and its reference is pre-loaded.
+    expect(workflow).toContain("Pick one style preset");
+    expect(workflow).toContain("## Reference: style presets");
+    expect(workflow).toContain("## Light (default)");
+    expect(workflow).toContain("Never choose Dark or Multi-color on your own");
     expect(workflow).toContain(`allow at most ${AUTOMATIC_CORRECTION_LIMIT} correction retries`);
     // Fully autonomous: no human gate anywhere in the flow.
     expect(workflow).toContain("fully autonomous");
@@ -324,6 +333,9 @@ describe("extension registration", () => {
 
     const explained = await tools.get("drawio_explain")!.execute("t", { input: missing }, undefined, undefined, {});
     expect(textOf(explained.content[0])).toContain("Explain failed:");
+
+    const animated = await tools.get("drawio_animate")!.execute("t", { input: missing }, undefined, undefined, {});
+    expect(textOf(animated.content[0])).toContain("Animate failed: input file not found");
 
     const opened = await tools.get("drawio_open")!.execute("t", { path: missing }, undefined, undefined, {});
     expect(textOf(opened.content[0])).toContain("Open failed: file not found");

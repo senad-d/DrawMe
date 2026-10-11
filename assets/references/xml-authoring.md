@@ -94,19 +94,21 @@ For **vendor/branded icons** (AWS/Azure/GCP/Cisco/Kubernetes) and any non-trivia
 
 ### Required properties
 
+The examples use Light theme colors; swap in the active theme's colors.
+
 ```xml
 <!-- Rectangle / rounded box -->
-<mxCell id="2" value="Label" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+<mxCell id="2" value="Label" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="1">
   <mxGeometry x="100" y="100" width="160" height="60" as="geometry" />
 </mxCell>
 
 <!-- Cylinder (database) -->
-<mxCell id="3" value="DB" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;" vertex="1" parent="1">
+<mxCell id="3" value="DB" style="shape=cylinder3;whiteSpace=wrap;html=1;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="1">
   <mxGeometry x="350" y="100" width="120" height="80" as="geometry" />
 </mxCell>
 
 <!-- Diamond (decision) -->
-<mxCell id="4" value="Check?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+<mxCell id="4" value="Check?" style="rhombus;whiteSpace=wrap;html=1;strokeWidth=1.5;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#1E3A8A;" vertex="1" parent="1">
   <mxGeometry x="100" y="220" width="160" height="80" as="geometry" />
 </mxCell>
 ```
@@ -172,7 +174,49 @@ For architecture diagrams with nested elements, use draw.io's parent-child conta
 - **Leave room for arrowheads:** the final straight segment between the last bend and the target shape must be ≥20px long. If too short, the arrowhead overlaps the bend and looks broken. Fix by increasing node spacing or adding explicit waypoints
 - **Obstacle-avoiding routing (draw.io ≥ 30):** the desktop editor can recompute connectors around shapes without moving nodes. This is an interactive editor feature, not a `drawio_layout` preset. If a dense diagram still has crossings after preview, offer to open the `.drawio` in draw.io desktop for manual routing.
 
+### Motion with `drawio_animate`
+
+Use `drawio_animate` for any animation beyond continuous connector flow. Author and review the static diagram first, then pass ordered steps that reference cell ids:
+
+| Effect | Targets | Result |
+|--------|---------|--------|
+| `fadeIn` / `fadeOut` | any cell | Fade to fully visible / hidden (fadeIn also restores a dimmed cell) |
+| `dim` | any cell | Fade to `value` (default 0.25) to push it into the background |
+| `popIn` | hidden cell | Scale up from 60% with a slight overshoot while fading in |
+| `slideIn` | hidden cell | Move 32px in `direction` (default `up`) while fading in |
+| `drawIn` | hidden solid connector | Draw the line from source to target, then show its arrowhead and label |
+| `highlight` | visible cell | Brief glow (and a 4% scale on shapes) in `color` |
+| `travel` | visible connector | A dot runs along the connector in `color` |
+| `wait` | none | Pause for `duration` ms |
+
+- Steps run one after another; `parallel: true` starts a step with the previous one. `stagger` offsets consecutive cells of one step for a cascade.
+- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden. Everything else is visible from the start.
+- `drawIn` needs a solid connector without `flowAnimation=1`; use `fadeIn` for dashed or flowing connectors.
+- `loop` (default true) repeats the sequence after `hold` ms (default 1600) on the final state.
+- The tool stores the steps on the page root cell (`drawmeMotion`), so a later call without `steps` re-exports the same motion after layout edits. `drawio_validate` checks the stored steps against the page.
+- It writes `<name>.animated.svg` and a `<name>.storyboard.png` with one captioned frame per step. Use the storyboard to confirm order and visibility; it does not show easing or dot movement.
+- The motion plays in browsers and wherever the SVG is shown as an image (for example a README). draw.io itself does not play it.
+
+Example: reveal a three-hop flow, run traffic through it, then focus on the service.
+
+```json
+{ "steps": [
+  { "effect": "fadeIn", "cells": ["title", "subtitle"], "stagger": 150 },
+  { "effect": "popIn", "cells": ["client"] },
+  { "effect": "drawIn", "cells": ["e1"] },
+  { "effect": "popIn", "cells": ["api"] },
+  { "effect": "drawIn", "cells": ["e2"] },
+  { "effect": "slideIn", "cells": ["db", "queue"], "direction": "left", "stagger": 120 },
+  { "effect": "wait", "duration": 400 },
+  { "effect": "travel", "cells": ["e1"], "duration": 900 },
+  { "effect": "travel", "cells": ["e2"], "duration": 900 },
+  { "effect": "highlight", "cells": ["api"] }
+] }
+```
+
 ### Timed page animation in standalone SVG
+
+Use this native draw.io sequence only when draw.io's own viewer must play the animation; otherwise prefer `drawio_animate`. A page cannot carry both.
 
 Use a page sequence when elements should appear, disappear, or fade in a defined order. The sequence is native draw.io animation JSON stored on a `UserObject` that wraps root cell `0`. Replace the normal `<mxCell id="0" />` with the wrapper — never include both:
 
@@ -236,7 +280,7 @@ Before spreading multiple edges on one side, pick the side that faces the peer. 
 
 ### Color palette (fillColor / strokeColor)
 
-*Used only when no user style preset is active (see `references/style-presets.md` → "Applying a preset").*
+*Classic draw.io palette. Use it only when the user explicitly asks for the classic draw.io colors; otherwise use the active theme from `references/style-presets.md` (Light unless the user asks for Dark or Multi-color).*
 
 | Color name | fillColor | strokeColor | Use for |
 |-----------|-----------|-------------|---------|
@@ -250,7 +294,7 @@ Before spreading multiple edges on one side, pick the side that faces the peer. 
 
 ### Legend (auto-generate from the palette)
 
-When a diagram uses 3+ semantic colors, add a legend so the color coding is self-explanatory. Generate it mechanically from the roles actually present — never invent legend entries that aren't in the diagram:
+When a Multi-color (or explicitly requested classic) diagram uses 3+ semantic colors, add a legend so the color coding is self-explanatory. Generate it mechanically from the roles actually present — never invent legend entries that aren't in the diagram:
 
 ```xml
 <!-- Legend container: place in a corner clear of the diagram (e.g. below-left) -->

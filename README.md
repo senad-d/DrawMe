@@ -69,7 +69,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 
 This checkout implements the DrawMe core loop as a Pi extension:
 
-- Nine model-callable tools (`drawio_check`, `drawio_export`, `drawio_validate`, `drawio_fit_canvas`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
+- Ten model-callable tools (`drawio_check`, `drawio_export`, `drawio_animate`, `drawio_validate`, `drawio_fit_canvas`, `drawio_shapesearch`, `drawio_from_mermaid`, `drawio_layout`, `drawio_explain`, `drawio_open`) and three commands (`/drawme`, `/drawme-check`, `/drawme-export`).
 - A guided `/drawme` workflow that steers authoring, validation after every edit, a gated multi-pass visual review, and autonomous final multi-format export.
 - Pure-TypeScript structural linting, `-e` PNG IEND repair, shape search over a bundled index, and diagram-to-Markdown description — no Python runtime required.
 - draw.io binary resolution across macOS/Linux/Windows/WSL, headless-Linux `xvfb-run` handling, and version-gated Mermaid conversion + ELK auto-layout (draw.io v30+).
@@ -152,6 +152,7 @@ Registered for the model to call directly.
 | --- | --- |
 | `drawio_check` | Resolve the draw.io binary, version, and whether it supports Mermaid import / `--layout` (v30+). |
 | `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `animated:true` requires a final SVG, preserves connector flow, compiles portable page sequences, and verifies that the result actually contains animation. `mode:"preview"` → clean width-capped static PNG returned as text/metadata, with the image block attached when the active model can view images (the text states which); each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
+| `drawio_animate` | Add motion to an existing page (pop and slide entrances, connector draw-in, travelling dots, highlights, dimming, staggered cascades) from typed steps, store it on the page, and export a verified animated SVG plus a storyboard PNG of each step. |
 | `drawio_validate` | Deterministic lint for XML structure, geometry, page/container bounds, margins, overlap, explicit route-through/crossings, anchors facing away from their route, edge-label collisions, labels on connector lines, small fonts, and unchecked auto-routes. Likely direct-path obstructions for auto-routed edges are preview-review observations. The readability score reports route-through, crossings, overlaps, and anchors separately. |
 | `drawio_fit_canvas` | Fit each page's canvas to its content plus a margin (default 40px): grows cramped pages, tightens oversized ones, and shifts content to the margin origin — instead of shrinking or cramming elements. Deterministic, no CLI. |
 | `drawio_shapesearch` | Exact official `style=` strings for 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN shapes, from a bundled local index. Use instead of guessing a style. |

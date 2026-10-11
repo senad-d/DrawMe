@@ -50,7 +50,7 @@ function shiftAttr(el: DomEl, name: "x" | "y", delta: number): void {
 }
 
 /** Shift one top-level cell: absolute vertex origin, or edge points/waypoints. */
-function shiftCell(cell: DomEl, dx: number, dy: number): void {
+export function shiftCell(cell: DomEl, dx: number, dy: number): void {
   const geometry = firstByTag(cell, "mxGeometry");
   if (!geometry) return;
   if (cell.getAttribute("vertex") === "1" && !geometryIsRelative(cell)) {

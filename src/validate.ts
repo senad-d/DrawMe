@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import { DOMParser } from "@xmldom/xmldom";
 import { type DomEl, attr, childrenByTag, directText, firstByTag } from "./dom";
 import { analyzeAnimationPage } from "./animation";
+import { analyzeStoredMotion } from "./motion";
 import {
   type ById,
   type ContentBounds,
@@ -640,16 +641,23 @@ function labelOffset(cell: DomEl): Point | null {
   return [x, y];
 }
 
-/** Estimated box of an edge's inline label, centered on its explicit route like draw.io renders it. */
-function inlineEdgeLabelRect(edge: DomEl, ids: ById): Rect | null {
-  const label = labelText(edge);
-  if (!label) return null;
-  const route = edgeRoute(edge, ids);
-  if (!route) return null;
+/** Where an inline edge label is anchored along its route, as a 0..1 fraction (geometry x runs -1..1). */
+function labelFraction(edge: DomEl): number {
   const geometry = firstByTag(edge, "mxGeometry");
   const along = geometry ? pyFloat(attr(geometry, "x") ?? "0") : 0;
-  const fraction = along !== undefined && Number.isFinite(along) ? Math.min(1, Math.max(0, (along + 1) / 2)) : 0.5;
-  const [centerX, centerY] = routePointAt(route, fraction);
+  return along !== undefined && Number.isFinite(along) ? Math.min(1, Math.max(0, (along + 1) / 2)) : 0.5;
+}
+
+/** Estimated box of an edge's inline label, centered on its explicit route like draw.io renders it. */
+function inlineEdgeLabelRect(edge: DomEl, ids: ById): Rect | null {
+  const route = labelText(edge) ? edgeRoute(edge, ids) : null;
+  return route ? labelBox(edge, route) : null;
+}
+
+/** Estimated label box for an edge along a given route. */
+function labelBox(edge: DomEl, route: Point[]): Rect {
+  const label = labelText(edge);
+  const [centerX, centerY] = routePointAt(route, labelFraction(edge));
   const [offsetX, offsetY] = labelOffset(edge) ?? [0, 0];
   const fontSize = styleNum(attr(edge, "style"), "fontSize") ?? DEFAULT_FONT_SIZE;
   const lines = label.split("\n");
@@ -681,6 +689,123 @@ function labelOverlapWarnings(cells: DomEl[], ids: ById, parents: Set<string | n
     const [id, box] = labeled;
     for (const [vertexId, vertexBox] of leaves) {
       if (overlap(box, vertexBox)) warnings.push(`edge label ${repr(id)} likely overlaps vertex ${repr(vertexId)}`);
+    }
+  }
+  return warnings;
+}
+
+/** Drop waypoints on a straight run and sub-2px jogs (not real bends), keeping the route's shape. */
+function straightenRoute(points: Point[]): Point[] {
+  const near = (a: number, b: number): boolean => Math.abs(a - b) < 2;
+  const within = (value: number, a: number, b: number): boolean =>
+    Math.min(a, b) - 2 <= value && value <= Math.max(a, b) + 2;
+  const result: Point[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const previous = result[result.length - 1];
+    const [point, next] = [points[i], points[i + 1]];
+    const jog = near(point[0], previous[0]) && near(point[1], previous[1]);
+    const between = within(point[0], previous[0], next[0]) && within(point[1], previous[1], next[1]);
+    const run =
+      between &&
+      ((near(previous[1], point[1]) && near(point[1], next[1])) ||
+        (near(previous[0], point[0]) && near(point[0], next[0])) ||
+        orient(previous, point, next) === 0);
+    if (!jog && !run) result.push(point);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+/** True for a horizontal or vertical segment, the only kind whose rendered path is known for orthogonal routing. */
+function axisAligned(a: Point, b: Point): boolean {
+  return Math.abs(a[0] - b[0]) < 2 || Math.abs(a[1] - b[1]) < 2;
+}
+
+function isOrthogonal(edge: DomEl): boolean {
+  const style = attr(edge, "style") ?? "";
+  return /(?:^|;)edgeStyle=(?:orthogonalEdgeStyle|elbowEdgeStyle)(?:;|$)/.test(style);
+}
+
+/**
+ * Rebuild the corners draw.io adds to a diagonal first or last segment of an
+ * orthogonal edge: it leaves a top/bottom exit vertically and a left/right exit
+ * horizontally, and mirrors that at the entry. Returns null when a diagonal
+ * remains whose rendered path cannot be inferred.
+ */
+function orthogonalRoute(edge: DomEl, route: Point[]): Point[] | null {
+  if (!isOrthogonal(edge)) return route;
+  const style = attr(edge, "style");
+  const side = (x: string, y: string): "vertical" | "horizontal" | null => {
+    const fy = styleNum(style, y);
+    const fx = styleNum(style, x);
+    if (fy === 0 || fy === 1) return "vertical";
+    if (fx === 0 || fx === 1) return "horizontal";
+    return null;
+  };
+  const points = [...route];
+  const last = points.length - 1;
+  if (!axisAligned(points[last - 1], points[last])) {
+    const entry = side("entryX", "entryY");
+    const [prev, end] = [points[last - 1], points[last]];
+    if (entry === "horizontal") points.splice(last, 0, [prev[0], end[1]]);
+    else if (entry === "vertical") points.splice(last, 0, [end[0], prev[1]]);
+  }
+  if (!axisAligned(points[0], points[1])) {
+    const exit = side("exitX", "exitY");
+    const [start, next] = [points[0], points[1]];
+    if (exit === "vertical") points.splice(1, 0, [start[0], next[1]]);
+    else if (exit === "horizontal") points.splice(1, 0, [next[0], start[1]]);
+  }
+  return points.slice(1).every((point, i) => axisAligned(points[i], point)) ? points : null;
+}
+
+/** Index of the route segment that holds the point at `fraction` of the route's length. */
+function anchorSegment(points: Point[], fraction: number): number {
+  const lengths = points.slice(1).map((point, i) => Math.hypot(point[0] - points[i][0], point[1] - points[i][1]));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) * fraction;
+  for (let i = 0; i < lengths.length; i++) {
+    if (remaining <= lengths[i]) return i;
+    remaining -= lengths[i];
+  }
+  return Math.max(0, lengths.length - 1);
+}
+
+/**
+ * Inline labels whose estimated box lands on a bend or another segment of
+ * their own connector (typically after an offset pushes them sideways), or on
+ * another explicitly routed connector. A background color cannot fix these:
+ * the line visibly runs into the text.
+ */
+function labelRouteWarnings(cells: DomEl[], ids: ById): string[] {
+  const routes: [string | null, Point[]][] = [];
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
+    const explicit = edgeRoute(cell, ids);
+    const route = explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
+    if (route) routes.push([attr(cell, "id"), route]);
+  }
+  const warnings: string[] = [];
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
+    const explicit = labelText(cell) ? edgeRoute(cell, ids) : null;
+    const route = explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
+    if (!route) continue;
+    const box = labelBox(cell, route);
+    if (hasInvalidNumber(box)) continue;
+    const id = attr(cell, "id");
+    const anchor = anchorSegment(route, labelFraction(cell));
+    for (let i = 0; i < route.length - 1; i++) {
+      if (i !== anchor && routeHitsRect([route[i], route[i + 1]], box)) {
+        warnings.push(
+          `edge label ${repr(id)} likely sits on a bend or another segment of its own connector; move it along the edge (geometry x) or change its offset so the text clears every segment`,
+        );
+        break;
+      }
+    }
+    for (const [otherId, otherRoute] of routes) {
+      if (otherId !== id && routeHitsRect(otherRoute, box)) {
+        warnings.push(`edge label ${repr(id)} likely overlaps edge ${repr(otherId)}`);
+      }
     }
   }
   return warnings;
@@ -766,11 +891,23 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
   const errors: string[] = [];
   const warnings: string[] = [];
   const observations: string[] = [];
+  const motion = analyzeStoredMotion(model);
   const ids = buildIds(cells, errors);
   const animation = analyzeAnimationPage(diagram);
   errors.push(...animation.errors);
   warnings.push(...animation.warnings);
   observations.push(...animation.observations);
+  if (motion) {
+    errors.push(...motion.errors);
+    if (motion.compiled) {
+      observations.push(
+        `stored motion has ${motion.spec!.steps.length} step(s) lasting ${Math.round(motion.compiled.sequenceMs)}ms; export it with drawio_animate`,
+      );
+    }
+    if (animation.sequence?.enabled) {
+      errors.push("page has both stored motion and an enabled native page animation; keep only one timeline");
+    }
+  }
   const parents = new Set<string | null>();
   for (const cell of cells) parents.add(attr(cell, "parent"));
 
@@ -779,6 +916,7 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
     ...overlapWarnings(cells, ids, parents),
     ...geometryWarnings(cells, ids, parents),
     ...labelOverlapWarnings(cells, ids, parents),
+    ...labelRouteWarnings(cells, ids),
     ...containmentWarnings(cells, ids),
     ...readabilityWarnings(cells),
   );

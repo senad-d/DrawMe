@@ -1,0 +1,101 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="31.7.0">
+  <diagram name="Login flow" id="login">
+    <mxGraphModel background="#0B1220" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1780" pageHeight="680">
+      <root>
+        <UserObject label="" drawmeMotion="{&quot;loop&quot;:true,&quot;hold&quot;:1800,&quot;steps&quot;:[{&quot;effect&quot;:&quot;fadeIn&quot;,&quot;cells&quot;:[&quot;2&quot;,&quot;3&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;4&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;10&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;5&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;11&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;6&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;12&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;7&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;13&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;8&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;14&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;popIn&quot;,&quot;cells&quot;:[&quot;9&quot;],&quot;duration&quot;:400},{&quot;effect&quot;:&quot;highlight&quot;,&quot;cells&quot;:[&quot;7&quot;],&quot;duration&quot;:650},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;15&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;travel&quot;,&quot;cells&quot;:[&quot;15&quot;],&quot;duration&quot;:650},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;16&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;travel&quot;,&quot;cells&quot;:[&quot;16&quot;],&quot;duration&quot;:650},{&quot;effect&quot;:&quot;drawIn&quot;,&quot;cells&quot;:[&quot;17&quot;],&quot;duration&quot;:600},{&quot;effect&quot;:&quot;travel&quot;,&quot;cells&quot;:[&quot;17&quot;],&quot;duration&quot;:650},{&quot;effect&quot;:&quot;highlight&quot;,&quot;cells&quot;:[&quot;4&quot;],&quot;duration&quot;:650}]}" id="0"><mxCell/></UserObject>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="User login · request &amp; token return" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=28;fontColor=#F8FAFC;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="900" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="Session lookup → user verification → signed JWT" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#94A3B8;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="900" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="&lt;b&gt;Browser&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;Submit credentials&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#111827;strokeColor=#334155;fontColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="&lt;b&gt;CDN&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;Edge proxy&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#111827;strokeColor=#334155;fontColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="420" y="360" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="&lt;b&gt;API Gateway&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;Route /login&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#111827;strokeColor=#334155;fontColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="360" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="&lt;b&gt;Auth Service&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;Verify &amp; sign JWT&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#0F1E3D;strokeColor=#60A5FA;fontColor=#DBEAFE;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="360" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="&lt;b&gt;Redis&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;Session cache&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;shape=cylinder3;size=12;boundedLbl=1;fillColor=#111827;strokeColor=#334155;fontColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="170" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="&lt;b&gt;Users Postgres&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94A3B8&quot; style=&quot;font-size:12px&quot;&gt;User &amp; password hash&lt;/font&gt;" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=14;spacing=12;strokeWidth=1.5;shape=cylinder3;size=12;boundedLbl=1;fillColor=#111827;strokeColor=#334155;fontColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="550" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="POST /login" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=1;exitY=0.33;entryX=0;entryY=0.33;" edge="1" parent="1" source="4" target="5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="390"/>
+            </Array>
+            <mxPoint x="0" y="-18" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="11" value="Forward credentials" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=1;exitY=0.33;entryX=0;entryY=0.33;" edge="1" parent="1" source="5" target="6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="390"/>
+            </Array>
+            <mxPoint x="0" y="-18" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="12" value="Authenticate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=1;exitY=0.33;entryX=0;entryY=0.33;" edge="1" parent="1" source="6" target="7">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080" y="390"/>
+            </Array>
+            <mxPoint x="0" y="-18" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="13" value="Check session" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#475569;strokeWidth=1.5;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="7" target="8">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1450" y="382.5"/>
+              <mxPoint x="1450" y="215"/>
+            </Array>
+            <mxPoint x="-65" y="-18" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="14" value="Verify user" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#475569;strokeWidth=1.5;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="7" target="9">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1450" y="427.5"/>
+              <mxPoint x="1450" y="595"/>
+            </Array>
+            <mxPoint x="-65" y="-18" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="15" value="Signed JWT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=0;exitY=0.67;entryX=1;entryY=0.67;" edge="1" parent="1" source="7" target="6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080" y="420"/>
+            </Array>
+            <mxPoint x="0" y="20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="16" value="200 · JWT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=0;exitY=0.67;entryX=1;entryY=0.67;" edge="1" parent="1" source="6" target="5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="420"/>
+            </Array>
+            <mxPoint x="0" y="20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="17" value="JWT to browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;endSize=6;fontFamily=Helvetica;fontSize=12;fontColor=#CBD5E1;labelBackgroundColor=#0B1220;strokeColor=#60A5FA;strokeWidth=2;exitX=0;exitY=0.67;entryX=1;entryY=0.67;" edge="1" parent="1" source="5" target="4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="420"/>
+            </Array>
+            <mxPoint x="0" y="20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

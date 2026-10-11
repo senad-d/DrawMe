@@ -1,6 +1,6 @@
 # Diagram Type Presets
 
-When the user requests a specific diagram type, apply the matching preset below for shapes, styles, and layout conventions. These presets focus on **structural** style keywords, such as ERD's `shape=table;childLayout=tableLayout`; adapt colors and typography to the user's requested visual style.
+When the user requests a specific diagram type, apply the matching preset below for shapes, styles, and layout conventions. These presets focus on **structural** style keywords, such as ERD's `shape=table;childLayout=tableLayout`. The colors in these tables are notation defaults: replace them with the active theme's colors from the style presets reference (Light unless the user asks for Dark or Multi-color), and keep them only when the user explicitly asks for that notation's standard colors.
 
 Each preset ends with a **Review:** line — the type-specific defects to hunt during the visual review's holistic pass, on top of the generic fit, placement, connection, and typography checks.
 

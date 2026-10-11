@@ -17,6 +17,7 @@ This document lists the extension's public surface: commands, tools, options, de
 | `drawio_explain` | No | No |
 | `drawio_open` | No CLI check; requires an OS file handler | No |
 | `drawio_export` | Yes | No |
+| `drawio_animate` | Yes | No |
 | `drawio_from_mermaid` | Yes | Yes |
 | `drawio_layout` | Yes | Yes |
 
@@ -30,7 +31,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 
 | Command | Functionality |
 | --- | --- |
-| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, gated multi-pass visual review (fit/sizing → element placement → connections → holistic confirmation), and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
+| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, gated multi-pass visual review (fit/sizing → element placement → connections → holistic confirmation), and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, style-presets, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
 | `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
 | `/drawme-export <file> [png\|svg\|animated-svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. `animated-svg` requires motion and verifies the result. |
 
@@ -38,7 +39,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 
 ## Tools
 
-DrawMe registers nine model-callable tools.
+DrawMe registers ten model-callable tools.
 
 ### `drawio_check`
 
@@ -87,7 +88,7 @@ Exports an existing `.drawio` through the local draw.io desktop CLI.
 | `scale` | number | No | `2` | Scale for final PNG/JPG when `width` is absent. |
 | `width` | number | No | Preview: `2000` | Target width in pixels. Overrides `scale`. |
 | `transparent` | boolean | No | `false` | Enables transparency for PNG only. |
-| `border` | number | No | `10` | Export border in pixels. Use `0` for no border. |
+| `border` | number | No | `40` | Outer margin around the content in diagram units (so 80px in a scale-2 PNG). draw.io crops exports to the content, so this is the image's only margin; the default matches `drawio_fit_canvas`. Use `0` for no border. |
 | `pageIndex` | number | No | draw.io default | Positive, 1-based page number for multi-page files. |
 | `embed` | boolean | No | Mode/format dependent | Controls embedding of editable diagram XML. |
 | `animated` | boolean | No | `false` | Requires and verifies standalone animation. Valid only for final SVG; when format is omitted, animated mode defaults it to SVG. |
@@ -111,6 +112,8 @@ Additional behavior:
 - An explicit `output` replaces the derived name.
 - `animated:true` is valid only with `mode:"final"` and SVG. It rejects a static result instead of silently returning an ordinary SVG. Persistent `flowAnimation=1` connector motion is verified after draw.io renders it. Portable page-root visibility/opacity/fade/wait sequences are compiled into CSS inside the SVG and include a `prefers-reduced-motion` fallback that stops motion and reveals sequenced cells.
 - Standalone page sequences support `opacity`, `show`, `hide`, `toggle`, `fadeIn`, `fadeOut`, `fadeTo`, `wait`, explicit cell/wildcard/exclusion selectors, loop control, and `immediate:true` parallel batches. Viewer-dependent wipe/pop, highlight, dynamic-flow, style, navigation, tag/layer, and link actions are rejected in animated SVG mode.
+- The outer margin is even on all sides. draw.io applies its border unevenly for scaled rasters and for SVG, so a final PNG/JPG is sized with `--width` from the page's content width (keeping the requested scale) and an SVG is exported borderless and padded by DrawMe.
+- Every SVG (static or animated) is pinned to its authored colors: draw.io's `light-dark()` adaptive colors are resolved to the authored value and the color scheme is fixed to `light`, so the SVG looks the same as the PNG/PDF in every viewer, including dark-mode ones.
 - An explicit `width` replaces raster scaling.
 - `scale` is ignored in preview mode and for vector formats.
 - `transparent` has no effect outside PNG.
@@ -152,6 +155,65 @@ drawio_export({
 ```
 
 Use a distinct `output` for each format or page. Never present a preview artifact as the final deliverable when a final export was requested. Do not manually delete superseded or final-review previews; the tool replaces and cleans them automatically.
+
+---
+
+### `drawio_animate`
+
+Adds motion to an existing `.drawio` page and exports a verified standalone animated SVG plus a storyboard PNG.
+
+#### Options
+
+| Option | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `input` | string | Yes | — | Existing `.drawio` source path. |
+| `steps` | array | No | Stored motion | Ordered motion steps (below). Omit to re-export the motion already stored on the page. |
+| `loop` | boolean | No | `true` | Repeat the sequence. |
+| `hold` | number | No | `1600` | Pause in ms on the final state before a loop restarts. |
+| `pageIndex` | number | No | `1` | Positive, 1-based page to animate. |
+| `output` | string | No | `name.animated.svg` | Animated SVG path. |
+| `storyboard` | boolean | No | `true` | Render `name.storyboard.png`. |
+| `binary` | string | No | Auto-detected | Explicit binary path to test first. |
+
+Each step has an `effect` and, except for `wait`, a `cells` array of vertex or edge ids. Optional fields: `duration` (ms; required for `wait`), `stagger` (ms between consecutive cells), `parallel` (start with the previous step), `direction` (`slideIn`: `up`, `down`, `left`, `right`), `color` (hex, for `highlight` and `travel`), and `value` (`dim` opacity, default 0.25).
+
+| Effect | Targets | Default duration | Result |
+| --- | --- | --- | --- |
+| `fadeIn` / `fadeOut` | any cell | 600 / 500 ms | Fade to visible / hidden |
+| `dim` | any cell | 500 ms | Fade to `value` |
+| `popIn` | hidden cell | 550 ms | Scale up from 60% with overshoot while fading in |
+| `slideIn` | hidden cell | 650 ms | Move 32px in `direction` while fading in |
+| `drawIn` | hidden solid connector | 900 ms | Draw the line, then show arrowhead and label |
+| `highlight` | visible cell | 1000 ms | Brief glow and slight scale |
+| `travel` | visible connector | 1400 ms | Dot runs from source to target |
+| `wait` | — | required | Pause |
+
+#### Behavior
+
+- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden; all other cells start visible. Entrances on visible cells, emphasis on hidden cells, a cell targeted twice in one parallel group, `drawIn` on dashed or `flowAnimation=1` connectors, and missing or wrong-kind ids are rejected before anything is written.
+- Valid steps are stored as JSON in the `drawmeMotion` attribute of the page root cell (wrapping `<mxCell id="0"/>` in a `UserObject` when needed). This is a source edit; `drawio_validate` checks stored motion and reports a page that also has an enabled native page animation.
+- The page is exported to an embedded SVG, then group opacity, transform, and glow become CSS keyframes, connector draw-in uses `pathLength` and `stroke-dashoffset`, and travelling dots use SMIL `animateMotion` along the rendered connector path. A `prefers-reduced-motion` rule shows the final state and hides dots. Persistent connector flow is preserved. A missing cell group or connector path fails the call and removes the output.
+- `highlight` and `travel` default to the theme accent: `#60a5fa` on a dark page `background`, `#2563eb` otherwise.
+- The storyboard is one PNG with a captioned frame per sequential step (at most 12, sampled evenly) showing the end state of that step; highlight and travel steps show their accent on the stroke. It proves order and visibility, not easing. When the current model can view images, the storyboard is attached to the result.
+- The motion plays in browsers and in SVGs embedded as images. draw.io itself does not play it.
+
+#### Use
+
+```text
+drawio_animate({
+  "input": "checkout.drawio",
+  "steps": [
+    { "effect": "popIn", "cells": ["client"] },
+    { "effect": "drawIn", "cells": ["e1"] },
+    { "effect": "popIn", "cells": ["api", "db"], "stagger": 120 },
+    { "effect": "travel", "cells": ["e1"] },
+    { "effect": "highlight", "cells": ["api"] }
+  ]
+})
+
+# Re-export the stored motion after editing the layout
+drawio_animate({ "input": "checkout.drawio" })
+```
 
 ---
 

@@ -16,7 +16,8 @@ if (args.includes("--version")) {
   process.stdout.write("30.0.0\\n");
 } else {
   const output = args[args.indexOf("-o") + 1];
-  writeFileSync(output, "exported");
+  const svg = args[args.indexOf("-f") + 1] === "svg";
+  writeFileSync(output, svg ? '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>' : "exported");
 }
 `,
   );
@@ -40,7 +41,7 @@ describe("planExport", () => {
     const p = planExport({ input: "a.drawio" }, "darwin");
     expect(p.embed).toBe(true);
     expect(p.output).toBe("a.drawio.png");
-    expect(p.args).toEqual(["-x", "-f", "png", "-e", "-s", "2", "-b", "10", "-o", "a.drawio.png"]);
+    expect(p.args).toEqual(["-x", "-f", "png", "-e", "-s", "2", "-b", "40", "-o", "a.drawio.png"]);
     expect(p.linuxExtra).toEqual([]);
   });
 
@@ -88,6 +89,19 @@ describe("planExport", () => {
     expect(p.args).toContain("--width");
     expect(p.args).toContain("1200");
     expect(p.args).not.toContain("-s");
+  });
+
+  it("sizes scaled raster exports by width so the margin is even, and pads SVG itself", () => {
+    const png = planExport({ input: "a.drawio" }, "darwin", false, 1000);
+    expect(png.args).toEqual(["-x", "-f", "png", "-e", "--width", "2160", "-b", "80", "-o", "a.drawio.png"]);
+    const jpg = planExport({ input: "a.drawio", format: "jpg", scale: 3, border: 10 }, "darwin", false, 500);
+    expect(jpg.args).toEqual(["-x", "-f", "jpg", "--width", "1560", "-b", "30", "-o", "a.jpg"]);
+    const svg = planExport({ input: "a.drawio", format: "svg" }, "darwin", false, 1000);
+    expect(svg.args).toContain("-b");
+    expect(svg.args[svg.args.indexOf("-b") + 1]).toBe("0");
+    expect(svg.svgMargin).toBe(40);
+    const preview = planExport({ input: "a.drawio", mode: "preview" }, "darwin", false, 1000);
+    expect(preview.args).toEqual(["-x", "-f", "png", "--width", "2000", "-b", "40", "-o", "a.png"]);
   });
 
   it("supports explicit height, scale, border, and embed options", () => {
@@ -149,7 +163,7 @@ describe("exportDiagram animated SVG", () => {
 import { writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) process.stdout.write("31.0.0\\n");
-else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');
+else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="80px" height="40px" viewBox="0 0 80 40"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');
 `,
       );
       await chmod(binary, 0o755);
@@ -326,7 +340,8 @@ if (args.includes("--version")) {
 } else {
   const output = args[args.indexOf("-o") + 1];
   if (output.includes("fails")) process.exit(1);
-  writeFileSync(output, "exported");
+  const svg = args[args.indexOf("-f") + 1] === "svg";
+  writeFileSync(output, svg ? '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>' : "exported");
 }
 `,
       );

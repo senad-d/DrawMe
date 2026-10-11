@@ -4,8 +4,8 @@
  * CLI, including verified animated SVGs. It exposes the authoring workflow as plain commands and model-callable
  * tools.
  *
- * Tools:    drawio_check · drawio_export · drawio_validate · drawio_fit_canvas
- *           drawio_from_mermaid · drawio_layout · drawio_shapesearch
+ * Tools:    drawio_check · drawio_export · drawio_animate · drawio_validate
+ *           drawio_fit_canvas · drawio_from_mermaid · drawio_layout · drawio_shapesearch
  *           drawio_explain · drawio_open
  * Commands: /drawme · /drawme-check · /drawme-export
  */
@@ -29,6 +29,8 @@ import { fitCanvasFile } from "./fitcanvas";
 import { searchShapes } from "./shapesearch";
 import { explainFile } from "./explain";
 import { drawmeWorkflow } from "./workflow";
+import { animateDiagram } from "./animate";
+import { MOTION_EFFECTS, SLIDE_DIRECTIONS } from "./motion";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REF_DIR = resolve(HERE, "..", "assets", "references");
@@ -44,7 +46,7 @@ const exportParams = Type.Object({
   scale: Type.Optional(Type.Number({ description: "Raster scale for a final PNG/JPG (default 2)" })),
   width: Type.Optional(Type.Number({ description: "Target width in px; overrides scale. Preview uses 2000" })),
   transparent: Type.Optional(Type.Boolean({ description: "Transparent background (PNG only)" })),
-  border: Type.Optional(Type.Number({ description: "Border in px (default 10)" })),
+  border: Type.Optional(Type.Number({ description: "Outer margin in px around the content (default 40, matching drawio_fit_canvas)" })),
   pageIndex: Type.Optional(Type.Number({ description: "1-based page to export from a multi-page file" })),
   embed: Type.Optional(
     Type.Boolean({ description: "Embed diagram XML for an editable output. Default: on for final PNG/SVG/PDF, off for preview" }),
@@ -58,6 +60,37 @@ const exportParams = Type.Object({
   binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
 });
 export type DrawioExportInput = Static<typeof exportParams>;
+
+const motionStep = Type.Object({
+  effect: Type.Union(MOTION_EFFECTS.map((effect) => Type.Literal(effect)), {
+    description:
+      "fadeIn/fadeOut/dim change opacity; popIn and slideIn reveal hidden shapes; drawIn draws a hidden solid connector from source to target; highlight glows a visible cell briefly; travel sends a dot along a visible connector; wait pauses",
+  }),
+  cells: Type.Optional(Type.Array(Type.String(), { description: "Cell ids the effect targets (not used by wait)" })),
+  duration: Type.Optional(Type.Number({ description: "Effect length in ms; required for wait. Defaults: 500–1400 by effect" })),
+  stagger: Type.Optional(Type.Number({ description: "Start offset in ms between consecutive cells of this step, for a cascade" })),
+  parallel: Type.Optional(Type.Boolean({ description: "Start together with the previous step instead of after it" })),
+  direction: Type.Optional(
+    Type.Union(SLIDE_DIRECTIONS.map((direction) => Type.Literal(direction)), { description: "slideIn movement direction (default up)" }),
+  ),
+  color: Type.Optional(Type.String({ description: "Hex accent for highlight and travel (default #2563eb)" })),
+  value: Type.Optional(Type.Number({ description: "Target opacity 0–1 for dim (default 0.25)" })),
+});
+
+const animateParams = Type.Object({
+  input: Type.String({ description: "Path to the .drawio source file" }),
+  steps: Type.Optional(
+    Type.Array(motionStep, { description: "Motion steps in order. Omit to re-export the motion already stored on the page" }),
+  ),
+  loop: Type.Optional(Type.Boolean({ description: "Repeat the sequence (default true)" })),
+  hold: Type.Optional(Type.Number({ description: "Pause in ms on the final state before a loop restarts (default 1600)" })),
+  pageIndex: Type.Optional(Type.Number({ description: "1-based page to animate (default 1)" })),
+  output: Type.Optional(Type.String({ description: "Animated SVG path (default <name>.animated.svg next to the input)" })),
+  storyboard: Type.Optional(
+    Type.Boolean({ description: "Render <name>.storyboard.png with one frame per step for review (default true)" }),
+  ),
+  binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
+});
 
 const textResult = (text: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text }], details });
 
@@ -112,7 +145,7 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview. SVG output is pinned to the authored colors so it matches PNG/PDF in every viewer, including dark-mode ones.",
     promptSnippet:
       "Export a .drawio to PNG/SVG/PDF/JPG; set animated:true for a verified final animated SVG. Preview mode attaches a PNG for visual review when supported.",
     parameters: exportParams,
@@ -155,10 +188,56 @@ export default function drawme(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
+    name: "drawio_animate",
+    label: "draw.io: animate",
+    description:
+      "Animate an existing .drawio page and export a verified standalone animated SVG. Pass ordered motion steps (fadeIn, fadeOut, dim, popIn, slideIn, drawIn, highlight, travel, wait) with cell ids, optional duration, stagger, parallel, direction, and color. Cells whose first effect is an entrance start hidden. The steps are validated against the page, stored on the page root cell (a source edit), compiled to CSS keyframes and SMIL connector dots with a reduced-motion fallback, and injected into a draw.io SVG export. Omit steps to re-export the stored motion after layout edits. By default a storyboard PNG shows the end state of each step as a captioned frame grid; when the current model can view images it is attached. The storyboard is static: it proves order and visibility, not easing. Effects play in browsers and SVG image embeds; draw.io itself does not play them. Persistent flowAnimation connectors are kept. highlight and travel default to the page theme's accent, and the SVG keeps the authored theme colors in every viewer.",
+    promptSnippet:
+      "Add motion to a .drawio page (draw-in connectors, pop/slide entrances, highlights, travelling dots, cascades) and export a verified animated SVG with a storyboard.",
+    parameters: animateParams,
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      try {
+        const r = await animateDiagram(params);
+        const lines = [
+          `Animated ${r.output} (page '${r.page}')`,
+          `Animation verified: ${r.steps} step(s), ${r.animatedCells} animated cell(s), ${r.drawnConnectors} drawn connector(s), ${r.travellingDots} travelling dot(s), ${r.connectorFlows} connector flow(s); sequence ${r.sequenceMs}ms, ${r.loop ? `loop every ${r.durationMs}ms` : "plays once"}`,
+          r.saved
+            ? `Stored the motion on the page root cell of ${r.source}. This is a source edit: run drawio_validate.`
+            : `Re-used the motion stored in ${r.source}.`,
+        ];
+        const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" })[] = [];
+        let imageAttached = false;
+        if (r.storyboard) {
+          const sampled =
+            r.storyboardFramesTotal !== r.storyboardFrames ? ` (sampled from ${r.storyboardFramesTotal} steps)` : "";
+          lines.push(`Storyboard: ${r.storyboard}, ${r.storyboardFrames} frame(s)${sampled}`);
+          if (modelSupportsImages(ctx)) {
+            imageAttached = true;
+            lines.push(
+              "Storyboard attached below. Check each frame's caption against the intended order: the right cells visible, hidden, dimmed, or accented at each step, and nothing appearing before what it depends on.",
+            );
+          } else {
+            lines.push("Storyboard NOT attached: the current model cannot view images. Check the step order structurally instead.");
+          }
+        }
+        lines.push(`binary=${r.binary}${r.version ? ` (${r.version})` : ""}`);
+        content.push({ type: "text", text: lines.join("\n") });
+        if (imageAttached && r.storyboard) {
+          const png = await readFile(r.storyboard);
+          content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+        }
+        return { content, details: { ...r, imageAttached } };
+      } catch (e) {
+        return textResult(`Animate failed: ${(e as Error).message}`, { error: (e as Error).message });
+      }
+    },
+  });
+
+  pi.registerTool({
     name: "drawio_validate",
     label: "draw.io: validate",
     description:
-      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, explicit routes through shapes or across edges, pinned anchors facing away from the next route direction, edge labels likely overlapping shapes, labels sitting on their own line, and auto-routed edges (no waypoints) whose routing cannot be checked. Auto-routed edges whose direct path pierces a shape are called out as preview-review observations. Give every edge facing-side anchors and explicit waypoints so deterministic route checks engage. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
+      "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, explicit routes through shapes or across edges, pinned anchors facing away from the next route direction, edge labels likely overlapping shapes, labels sitting on their own line, labels landing on a bend of their own connector or on another routed connector, and auto-routed edges (no waypoints) whose routing cannot be checked. Auto-routed edges whose direct path pierces a shape are called out as preview-review observations. Give every edge facing-side anchors and explicit waypoints so deterministic route checks engage. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
     promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
     async execute(_id, params) {
@@ -347,6 +426,7 @@ export default function drawme(pi: ExtensionAPI): void {
         drawmeWorkflow(desc, REF_DIR, cli, {
           diagramTypes: await readReference("diagram-types.md"),
           xmlAuthoring: await readReference("xml-authoring.md"),
+          stylePresets: await readReference("style-presets.md"),
           mermaidAuthoring: cli.supportsMermaid ? await readReference("mermaid-authoring.md") : null,
         }),
       );

@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `drawio_animate`: an animation-only tool for an existing page. Typed steps (`fadeIn`, `fadeOut`, `dim`, `popIn`, `slideIn`, `drawIn`, `highlight`, `travel`, `wait`) with `stagger` and `parallel` timing are validated against the page, stored on the page root cell as `drawmeMotion`, compiled to CSS keyframes and SMIL connector dots with a reduced-motion fallback, and injected into a draw.io SVG export. A storyboard PNG shows each step's end state for review. `drawio_validate` checks stored motion.
+- Theme reference (`style-presets.md`): Light is the default; Dark and Multi-color are used only on explicit request. It includes ready-made styles, composition rules, and motion design guidance. `/drawme` pre-loads it, and diagram-type and classic palette colors now yield to the active theme.
+
+### Changed
+
+- Every SVG export (static, animated, and `drawio_animate`) is pinned to its authored colors: draw.io's `light-dark()` adaptive colors are resolved, so dark-mode viewers no longer invert the diagram and SVG, PNG, PDF, previews, and storyboards always show the same theme. `drawio_animate` defaults its highlight and dot accent to the page theme.
+- TypeScript is pinned to `~6.0.3` (and Dependabot ignores `>=6.1.0`) because `typescript-eslint` does not support TypeScript 7; `npm ci` resolves cleanly again.
+
+- Exports default to a 40-unit outer margin instead of 10px, matching `drawio_fit_canvas`: draw.io crops output to the content, so this border is the image's only margin. The margin is now even on every side: draw.io's own border is lopsided for scaled rasters (left/top get border × scale) and SVG (the canvas grows by 3 × border), so final PNG/JPG exports are sized with `--width` from the page's content width, and SVG is exported borderless and padded by DrawMe.
+- `drawio_validate` warns when a connector label's estimated box lands on a bend or another segment of its own connector (typically after an offset), or on another explicitly routed connector. Collinear waypoints, sub-2px jogs, and the L-shaped corners draw.io adds to orthogonal edges are taken into account. The validation decision tree example is fixed for the overlaps this found.
+
+### Security
+
+- Upgraded `@xmldom/xmldom` to `^0.9.12` and the `@earendil-works/pi-coding-agent` dev dependency to `^1.1.0`, and refreshed transitive `undici`, `brace-expansion`, and `source-map-js`; `npm audit` reports no vulnerabilities.
+
 - Verified standalone animated SVG export. `drawio_export` accepts `animated:true` (final SVG only), preserves and checks native connector flow animation, and compiles portable page-root visibility/opacity/fade/wait sequences into self-contained SVG CSS with loop, parallel-step, and reduced-motion support. Animation-aware validation catches malformed JSON, dangling targets, invalid flow/timing controls, and viewer-only effects before export; `/drawme-export ... animated-svg`, the autonomous workflow, authoring reference, and public docs expose the feature. Static PNG review/fallback remains separate; GIF, video, and network-loaded HTML viewers are intentionally out of scope.
 
 - `drawio_validate` no longer stays silent about what it cannot see: auto-routed edges (no explicit

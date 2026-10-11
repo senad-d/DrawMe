@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint supports TypeScript <6.1; lift this when it supports newer releases.
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
     groups:
       dev-dependencies:
         dependency-type: development
