@@ -22,21 +22,26 @@ export function resolveLightDark(css: string): string {
   for (;;) {
     const start = css.indexOf(FUNCTION, index);
     if (start < 0) return result + css.slice(index);
-    let depth = 1;
-    let comma = -1;
-    let cursor = start + FUNCTION.length;
-    for (; cursor < css.length && depth > 0; cursor++) {
-      const char = css[cursor];
-      if (char === "(") depth++;
-      else if (char === ")") depth--;
-      else if (char === "," && depth === 1 && comma < 0) comma = cursor;
-    }
+    const { depth, comma, cursor } = findFunctionEnd(css, start + FUNCTION.length);
     if (depth !== 0) return result + css.slice(index);
     const end = cursor - 1;
     const first = css.slice(start + FUNCTION.length, comma < 0 ? end : comma).trim();
     result += css.slice(index, start) + resolveLightDark(first);
     index = cursor;
   }
+}
+
+function findFunctionEnd(css: string, start: number): { depth: number; comma: number; cursor: number } {
+  let depth = 1;
+  let comma = -1;
+  let cursor = start;
+  for (; cursor < css.length && depth > 0; cursor++) {
+    const char = css[cursor];
+    if (char === "(") depth++;
+    else if (char === ")") depth--;
+    else if (char === "," && depth === 1 && comma < 0) comma = cursor;
+  }
+  return { depth, comma, cursor };
 }
 
 function pinColorScheme(style: string): string {
@@ -54,20 +59,22 @@ export function pinAuthoredColors(svg: string): string {
   if (!svg.includes(FUNCTION) && !/color-scheme\s*:\s*light\s+dark/.test(svg)) return svg;
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = doc.documentElement as unknown as DomEl | null;
-  if (!root || root.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
+  if (root?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
   for (const element of walk(root)) {
     const style = attr(element, "style");
     if (style !== null) element.setAttribute("style", pinColorScheme(resolveLightDark(style)));
-    if (element.tagName === "style") {
-      for (const node of Array.from(element.childNodes) as (DomEl & { data?: string })[]) {
-        if ((node.nodeType === TEXT_NODE || node.nodeType === CDATA_NODE) && node.data) {
-          node.data = resolveLightDark(node.data);
-          node.nodeValue = node.data;
-        }
-      }
-    }
+    if (element.tagName === "style") pinStyleText(element);
   }
   return new XMLSerializer().serializeToString(doc);
+}
+
+function pinStyleText(element: DomEl): void {
+  for (const node of Array.from(element.childNodes) as (DomEl & { data?: string })[]) {
+    if ((node.nodeType === TEXT_NODE || node.nodeType === CDATA_NODE) && node.data) {
+      node.data = resolveLightDark(node.data);
+      node.nodeValue = node.data;
+    }
+  }
 }
 
 function dimension(value: string | null): number | undefined {
@@ -81,10 +88,10 @@ function dimension(value: string | null): number | undefined {
  * full-size background rect) into the middle.
  */
 export function padSvg(svg: string, margin: number): string {
-  if (!(margin > 0)) return svg;
+  if (margin <= 0 || Number.isNaN(margin)) return svg;
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = doc.documentElement as unknown as DomEl | null;
-  if (!root || root.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
+  if (root?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
   const box = (attr(root, "viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
   const width = box.length === 4 && box.every(Number.isFinite) ? box[2] : dimension(attr(root, "width"));
   const height = box.length === 4 && box.every(Number.isFinite) ? box[3] : dimension(attr(root, "height"));
@@ -94,7 +101,7 @@ export function padSvg(svg: string, margin: number): string {
   const node = root as unknown as { appendChild(child: unknown): void };
   const group = doc.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("transform", `translate(${margin - minX},${margin - minY})`);
-  group.setAttribute("data-drawme-margin", String(margin));
+  group.setAttribute("data-drawme-margin", String(margin)); // NOSONAR: xmldom XML elements have no browser dataset API.
   for (const child of elemChildren(root)) {
     const background = child.tagName === "rect" && attr(child, "width") === "100%" && attr(child, "height") === "100%";
     if (child.tagName === "defs" || child.tagName === "style" || background) continue;

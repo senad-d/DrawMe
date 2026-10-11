@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-11
+
+### Fixed
+
+- Resolved Sonar maintainability findings by splitting motion, animation, export, and label-route validation into focused helpers, preserving deterministic preview-cleanup receipts while deleting independent artifacts concurrently. Documented browser-only `dataset` false positives for xmldom XML elements.
+- Added animation orchestration, SVG color/margin, and retained-preview cleanup regression tests.
+
 ### Added
 
 - `drawio_animate`: an animation-only tool for an existing page. Typed steps (`fadeIn`, `fadeOut`, `dim`, `popIn`, `slideIn`, `drawIn`, `highlight`, `travel`, `wait`) with `stagger` and `parallel` timing are validated against the page, stored on the page root cell as `drawmeMotion`, compiled to CSS keyframes and SMIL connector dots with a reduced-motion fallback, and injected into a draw.io SVG export. A storyboard PNG shows each step's end state for review. `drawio_validate` checks stored motion.
@@ -128,5 +135,6 @@ Initial release: DrawMe as a native Pi extension for authoring, validating, and 
 - Tooling: ESLint flat config, custom `format:check`, `check:golden` asset-integrity check, Vitest suite
   with real-CLI integration tests, CI, SonarCloud, and release workflows.
 
-[Unreleased]: https://github.com/senad-d/DrawMe/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/senad-d/DrawMe/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/senad-d/DrawMe/compare/v0.0.1...v0.1.9
 [0.0.1]: https://github.com/senad-d/DrawMe/releases/tag/v0.0.1

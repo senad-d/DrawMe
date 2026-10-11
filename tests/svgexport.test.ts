@@ -28,6 +28,14 @@ describe("SVG color pinning", () => {
     expect(pinned).toContain('content="light-dark(kept)"');
   });
 
+  it("resolves style CDATA and preserves incomplete adaptive functions", () => {
+    expect(resolveLightDark("light-dark(rgb(1, 2, 3))")).toBe("rgb(1, 2, 3)");
+    expect(resolveLightDark("light-dark(#111, #222); light-dark(#fff")).toBe("#111; light-dark(#fff");
+    const svg = '<svg><style><![CDATA[rect { fill: light-dark(#111, #eee); }]]></style></svg>';
+    expect(pinAuthoredColors(svg)).toContain("<![CDATA[rect { fill: #111; }]]>");
+    expect(() => pinAuthoredColors('<html style="color: light-dark(#111, #eee)"/>')).toThrow("not valid SVG");
+  });
+
   it("returns an SVG without adaptive colors unchanged", () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#fff"/></svg>';
     expect(pinAuthoredColors(svg)).toBe(svg);
@@ -39,5 +47,7 @@ describe("SVG color pinning", () => {
     expect(padded).toContain('width="280px" height="180px" viewBox="0 0 280 180"');
     expect(padded).toMatch(/<svg[^>]*><defs\/><rect fill="#0B1220" width="100%" height="100%" x="0" y="0"\/><g transform="translate\(40,40\)" data-drawme-margin="40"><g><g data-cell-id="0">/);
     expect(padSvg(svg, 0)).toBe(svg);
+    expect(padSvg(svg, -1)).toBe(svg);
+    expect(padSvg(svg, Number.NaN)).toBe(svg);
   });
 });

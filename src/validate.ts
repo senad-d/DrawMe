@@ -701,7 +701,7 @@ function straightenRoute(points: Point[]): Point[] {
     Math.min(a, b) - 2 <= value && value <= Math.max(a, b) + 2;
   const result: Point[] = [points[0]];
   for (let i = 1; i < points.length - 1; i++) {
-    const previous = result[result.length - 1];
+    const previous = result.at(-1)!;
     const [point, next] = [points[i], points[i + 1]];
     const jog = near(point[0], previous[0]) && near(point[1], previous[1]);
     const between = within(point[0], previous[0], next[0]) && within(point[1], previous[1], next[1]);
@@ -712,7 +712,7 @@ function straightenRoute(points: Point[]): Point[] {
         orient(previous, point, next) === 0);
     if (!jog && !run) result.push(point);
   }
-  result.push(points[points.length - 1]);
+  result.push(points.at(-1)!);
   return result;
 }
 
@@ -779,33 +779,45 @@ function anchorSegment(points: Point[], fraction: number): number {
 function labelRouteWarnings(cells: DomEl[], ids: ById): string[] {
   const routes: [string | null, Point[]][] = [];
   for (const cell of cells) {
-    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
-    const explicit = edgeRoute(cell, ids);
-    const route = explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
+    const route = visibleEdgeRoute(cell, ids);
     if (route) routes.push([attr(cell, "id"), route]);
   }
   const warnings: string[] = [];
   for (const cell of cells) {
-    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) continue;
-    const explicit = labelText(cell) ? edgeRoute(cell, ids) : null;
-    const route = explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
+    const route = labelText(cell) ? visibleEdgeRoute(cell, ids) : null;
     if (!route) continue;
     const box = labelBox(cell, route);
     if (hasInvalidNumber(box)) continue;
     const id = attr(cell, "id");
-    const anchor = anchorSegment(route, labelFraction(cell));
-    for (let i = 0; i < route.length - 1; i++) {
-      if (i !== anchor && routeHitsRect([route[i], route[i + 1]], box)) {
-        warnings.push(
-          `edge label ${repr(id)} likely sits on a bend or another segment of its own connector; move it along the edge (geometry x) or change its offset so the text clears every segment`,
-        );
-        break;
-      }
-    }
-    for (const [otherId, otherRoute] of routes) {
-      if (otherId !== id && routeHitsRect(otherRoute, box)) {
-        warnings.push(`edge label ${repr(id)} likely overlaps edge ${repr(otherId)}`);
-      }
+    warnings.push(...labelRouteIntersections(id, route, box, labelFraction(cell), routes));
+  }
+  return warnings;
+}
+
+function visibleEdgeRoute(cell: DomEl, ids: ById): Point[] | null {
+  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) return null;
+  const explicit = edgeRoute(cell, ids);
+  return explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
+}
+
+function labelRouteIntersections(
+  id: string | null,
+  route: Point[],
+  box: Rect,
+  fraction: number,
+  routes: [string | null, Point[]][],
+): string[] {
+  const warnings: string[] = [];
+  const anchor = anchorSegment(route, fraction);
+  const hitsOwnRoute = route.slice(1).some((point, i) => i !== anchor && routeHitsRect([route[i], point], box));
+  if (hitsOwnRoute) {
+    warnings.push(
+      `edge label ${repr(id)} likely sits on a bend or another segment of its own connector; move it along the edge (geometry x) or change its offset so the text clears every segment`,
+    );
+  }
+  for (const [otherId, otherRoute] of routes) {
+    if (otherId !== id && routeHitsRect(otherRoute, box)) {
+      warnings.push(`edge label ${repr(id)} likely overlaps edge ${repr(otherId)}`);
     }
   }
   return warnings;

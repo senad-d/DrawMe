@@ -198,9 +198,10 @@ export default function drawme(pi: ExtensionAPI): void {
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
         const r = await animateDiagram(params);
+        const playback = r.loop ? `loop every ${r.durationMs}ms` : "plays once";
         const lines = [
           `Animated ${r.output} (page '${r.page}')`,
-          `Animation verified: ${r.steps} step(s), ${r.animatedCells} animated cell(s), ${r.drawnConnectors} drawn connector(s), ${r.travellingDots} travelling dot(s), ${r.connectorFlows} connector flow(s); sequence ${r.sequenceMs}ms, ${r.loop ? `loop every ${r.durationMs}ms` : "plays once"}`,
+          `Animation verified: ${r.steps} step(s), ${r.animatedCells} animated cell(s), ${r.drawnConnectors} drawn connector(s), ${r.travellingDots} travelling dot(s), ${r.connectorFlows} connector flow(s); sequence ${r.sequenceMs}ms, ${playback}`,
           r.saved
             ? `Stored the motion on the page root cell of ${r.source}. This is a source edit: run drawio_validate.`
             : `Re-used the motion stored in ${r.source}.`,
@@ -220,7 +221,8 @@ export default function drawme(pi: ExtensionAPI): void {
             lines.push("Storyboard NOT attached: the current model cannot view images. Check the step order structurally instead.");
           }
         }
-        lines.push(`binary=${r.binary}${r.version ? ` (${r.version})` : ""}`);
+        const versionLabel = r.version ? ` (${r.version})` : "";
+        lines.push(`binary=${r.binary}${versionLabel}`);
         content.push({ type: "text", text: lines.join("\n") });
         if (imageAttached && r.storyboard) {
           const png = await readFile(r.storyboard);
@@ -364,11 +366,11 @@ export default function drawme(pi: ExtensionAPI): void {
       query: Type.String({ description: "Keywords, e.g. 'aws lambda' or 'uml actor'" }),
       limit: Type.Optional(Type.Number({ description: "Max results (default 10)" })),
     }),
-    async execute(_id, params) {
+    execute(_id, params) {
       const matches = searchShapes(params.query, params.limit ?? 10);
-      if (matches.length === 0) return textResult(`No shapes matched "${params.query}".`, { matches });
+      if (matches.length === 0) return Promise.resolve(textResult(`No shapes matched "${params.query}".`, { matches }));
       const lines = matches.map((m) => `${m.title}  (${m.w}x${m.h})\n  ${m.style}`);
-      return textResult(lines.join("\n"), { matches });
+      return Promise.resolve(textResult(lines.join("\n"), { matches }));
     },
   });
 
@@ -461,10 +463,10 @@ export default function drawme(pi: ExtensionAPI): void {
       }
       try {
         const r = await exportDiagram({ input, format: format as ExportFormat, mode: "final", animated });
-        ctx.ui.notify(
-          `Exported ${r.output}${r.animation ? " (animation verified)" : r.repaired ? " (repaired PNG)" : ""}`,
-          "info",
-        );
+        let status = "";
+        if (r.animation) status = " (animation verified)";
+        else if (r.repaired) status = " (repaired PNG)";
+        ctx.ui.notify(`Exported ${r.output}${status}`, "info");
       } catch (e) {
         ctx.ui.notify(`Export failed: ${(e as Error).message}`, "error");
       }

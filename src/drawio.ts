@@ -157,24 +157,9 @@ export function planExport(
   const raster = format === "png" || format === "jpg";
 
   const margin = opts.border ?? DEFAULT_FIT_MARGIN;
-  let border = margin;
   const args: string[] = ["-x", "-f", format];
   if (embed) args.push("-e");
-  if (opts.width != null) args.push("--width", String(opts.width));
-  else if (opts.height != null) args.push("--height", String(opts.height));
-  else if (raster) {
-    if (mode === "preview") args.push("--width", "2000");
-    else {
-      const scale = opts.scale ?? 2;
-      if (contentWidth !== undefined && contentWidth > 0 && scale !== 1) {
-        // With --width the border is in output pixels and applied evenly.
-        border = Math.round(margin * scale);
-        args.push("--width", String(Math.round(contentWidth * scale + 2 * border)));
-      } else {
-        args.push("-s", String(scale));
-      }
-    }
-  }
+  const border = planExportSize(opts, mode, raster, contentWidth, margin, args);
   // draw.io crops exports to the content, so the border is the image's only outer margin.
   args.push("-b", String(format === "svg" ? 0 : border));
   if (opts.transparent && format === "png") args.push("-t");
@@ -188,6 +173,28 @@ export function planExport(
     if (isRoot) linuxExtra.push("--no-sandbox");
   }
   return { format, mode, embed, animated, output, args, input: opts.input, linuxExtra, svgMargin: format === "svg" ? margin : 0 };
+}
+
+function planExportSize(
+  opts: ExportOptions, mode: ExportMode, raster: boolean, contentWidth: number | undefined,
+  margin: number, args: string[],
+): number {
+  if (opts.width != null) args.push("--width", String(opts.width));
+  else if (opts.height != null) args.push("--height", String(opts.height));
+  else if (raster) {
+    if (mode === "preview") args.push("--width", "2000");
+    else {
+      const scale = opts.scale ?? 2;
+      if (contentWidth !== undefined && contentWidth > 0 && scale !== 1) {
+        // With --width the border is in output pixels and applied evenly.
+        const border = Math.round(margin * scale);
+        args.push("--width", String(Math.round(contentWidth * scale + 2 * border)));
+        return border;
+      }
+      args.push("-s", String(scale));
+    }
+  }
+  return margin;
 }
 
 export interface ExportResult {
@@ -248,17 +255,12 @@ async function replaceTrackedPreview(input: string, latestOutput: string): Promi
   const removed: string[] = [];
   const warnings: string[] = [];
 
-  for (const [path, displayPath] of previous) {
-    if (path === latestPath) continue;
-    const existed = existsSync(path);
-    try {
-      await rm(path, { force: true });
-      if (existed) removed.push(displayPath);
-    } catch (error) {
-      retained.set(path, displayPath);
-      const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`${displayPath}: ${message}`);
-    }
+  const cleanup = await deletePreviewFiles(previous, latestPath);
+  for (const result of cleanup) {
+    if (result.warning !== undefined) {
+      retained.set(result.path, result.displayPath);
+      warnings.push(result.warning);
+    } else if (result.existed) removed.push(result.displayPath);
   }
 
   previewOutputs.set(key, retained);
@@ -276,21 +278,39 @@ async function removeTrackedPreviews(input: string, finalOutput: string): Promis
   const warnings: string[] = [];
   const retry = new Map<string, string>();
 
-  for (const [path, displayPath] of previews) {
-    if (path === finalPath) continue;
-    const existed = existsSync(path);
-    try {
-      await rm(path, { force: true });
-      if (existed) removed.push(displayPath);
-    } catch (error) {
-      retry.set(path, displayPath);
-      const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`${displayPath}: ${message}`);
-    }
+  const cleanup = await deletePreviewFiles(previews, finalPath);
+  for (const result of cleanup) {
+    if (result.warning !== undefined) {
+      retry.set(result.path, result.displayPath);
+      warnings.push(result.warning);
+    } else if (result.existed) removed.push(result.displayPath);
   }
 
   if (retry.size > 0) previewOutputs.set(key, retry);
   return { removed, warnings, replaced: false };
+}
+
+interface PreviewDeletion {
+  path: string;
+  displayPath: string;
+  existed: boolean;
+  warning?: string;
+}
+
+/** Independent file deletions run concurrently; receipts retain insertion order. */
+async function deletePreviewFiles(previews: Map<string, string>, protectedPath: string): Promise<PreviewDeletion[]> {
+  return Promise.all(
+    [...previews].filter(([path]) => path !== protectedPath).map(async ([path, displayPath]) => {
+      const existed = existsSync(path);
+      try {
+        await rm(path, { force: true });
+        return { path, displayPath, existed };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { path, displayPath, existed, warning: `${displayPath}: ${message}` };
+      }
+    }),
+  );
 }
 
 async function withSourceExportQueue<T>(input: string, action: () => Promise<T>): Promise<T> {

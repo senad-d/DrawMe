@@ -210,7 +210,7 @@ describe("motion storage", () => {
     const root = page as unknown as { getElementsByTagName(tag: string): { length: number; item(i: number): DomEl } };
     const wrapper = root.getElementsByTagName("UserObject").item(0);
     expect(wrapper.getAttribute("id")).toBe("0");
-    expect(root.getElementsByTagName("UserObject").length).toBe(1);
+    expect(root.getElementsByTagName("UserObject")).toHaveLength(1);
     expect(readStoredMotion(page)).toContain('"fadeIn"');
     expect(analyzeStoredMotion(page)?.compiled?.targetCellIds).toEqual(["a"]);
   });

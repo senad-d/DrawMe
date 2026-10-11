@@ -147,17 +147,21 @@ function parseSequence(raw: string | null, errors: string[], warnings: string[])
     errors.push("page animation loop must be a boolean");
   }
 
-  const steps: JsonObject[] = [];
-  for (let index = 0; index < value.steps.length; index++) {
-    const step = value.steps[index];
-    if (!isObject(step)) errors.push(`page animation step ${index + 1} must be an object`);
-    else steps.push(step);
-  }
+  const steps = parseSequenceSteps(value.steps, errors);
   return {
     enabled: value.enabled === undefined ? true : value.enabled === true,
     loop: value.loop === undefined ? true : value.loop === true,
     steps,
   };
+}
+
+function parseSequenceSteps(raw: unknown[], errors: string[]): JsonObject[] {
+  const steps: JsonObject[] = [];
+  raw.forEach((step, index) => {
+    if (!isObject(step)) errors.push(`page animation step ${index + 1} must be an object`);
+    else steps.push(step);
+  });
+  return steps;
 }
 
 function collectCellData(cells: DomEl[]): { byId: Map<string, DomEl>; animatable: string[] } {
@@ -188,18 +192,22 @@ function validateFlowAnimations(cells: DomEl[], errors: string[], flowEdgeIds: s
     }
     flowEdgeIds.push(id);
 
-    const duration = style.get("flowAnimationDuration");
-    if (duration !== undefined && (!(Number(duration) > 0) || !Number.isFinite(Number(duration)))) {
-      errors.push(`edge '${id}' has invalid flowAnimationDuration '${duration}' (expected a positive millisecond value)`);
-    }
-    const direction = style.get("flowAnimationDirection");
-    if (direction !== undefined && !FLOW_DIRECTIONS.has(direction)) {
-      errors.push(`edge '${id}' has invalid flowAnimationDirection '${direction}'`);
-    }
-    const timing = style.get("flowAnimationTimingFunction");
-    if (timing !== undefined && !FLOW_TIMINGS.has(timing)) {
-      errors.push(`edge '${id}' has invalid flowAnimationTimingFunction '${timing}'`);
-    }
+    validateFlowStyle(style, id, errors);
+  }
+}
+
+function validateFlowStyle(style: Map<string, string>, id: string, errors: string[]): void {
+  const duration = style.get("flowAnimationDuration");
+  if (duration !== undefined && (Number(duration) <= 0 || !Number.isFinite(Number(duration)))) {
+    errors.push(`edge '${id}' has invalid flowAnimationDuration '${duration}' (expected a positive millisecond value)`);
+  }
+  const direction = style.get("flowAnimationDirection");
+  if (direction !== undefined && !FLOW_DIRECTIONS.has(direction)) {
+    errors.push(`edge '${id}' has invalid flowAnimationDirection '${direction}'`);
+  }
+  const timing = style.get("flowAnimationTimingFunction");
+  if (timing !== undefined && !FLOW_TIMINGS.has(timing)) {
+    errors.push(`edge '${id}' has invalid flowAnimationTimingFunction '${timing}'`);
   }
 }
 
@@ -240,17 +248,20 @@ function selectorIds(
     }
   }
 
-  if (params.excludeCells !== undefined) {
-    if (!Array.isArray(params.excludeCells) || params.excludeCells.some((id) => typeof id !== "string")) {
-      errors.push(`page animation step ${stepNumber} action '${action}' has an invalid excludeCells array`);
-    } else {
-      for (const id of params.excludeCells as string[]) {
-        if (id === "*") requested.clear();
-        else requested.delete(id);
-      }
-    }
-  }
+  excludeSelectorIds(params.excludeCells, requested, stepNumber, action, errors);
   return [...requested];
+}
+
+function excludeSelectorIds(raw: unknown, requested: Set<string>, stepNumber: number, action: string, errors: string[]): void {
+  if (raw === undefined) return;
+  if (!Array.isArray(raw) || raw.some((id) => typeof id !== "string")) {
+    errors.push(`page animation step ${stepNumber} action '${action}' has an invalid excludeCells array`);
+    return;
+  }
+  for (const id of raw as string[]) {
+    if (id === "*") requested.clear();
+    else requested.delete(id);
+  }
 }
 
 function validateActionParameters(action: string, params: JsonObject, stepNumber: number, errors: string[]): void {
@@ -287,30 +298,35 @@ function validateSequence(
     const actions = Object.keys(step).filter((key) => key !== "immediate");
     if (actions.length === 0) errors.push(`page animation step ${stepNumber} has no action`);
     for (const action of actions) {
-      if (action === "wait") {
-        const delay = finiteNumber(step[action]);
-        if (delay === null || delay < 0) errors.push(`page animation step ${stepNumber} wait must be a non-negative number`);
-        continue;
-      }
-      if (DRAWIO_ONLY_ACTIONS.has(action) || !PORTABLE_ACTIONS.has(action)) {
-        warnings.push(
-          `page animation step ${stepNumber} action '${action}' is not supported in standalone animated SVG`,
-        );
-        continue;
-      }
-      hasPortableVisualAction = true;
-      const params = step[action];
-      if (!isObject(params)) {
-        errors.push(`page animation step ${stepNumber} action '${action}' must be an object`);
-        continue;
-      }
-      selectorIds(params, stepNumber, action, cells, animatable, errors, warnings);
-      validateActionParameters(action, params, stepNumber, errors);
+      const portable = validateSequenceAction(action, step[action], stepNumber, cells, animatable, errors, warnings);
+      hasPortableVisualAction ||= portable;
     }
   }
   if (sequence.enabled && sequence.steps.length > 0 && !hasPortableVisualAction) {
     errors.push("enabled page animation must contain at least one portable visual action");
   }
+}
+
+function validateSequenceAction(
+  action: string, raw: unknown, stepNumber: number, cells: Map<string, DomEl>,
+  animatable: string[], errors: string[], warnings: string[],
+): boolean {
+  if (action === "wait") {
+    const delay = finiteNumber(raw);
+    if (delay === null || delay < 0) errors.push(`page animation step ${stepNumber} wait must be a non-negative number`);
+    return false;
+  }
+  if (DRAWIO_ONLY_ACTIONS.has(action) || !PORTABLE_ACTIONS.has(action)) {
+    warnings.push(`page animation step ${stepNumber} action '${action}' is not supported in standalone animated SVG`);
+    return false;
+  }
+  if (!isObject(raw)) {
+    errors.push(`page animation step ${stepNumber} action '${action}' must be an object`);
+    return true;
+  }
+  selectorIds(raw, stepNumber, action, cells, animatable, errors, warnings);
+  validateActionParameters(action, raw, stepNumber, errors);
+  return true;
 }
 
 export function analyzeAnimationPage(diagram: DomEl): PageAnimationAnalysis {
@@ -341,8 +357,9 @@ export function analyzeAnimationPage(diagram: DomEl): PageAnimationAnalysis {
   if (sequence) validateSequence(sequence, byId, animatable, errors, warnings);
 
   if (flowEdgeIds.length > 0) {
+    const connectorIds = flowEdgeIds.map((id) => "'" + id + "'").join(", ");
     observations.push(
-      `${flowEdgeIds.length} connector(s) use persistent flow animation; SVG preserves it, static formats do not: ${flowEdgeIds.map((id) => `'${id}'`).join(", ")}`,
+      `${flowEdgeIds.length} connector(s) use persistent flow animation; SVG preserves it, static formats do not: ${connectorIds}`,
     );
   }
   if (sequence) {
@@ -415,7 +432,7 @@ function selectedIds(params: JsonObject, analysis: PageAnimationAnalysis): strin
 
 function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeline | null {
   const sequence = analysis.sequence;
-  if (!sequence || !sequence.enabled || sequence.steps.length === 0) return null;
+  if (!sequence?.enabled || sequence.steps.length === 0) return null;
 
   const states = new Map<string, number>();
   const tracks = new Map<string, OpacityPoint[]>();
@@ -430,51 +447,7 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
     const batch: JsonObject[] = [sequence.steps[index++]];
     while (index < sequence.steps.length && sequence.steps[index].immediate === true) batch.push(sequence.steps[index++]);
 
-    let batchDuration = 0;
-    const touched = new Set<string>();
-    const updates = new Map<string, number>();
-    for (const step of batch) {
-      for (const [action, raw] of Object.entries(step)) {
-        if (action === "immediate") continue;
-        batchDuration = Math.max(batchDuration, actionDuration(action, raw));
-        if (action === "wait") continue;
-        const params = raw as JsonObject;
-        const ids = selectedIds(params, analysis);
-        for (const id of ids) {
-          if (touched.has(id)) {
-            throw new Error(`parallel animation actions target cell '${id}' more than once in the same batch`);
-          }
-          touched.add(id);
-          const current = states.get(id) ?? 1;
-          const points = tracks.get(id)!;
-          let from = current;
-          let target = current;
-          if (action === "opacity") target = params.value as number;
-          else if (action === "show") target = 1;
-          else if (action === "hide") target = 0;
-          else if (action === "toggle") target = current > 0 ? 0 : 1;
-          else if (action === "fadeIn") {
-            from = 0;
-            target = 1;
-          } else if (action === "fadeOut") {
-            from = 1;
-            target = 0;
-          } else if (action === "fadeTo") target = params.value as number;
-
-          const duration = actionDuration(action, raw);
-          if (duration > 0) {
-            if (Math.abs(current - from) > 1e-9) putInstant(points, time, current, from);
-            else putPoint(points, time, from);
-            putPoint(points, time + duration, target);
-          } else {
-            putInstant(points, time, current, target);
-          }
-          updates.set(id, target);
-        }
-      }
-    }
-    for (const [id, value] of updates) states.set(id, value);
-    time += batchDuration;
+    time += compileOpacityBatch(batch, analysis, states, tracks, time);
   }
 
   const durationMs = Math.max(1, time);
@@ -498,8 +471,8 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
     const keyframes = points
       .map((point) => `  ${((point.time / durationMs) * 100).toFixed(9)}% { opacity: ${point.value}; }`)
       .join("\n");
-    rules.push(`@keyframes ${name} {\n${keyframes}\n}`);
     rules.push(
+      `@keyframes ${name} {\n${keyframes}\n}`,
       `${selector} { animation: ${name} ${durationMs}ms ease-in-out 0ms ${sequence.loop ? "infinite" : "1"} normal forwards; }`,
     );
   }
@@ -507,6 +480,61 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
     `@media (prefers-reduced-motion: reduce) {\n${reducedMotionRules.join("\n")}\n  g[data-cell-id] * { animation: none !important; }\n}`,
   );
   return { css: rules.join("\n"), durationMs, animatedCellIds: animated.map(([id]) => id) };
+}
+
+function opacityEndpoints(action: string, params: JsonObject, current: number): [number, number] {
+  switch (action) {
+    case "opacity":
+    case "fadeTo": return [current, params.value as number];
+    case "show": return [current, 1];
+    case "hide": return [current, 0];
+    case "toggle": return [current, current > 0 ? 0 : 1];
+    case "fadeIn": return [0, 1];
+    case "fadeOut": return [1, 0];
+    default: return [current, current];
+  }
+}
+
+function compileOpacityAction(
+  action: string, params: JsonObject, id: string, states: Map<string, number>,
+  tracks: Map<string, OpacityPoint[]>, time: number,
+): number {
+  const current = states.get(id) ?? 1;
+  const points = tracks.get(id)!;
+  const [from, target] = opacityEndpoints(action, params, current);
+  const duration = actionDuration(action, params);
+  if (duration > 0) {
+    if (Math.abs(current - from) > 1e-9) putInstant(points, time, current, from);
+    else putPoint(points, time, from);
+    putPoint(points, time + duration, target);
+  } else {
+    putInstant(points, time, current, target);
+  }
+  return target;
+}
+
+function compileOpacityBatch(
+  batch: JsonObject[], analysis: PageAnimationAnalysis, states: Map<string, number>,
+  tracks: Map<string, OpacityPoint[]>, time: number,
+): number {
+  let duration = 0;
+  const touched = new Set<string>();
+  const updates = new Map<string, number>();
+  for (const [action, raw] of batch.flatMap((step) => Object.entries(step))) {
+    if (action === "immediate") continue;
+    duration = Math.max(duration, actionDuration(action, raw));
+    if (action === "wait") continue;
+    const params = raw as JsonObject;
+    for (const id of selectedIds(params, analysis)) {
+      if (touched.has(id)) {
+        throw new Error(`parallel animation actions target cell '${id}' more than once in the same batch`);
+      }
+      touched.add(id);
+      updates.set(id, compileOpacityAction(action, params, id, states, tracks, time));
+    }
+  }
+  for (const [id, value] of updates) states.set(id, value);
+  return duration;
 }
 
 function walkElements(root: DomEl): DomEl[] {
@@ -521,6 +549,27 @@ function hasAnimatedPath(root: DomEl): boolean {
     const style = attr(element, "style") ?? "";
     return /(?:^|;)\s*animation\s*:/.test(style);
   });
+}
+
+function verifyFlowGroups(ids: string[], groups: Map<string, DomEl>): void {
+  const missing = ids.filter((id) => !groups.has(id));
+  if (missing.length > 0) {
+    throw new Error(`SVG is missing animated connector group(s): ${missing.join(", ")}`);
+  }
+  const staticGroups = ids.filter((id) => !hasAnimatedPath(groups.get(id)!));
+  if (staticGroups.length > 0) {
+    throw new Error(`draw.io did not preserve flow animation for connector(s): ${staticGroups.join(", ")}`);
+  }
+}
+
+function verifyTimelineGroups(timeline: CompiledTimeline | null, groups: Map<string, DomEl>): void {
+  if (!timeline) return;
+  const missing = timeline.animatedCellIds.filter((id) => !groups.has(id));
+  if (missing.length > 0) {
+    throw new Error(
+      `SVG is missing page-animation cell group(s): ${missing.join(", ")}; do not use visible=0 for cells revealed by an animation`,
+    );
+  }
 }
 
 export async function enhanceAnimatedSvg(
@@ -543,31 +592,17 @@ export async function enhanceAnimatedSvg(
   const svg = await readFile(output, "utf8");
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const svgRoot = doc.documentElement as unknown as DomEl | null;
-  if (!svgRoot || svgRoot.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
+  if (svgRoot?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
 
   const groupElements = new Map(
     walkElements(svgRoot)
       .map((element) => [attr(element, "data-cell-id"), element] as const)
       .filter((entry): entry is readonly [string, DomEl] => entry[0] !== null),
   );
-  const missingFlowGroups = analysis.flowEdgeIds.filter((id) => !groupElements.has(id));
-  if (missingFlowGroups.length > 0) {
-    throw new Error(`SVG is missing animated connector group(s): ${missingFlowGroups.join(", ")}`);
-  }
-  const staticFlowGroups = analysis.flowEdgeIds.filter((id) => !hasAnimatedPath(groupElements.get(id)!));
-  if (staticFlowGroups.length > 0) {
-    throw new Error(`draw.io did not preserve flow animation for connector(s): ${staticFlowGroups.join(", ")}`);
-  }
+  verifyFlowGroups(analysis.flowEdgeIds, groupElements);
 
   const timeline = compileOpacityTimeline(analysis);
-  if (timeline) {
-    const missing = timeline.animatedCellIds.filter((id) => !groupElements.has(id));
-    if (missing.length > 0) {
-      throw new Error(
-        `SVG is missing page-animation cell group(s): ${missing.join(", ")}; do not use visible=0 for cells revealed by an animation`,
-      );
-    }
-  }
+  verifyTimelineGroups(timeline, groupElements);
 
   const flowReducedMotion = analysis.flowEdgeIds.length > 0
     ? `@media (prefers-reduced-motion: reduce) {\n${analysis.flowEdgeIds
@@ -585,7 +620,7 @@ export async function enhanceAnimatedSvg(
     }
     const style = documentNode.createElementNS(SVG_NS, "style");
     style.setAttribute("type", "text/css");
-    style.setAttribute("data-drawme-animation", timeline ? "opacity-timeline" : "reduced-motion");
+    style.setAttribute("data-drawme-animation", timeline ? "opacity-timeline" : "reduced-motion"); // NOSONAR: xmldom XML elements have no browser dataset API.
     style.appendChild(documentNode.createTextNode(injectedCss));
     (defs as unknown as { appendChild(node: unknown): void }).appendChild(style);
     await writeFile(output, new XMLSerializer().serializeToString(doc), "utf8");

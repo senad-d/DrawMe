@@ -322,6 +322,32 @@ describe("exportDiagram preview cleanup", () => {
     }
   });
 
+  it("cleans multiple retained previews in order and retries failed deletions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-retained-previews-"));
+    try {
+      const input = join(dir, "example.drawio");
+      const first = join(dir, "first.png");
+      const second = join(dir, "second.png");
+      const latest = join(dir, "latest.png");
+      const binary = await makeFakeDrawio(dir);
+      await writeFile(input, "<mxfile/>");
+      await exportDiagram({ input, mode: "preview", output: first, binary });
+      await rm(first);
+      await mkdir(first);
+      await exportDiagram({ input, mode: "preview", output: second, binary });
+      await rm(first, { recursive: true });
+      await writeFile(first, "retained preview");
+      const result = await exportDiagram({ input, mode: "preview", output: latest, binary });
+      expect(result.removedPreviews).toEqual([second, first]);
+      expect(result.previewCleanupWarnings).toEqual([]);
+      expect(existsSync(first)).toBe(false);
+      expect(existsSync(second)).toBe(false);
+      expect(existsSync(latest)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the previous preview when its replacement export fails", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawme-failed-replacement-"));
     try {

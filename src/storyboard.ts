@@ -83,6 +83,34 @@ function effectiveOpacity(id: string, frame: MotionFrame, parents: Map<string, s
   return opacity;
 }
 
+function storyboardCell(entry: PageEntry, prefix: string, layers: Set<string>, ox: number, oy: number): DomEl {
+  const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
+  const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
+  element.setAttribute("id", `${prefix}${entry.id}`);
+  const parent = attr(cell, "parent");
+  const topLevel = parent === null || layers.has(parent);
+  cell.setAttribute("parent", topLevel ? "1" : `${prefix}${parent}`);
+  for (const end of ["source", "target"]) {
+    const ref = attr(cell, end);
+    if (ref !== null) cell.setAttribute(end, `${prefix}${ref}`);
+  }
+  if (topLevel) shiftCell(cell, ox, oy);
+  return element;
+}
+
+function applyFrameStyle(element: DomEl, id: string, frame: MotionFrame, parents: Map<string, string | null>): void {
+  const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
+  const updates: Record<string, string> = {};
+  const opacity = effectiveOpacity(id, frame, parents);
+  if (opacity < 1) {
+    const percent = String(Math.round(opacity * 100));
+    Object.assign(updates, { opacity: percent, textOpacity: percent });
+  }
+  const accent = frame.accent.get(id);
+  if (accent) Object.assign(updates, { strokeColor: accent, strokeWidth: "3" });
+  if (Object.keys(updates).length > 0) cell.setAttribute("style", setStyle(attr(cell, "style") ?? "", updates));
+}
+
 /** Build a one-page `.drawio` document that lays out the frames as a captioned grid. */
 export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
   if (frames.length === 0) throw new Error("motion has no visual steps to storyboard");
@@ -111,27 +139,8 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
     );
     for (const entry of entries) {
       if (entry.id === "0" || layers.has(entry.id)) continue;
-      const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
-      const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
-      element.setAttribute("id", `${prefix}${entry.id}`);
-      const parent = attr(cell, "parent");
-      const topLevel = parent === null || layers.has(parent);
-      cell.setAttribute("parent", topLevel ? "1" : `${prefix}${parent}`);
-      for (const end of ["source", "target"]) {
-        const ref = attr(cell, end);
-        if (ref !== null) cell.setAttribute(end, `${prefix}${ref}`);
-      }
-      if (topLevel) shiftCell(cell, ox, oy + CAPTION_HEIGHT);
-
-      const updates: Record<string, string> = {};
-      const opacity = effectiveOpacity(entry.id, frame, parents);
-      if (opacity < 1) {
-        const percent = String(Math.round(opacity * 100));
-        Object.assign(updates, { opacity: percent, textOpacity: percent });
-      }
-      const accent = frame.accent.get(entry.id);
-      if (accent) Object.assign(updates, { strokeColor: accent, strokeWidth: "3" });
-      if (Object.keys(updates).length > 0) cell.setAttribute("style", setStyle(attr(cell, "style") ?? "", updates));
+      const element = storyboardCell(entry, prefix, layers, ox, oy + CAPTION_HEIGHT);
+      applyFrameStyle(element, entry.id, frame, parents);
       parts.push(serializer.serializeToString(element as never));
     }
   });

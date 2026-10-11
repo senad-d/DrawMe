@@ -189,7 +189,9 @@ export function motionCells(model: DomEl): Map<string, MotionCell> {
   const { ids } = collectCellsWithIds(firstByTag(model, "root"));
   const result = new Map<string, MotionCell>();
   for (const [id, cell] of ids) {
-    const kind = cell.getAttribute("vertex") === "1" ? "vertex" : cell.getAttribute("edge") === "1" ? "edge" : null;
+    let kind: MotionCell["kind"] | null = null;
+    if (cell.getAttribute("vertex") === "1") kind = "vertex";
+    else if (cell.getAttribute("edge") === "1") kind = "edge";
     if (kind) result.set(id, { kind, style: attr(cell, "style") ?? "", parent: attr(cell, "parent") });
   }
   return result;
@@ -226,23 +228,7 @@ export function parseMotionSpec(raw: unknown, errors: string[]): MotionSpec | nu
       return;
     }
     const step: MotionStep = { effect: effect as MotionEffect };
-    if (raw.cells !== undefined) {
-      if (!Array.isArray(raw.cells) || raw.cells.some((id) => typeof id !== "string")) {
-        errors.push(`motion step ${n} cells must be an array of cell ids`);
-      } else {
-        step.cells = raw.cells as string[];
-      }
-    }
-    for (const key of ["duration", "stagger", "value"] as const) {
-      if (raw[key] === undefined) continue;
-      const number = finite(raw[key]);
-      if (number === null) errors.push(`motion step ${n} ${key} must be a number`);
-      else step[key] = number;
-    }
-    if (raw.parallel !== undefined) {
-      if (typeof raw.parallel !== "boolean") errors.push(`motion step ${n} parallel must be a boolean`);
-      else step.parallel = raw.parallel;
-    }
+    parseStepTiming(raw, step, n, errors);
     if (raw.direction !== undefined) {
       if (typeof raw.direction !== "string" || !(SLIDE_DIRECTIONS as readonly string[]).includes(raw.direction)) {
         errors.push(`motion step ${n} direction must be one of ${SLIDE_DIRECTIONS.join(", ")}`);
@@ -264,6 +250,26 @@ export function parseMotionSpec(raw: unknown, errors: string[]): MotionSpec | nu
     ...(hold === null ? {} : { hold }),
     steps,
   };
+}
+
+function parseStepTiming(raw: Record<string, unknown>, step: MotionStep, n: number, errors: string[]): void {
+  if (raw.cells !== undefined) {
+    if (!Array.isArray(raw.cells) || raw.cells.some((id) => typeof id !== "string")) {
+      errors.push(`motion step ${n} cells must be an array of cell ids`);
+    } else {
+      step.cells = raw.cells as string[];
+    }
+  }
+  for (const key of ["duration", "stagger", "value"] as const) {
+    if (raw[key] === undefined) continue;
+    const number = finite(raw[key]);
+    if (number === null) errors.push(`motion step ${n} ${key} must be a number`);
+    else step[key] = number;
+  }
+  if (raw.parallel !== undefined) {
+    if (typeof raw.parallel !== "boolean") errors.push(`motion step ${n} parallel must be a boolean`);
+    else step.parallel = raw.parallel;
+  }
 }
 
 class Track {
@@ -347,37 +353,9 @@ function resolveSteps(
     const stagger = step.stagger ?? 0;
     if (stagger < 0 || stagger > MAX_DURATION_MS) errors.push(`${where} stagger must be between 0 and ${MAX_DURATION_MS} ms`);
     if (step.parallel && index === 0) errors.push(`${where} cannot be parallel: there is no previous step`);
-    if (step.value !== undefined && (step.effect !== "dim" || step.value < 0 || step.value > 1)) {
-      errors.push(`${where} value is only valid for dim and must be between 0 and 1`);
-    }
-    if (step.direction !== undefined && step.effect !== "slideIn") errors.push(`${where} direction is only valid for slideIn`);
-    if (step.color !== undefined && step.effect !== "highlight" && step.effect !== "travel") {
-      errors.push(`${where} color is only valid for highlight and travel`);
-    }
-
     const ids = step.cells ?? [];
-    if (step.effect === "wait") {
-      if (ids.length > 0) errors.push(`${where} must not list cells`);
-    } else if (ids.length === 0) {
-      errors.push(`${where} must list at least one cell id`);
-    }
-    if (new Set(ids).size !== ids.length) errors.push(`${where} lists a cell more than once`);
-    for (const id of ids) {
-      const cell = cells.get(id);
-      if (!cell) {
-        errors.push(`${where} references missing cell '${id}'`);
-        continue;
-      }
-      if (EDGE_ONLY.has(step.effect) && cell.kind !== "edge") errors.push(`${where} needs a connector, but '${id}' is a shape`);
-      if (step.effect === "drawIn" && cell.kind === "edge") {
-        if (styleValue(cell.style, "dashed") === "1") {
-          errors.push(`${where} cannot draw dashed connector '${id}'; use fadeIn or make it solid`);
-        }
-        if (styleValue(cell.style, "flowAnimation") === "1") {
-          errors.push(`${where} cannot draw connector '${id}' because it uses flowAnimation=1; use fadeIn`);
-        }
-      }
-    }
+    validateStepOptions(step, ids, where, errors);
+    validateStepCells(step, ids, cells, where, errors);
     resolved.push({
       number,
       effect: step.effect,
@@ -393,10 +371,46 @@ function resolveSteps(
   return resolved;
 }
 
+function validateStepOptions(step: MotionStep, ids: string[], where: string, errors: string[]): void {
+  if (step.value !== undefined && (step.effect !== "dim" || step.value < 0 || step.value > 1)) {
+    errors.push(`${where} value is only valid for dim and must be between 0 and 1`);
+  }
+  if (step.direction !== undefined && step.effect !== "slideIn") errors.push(`${where} direction is only valid for slideIn`);
+  if (step.color !== undefined && step.effect !== "highlight" && step.effect !== "travel") {
+    errors.push(`${where} color is only valid for highlight and travel`);
+  }
+  if (step.effect === "wait") {
+    if (ids.length > 0) errors.push(`${where} must not list cells`);
+  } else if (ids.length === 0) {
+    errors.push(`${where} must list at least one cell id`);
+  }
+  if (new Set(ids).size !== ids.length) errors.push(`${where} lists a cell more than once`);
+}
+
+function validateStepCells(
+  step: MotionStep, ids: string[], cells: Map<string, MotionCell>, where: string, errors: string[],
+): void {
+  for (const id of ids) {
+    const cell = cells.get(id);
+    if (!cell) {
+      errors.push(`${where} references missing cell '${id}'`);
+      continue;
+    }
+    if (EDGE_ONLY.has(step.effect) && cell.kind !== "edge") errors.push(`${where} needs a connector, but '${id}' is a shape`);
+    if (step.effect !== "drawIn" || cell.kind !== "edge") continue;
+    if (styleValue(cell.style, "dashed") === "1") {
+      errors.push(`${where} cannot draw dashed connector '${id}'; use fadeIn or make it solid`);
+    }
+    if (styleValue(cell.style, "flowAnimation") === "1") {
+      errors.push(`${where} cannot draw connector '${id}' because it uses flowAnimation=1; use fadeIn`);
+    }
+  }
+}
+
 function batches(steps: ResolvedStep[]): ResolvedStep[][] {
   const result: ResolvedStep[][] = [];
   for (const step of steps) {
-    if (step.parallel && result.length > 0) result[result.length - 1].push(step);
+    if (step.parallel && result.length > 0) result.at(-1)!.push(step);
     else result.push([step]);
   }
   return result;
@@ -447,8 +461,7 @@ export function compileMotion(
   if (errors.length > 0) return { spec, compiled: null, errors };
 
   // A cell whose first effect is an entrance starts hidden; everything else starts visible.
-  const firstEffect = new Map<string, MotionEffect>();
-  for (const step of steps) for (const id of step.cells) if (!firstEffect.has(id)) firstEffect.set(id, step.effect);
+  const firstEffect = firstCellEffects(steps);
 
   const tracks = new Map<string, CellTracks>();
   const ensure = (id: string): CellTracks => {
@@ -555,6 +568,34 @@ export function compileMotion(
   const loop = spec.loop ?? true;
   const sequenceMs = Math.max(1, time);
   const durationMs = loop ? sequenceMs + (spec.hold ?? DEFAULT_HOLD_MS) : sequenceMs;
+  const css = compileTrackCss(tracks, durationMs, loop);
+  return {
+    spec,
+    errors,
+    compiled: {
+      loop,
+      sequenceMs,
+      durationMs,
+      css,
+      dots,
+      targetCellIds: [...tracks.keys()],
+      drawInEdgeIds: [...drawInEdges],
+      frames,
+    },
+  };
+}
+
+function firstCellEffects(steps: ResolvedStep[]): Map<string, MotionEffect> {
+  const effects = new Map<string, MotionEffect>();
+  for (const step of steps) {
+    for (const id of step.cells) {
+      if (!effects.has(id)) effects.set(id, step.effect);
+    }
+  }
+  return effects;
+}
+
+function compileTrackCss(tracks: Map<string, CellTracks>, durationMs: number, loop: boolean): string {
   const iteration = loop ? "infinite" : "1";
   const rules: string[] = [];
   const reduced: string[] = [];
@@ -586,20 +627,7 @@ export function compileMotion(
   reduced.push("  [data-drawme-dot] { display: none !important; }");
   rules.push(`@media (prefers-reduced-motion: reduce) {\n${reduced.join("\n")}\n}`);
 
-  return {
-    spec,
-    errors,
-    compiled: {
-      loop,
-      sequenceMs,
-      durationMs,
-      css: rules.join("\n"),
-      dots,
-      targetCellIds: [...tracks.keys()],
-      drawInEdgeIds: [...drawInEdges],
-      frames,
-    },
-  };
+  return rules.join("\n");
 }
 
 // --- Storage on the page root cell ---
@@ -638,8 +666,7 @@ export function storeMotion(model: DomEl, json: string): void {
   wrapper.setAttribute(MOTION_ATTRIBUTE, json);
   wrapper.setAttribute("id", "0");
   const inner = doc.createElement("mxCell");
-  for (let i = 0; i < node.attributes.length; i++) {
-    const { name, value } = node.attributes[i];
+  for (const { name, value } of Array.from(node.attributes)) {
     if (name !== "id") inner.setAttribute(name, value);
   }
   (wrapper as unknown as { appendChild(child: unknown): void }).appendChild(inner);
@@ -708,7 +735,7 @@ function markDecor(group: DomEl, line: DomEl): void {
   while (current !== (group as Parented) && current.parentNode) {
     const parent = current.parentNode;
     for (const sibling of elemChildren(parent)) {
-      if (sibling !== current) sibling.setAttribute("data-drawme-decor", "1");
+      if (sibling !== current) sibling.setAttribute("data-drawme-decor", "1"); // NOSONAR: xmldom XML elements have no browser dataset API.
     }
     current = parent;
   }
@@ -730,7 +757,7 @@ function appendDot(doc: XmlDocument, group: DomEl, path: string, dot: MotionDot,
   circle.setAttribute("stroke", "#ffffff");
   circle.setAttribute("stroke-width", "1.5");
   circle.setAttribute("opacity", "0");
-  circle.setAttribute("data-drawme-dot", "1");
+  circle.setAttribute("data-drawme-dot", "1"); // NOSONAR: xmldom XML elements have no browser dataset API.
   const travel = doc.createElementNS(SVG_NS, "animateMotion");
   travel.setAttribute("path", path);
   travel.setAttribute("dur", `${total}ms`);
@@ -752,6 +779,15 @@ function appendDot(doc: XmlDocument, group: DomEl, path: string, dot: MotionDot,
   (group as unknown as { appendChild(node: unknown): void }).appendChild(circle);
 }
 
+function motionSvgGroups(root: DomEl): Map<string, DomEl> {
+  const groups = new Map<string, DomEl>();
+  for (const element of walk(root)) {
+    const id = attr(element, "data-cell-id");
+    if (id !== null && !groups.has(id)) groups.set(id, element);
+  }
+  return groups;
+}
+
 /**
  * Inject compiled motion into a draw.io SVG string. Throws when a targeted
  * cell or connector line is missing from the SVG, so a static file is never
@@ -760,12 +796,8 @@ function appendDot(doc: XmlDocument, group: DomEl, path: string, dot: MotionDot,
 export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: string[] = []): string {
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const svgRoot = doc.documentElement as unknown as DomEl | null;
-  if (!svgRoot || svgRoot.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
-  const groups = new Map<string, DomEl>();
-  for (const element of walk(svgRoot)) {
-    const id = attr(element, "data-cell-id");
-    if (id !== null && !groups.has(id)) groups.set(id, element);
-  }
+  if (svgRoot?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
+  const groups = motionSvgGroups(svgRoot);
   const missing = motion.targetCellIds.filter((id) => !groups.has(id));
   if (missing.length > 0) {
     throw new Error(`SVG is missing animated cell group(s): ${missing.join(", ")}; do not use visible=0 on animated cells`);
@@ -776,7 +808,7 @@ export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: s
     const line = linePath(group);
     if (!line) throw new Error(`connector '${id}' has no line path in the SVG to draw in`);
     line.setAttribute("pathLength", "1");
-    line.setAttribute("data-drawme-line", "1");
+    line.setAttribute("data-drawme-line", "1"); // NOSONAR: xmldom XML elements have no browser dataset API.
     markDecor(group, line);
   }
   for (const dot of motion.dots) {
@@ -800,7 +832,7 @@ export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: s
   }
   const style = doc.createElementNS(SVG_NS, "style");
   style.setAttribute("type", "text/css");
-  style.setAttribute("data-drawme-animation", "motion");
+  style.setAttribute("data-drawme-animation", "motion"); // NOSONAR: xmldom XML elements have no browser dataset API.
   style.appendChild(doc.createTextNode(motion.css + flowReduced));
   (defs as unknown as { appendChild(node: unknown): void }).appendChild(style);
   return new XMLSerializer().serializeToString(doc);

@@ -91,7 +91,7 @@ function resolveSpec(opts: AnimateOptions, model: DomEl): { spec: MotionSpec; ch
     if (spec && opts.loop !== undefined) spec.loop = opts.loop;
     if (spec && opts.hold !== undefined) spec.hold = opts.hold;
   }
-  if (!spec || errors.length > 0) throw new Error(errors.join("; "));
+  if (!spec || errors.length > 0) throw new Error(errors.join("; ") || "motion specification is invalid");
   return { spec, changed: JSON.stringify(spec) !== stored };
 }
 
