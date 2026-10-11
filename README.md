@@ -25,12 +25,12 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
   </tr>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-how-it-works.drawio.png" alt="DrawMe: from a prompt to an editable diagram" title="DrawMe" width="820">
+      <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-how-it-works.drawio.png" alt="DrawMe user flow: author, validate, review in four passes, correct, and export, with CLI and vision fallbacks" title="DrawMe user flow" width="820">
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-installation-guide.drawio.png" alt="DrawMe: Installation guide" title="DrawMe" width="820">
+      <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/drawme-installation-guide.drawio.png" alt="Install DrawMe: prerequisites, personal/project/one-invocation scope, CLI check, and first request" title="DrawMe installation" width="820">
     </td>
   </tr>
 </table>
@@ -40,7 +40,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 - **Deterministic validation:** a structural linter catches dangling edges, duplicate/reserved ids, malformed geometry, page/container overflow, inadequate margins, conservative readability defects, overlaps, and explicit edge-routing defects before you look at a pixel.
 - **Vision-aware previews:** successful PNG previews attach the actual image only when the active model can view images — the result text says which case applies — so text-only models get an honest structural-review path instead of a placeholder; each replacement removes the previous same-source preview file so only the latest remains on disk.
 - **Exact shapes, not guesses:** search 10k+ official AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN styles from a bundled local index.
-- **Animated SVG:** persistent connector flow and portable timed visibility/opacity/fade/wait sequences export as verified standalone SVG animation, with reduced-motion handling and an optional static PNG fallback.
+- **Animated SVG:** pop/slide entrances, connector draw-in, travelling dots, highlights, staggered cascades, persistent connector flow, and portable page sequences export as verified standalone SVG animation, with a storyboard, reduced-motion handling, and a static PNG fallback.
 - **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, the truncated `-e` PNG chunk is auto-repaired, and final export removes the one remaining latest preview.
 
 > **Security:** Pi packages run with your full system permissions. DrawMe reads and writes diagram files and can launch the draw.io CLI or your OS file opener. Review [`SECURITY.md`](SECURITY.md) before installation.
@@ -215,11 +215,24 @@ install only packages you trust. See [`SECURITY.md`](SECURITY.md) for runtime an
 
 ## Examples
 
-Sample diagrams authored with DrawMe live in [`example/`](example/):
+Editable sources and rendered examples live in [`example/`](example/README.md). The showcase spans three presets: **Multi-color** for the user journey (blue authoring, purple quality, green delivery), **Dark** for the animated AWS architecture, and **Light** for the installation and reference diagrams. All use deliberate typography, native shapes, generous spacing, and explicitly routed connectors.
 
-- [`drawme-how-it-works.drawio`](example/drawme-how-it-works.drawio) — the workflow/architecture overview shown above.
-- [`drawme-installation-guide.drawio`](example/drawme-installation-guide.drawio) — an installation walkthrough.
-- [`git-graph-example.drawio`](example/git-graph-example.drawio) — a branching release-history example.
+| Example | Editable source | Render |
+| --- | --- | --- |
+| Multi-color user journey, four review passes, and CLI/vision fallbacks | [Source](example/drawme-how-it-works.drawio) | [PNG](example/drawme-how-it-works.drawio.png) |
+| Light installation guide: scopes, trust, CLI check, and first request | [Source](example/drawme-installation-guide.drawio) | [PNG](example/drawme-installation-guide.drawio.png) |
+| Architecture and responsibilities of all ten tools | [Source](example/drawme-architecture.drawio) | [PNG](example/drawme-architecture.drawio.png) |
+| Structural gates and bounded, pass-by-pass correction | [Source](example/drawme-validation-decision-tree.drawio) | [PNG](example/drawme-validation-decision-tree.drawio.png) |
+| Dark AWS architecture: transactional outbox, SNS/SQS fan-out, consumers, and dead letters | [Source](example/event-driven-orders.drawio) | [Animated SVG](example/event-driven-orders.animated.svg) · [PNG](example/event-driven-orders.drawio.png) · [Storyboard](example/event-driven-orders.storyboard.png) |
+| Git branching and merges (classic, retained example) | [Source](example/git-graph-example.drawio) | [PNG](example/git-graph-example.drawio.png) |
+
+### Animated example — Dark
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/senad-d/DrawMe/main/example/event-driven-orders.animated.svg" alt="Animated order processing: publish committed outbox events, fan out to fulfillment and notifications, then persist shipments and send email" width="900">
+</p>
+
+This Dark-theme showcase uses 13 official AWS4 components across four zones, including API Gateway, Lambda, DynamoDB, SNS, SQS, and SES. Its verified standalone SVG demonstrates pop/slide entrances, connector draw-in, travelling dots, highlights, and staggered reveals in a 12.56-second loop. Reduced-motion viewers see the static diagram. If your SVG host sanitizes animation, use the [PNG fallback](example/event-driven-orders.drawio.png). The [storyboard](example/event-driven-orders.storyboard.png) shows step order and visibility, not temporal playback.
 
 ## Development
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { MIN_OUTER_MARGIN, validateXml } from "../src/validate";
 
@@ -471,17 +471,12 @@ describe("validateXml", () => {
   });
 
   it("keeps the checked-in examples warning-free", () => {
-    const accepted: Record<string, string[]> = {
-      "drawme-extension-waterfall-overview.drawio": [],
-      "drawme-how-it-works.drawio": [],
-      "drawme-installation-guide.drawio": [],
-      "drawme-validation-decision-tree.drawio": [],
-      "git-graph-example.drawio": [],
-    };
-    for (const [name, expected] of Object.entries(accepted)) {
+    const examples = readdirSync(resolve("example")).filter((name) => name.endsWith(".drawio")).sort();
+    expect(examples.length).toBeGreaterThan(0);
+    for (const name of examples) {
       const result = validateXml(readFileSync(resolve("example", name), "utf8"));
       expect(result.errors, name).toEqual([]);
-      expect(result.warnings, name).toEqual(expected);
+      expect(result.warnings, name).toEqual([]);
     }
   });
 

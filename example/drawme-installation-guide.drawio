@@ -1,133 +1,99 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="drawio" version="31.1.5">
-  <diagram id="drawme-install" name="Install DrawMe">
-    <mxGraphModel dx="2000" dy="1650" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" math="0" shadow="0" background="#F4F7FB" pageWidth="2000" pageHeight="1685">
+<mxfile host="drawio" version="31.7.0">
+  <diagram id="drawme-installation-guide" name="Quick start • Light">
+    <mxGraphModel grid="1" gridSize="10" guides="1" page="1" pageScale="1" pageWidth="1635" pageHeight="1215" background="#FFFFFF" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="title" value="Install DrawMe for Pi" style="text;html=1;align=left;verticalAlign=middle;fontSize=34;fontStyle=1;fontColor=#17365D;" vertex="1" parent="1">
-          <mxGeometry x="40" y="40" width="1100" height="50" as="geometry"/>
+        <mxCell id="eyebrow" value="DRAWME / QUICK START" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#2563EB;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="650" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="subtitle" value="From prerequisites to an autonomous, editable .drawio export" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#4F6475;" vertex="1" parent="1">
-          <mxGeometry x="40" y="92" width="1200" height="32" as="geometry"/>
+        <mxCell id="title" value="From install to your first diagram." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=42;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1540" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="badge" value="LOCAL RENDERING  •  ONE PROMPT  •  EDITABLE OUTPUT" style="rounded=1;arcSize=22;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=10;fontSize=13;fontStyle=1;fontColor=#2D5E36;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="1450" y="45" width="510" height="54" as="geometry"/>
+        <mxCell id="subtitle" value="Terminal commands and Pi commands are separated. Choose one installation scope." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=19;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="153" width="1540" height="32" as="geometry"/>
         </mxCell>
-
-        <mxCell id="prereqs" value="1  CHECK THE PREREQUISITES" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="150" width="1920" height="270" as="geometry"/>
+        <mxCell id="prepare-badge" value="01" style="ellipse;aspect=fixed;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#FFFFFF;fillColor=#2563EB;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="225" width="38" height="38" as="geometry"/>
         </mxCell>
-        <mxCell id="prereq-pi" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;01 · PI CODING AGENT&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Install and authenticate Pi first&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;pi --version&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="prereqs">
-          <mxGeometry x="40" y="85" width="540" height="135" as="geometry"/>
+        <mxCell id="prepare-heading" value="Prepare" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=26;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="95" y="225" width="420" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="prereq-node" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;02 · NODE.JS 22.19+&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Required by DrawMe&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;node --version&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="prereqs">
-          <mxGeometry x="660" y="85" width="540" height="135" as="geometry"/>
+        <mxCell id="prepare" value="" style="rounded=1;absoluteArcSize=1;arcSize=18;container=1;pointerEvents=0;html=1;align=left;verticalAlign=top;spacingLeft=24;spacingTop=18;whiteSpace=wrap;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#64748B;fillColor=#F8FAFC;strokeColor=#E2E8F0;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="285" width="460" height="760" as="geometry"/>
         </mxCell>
-        <mxCell id="prereq-drawio" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;03 · DRAW.IO DESKTOP&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;macOS: &lt;font face=&quot;Courier New&quot;&gt;brew install --cask drawio&lt;/font&gt;&lt;br&gt;Linux: .deb / .rpm  •  Windows: official installer" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#F8FBFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="prereqs">
-          <mxGeometry x="1280" y="85" width="540" height="135" as="geometry"/>
+        <mxCell id="scope-badge" value="02" style="ellipse;aspect=fixed;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#FFFFFF;fillColor=#2563EB;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="580" y="225" width="38" height="38" as="geometry"/>
         </mxCell>
-
-        <mxCell id="install" value="2  INSTALL DRAWME  ·  CHOOSE ONE SCOPE" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#1F4E78;swimlaneFillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="460" width="1920" height="465" as="geometry"/>
+        <mxCell id="scope-heading" value="Choose a scope" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=26;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="635" y="225" width="420" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="scope-decision" value="Choose scope" style="rhombus;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#6B5500;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=2;" vertex="1" parent="install">
-          <mxGeometry x="790" y="80" width="280" height="90" as="geometry"/>
+        <mxCell id="scope" value="" style="rounded=1;absoluteArcSize=1;arcSize=18;container=1;pointerEvents=0;html=1;align=left;verticalAlign=top;spacingLeft=24;spacingTop=18;whiteSpace=wrap;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#64748B;fillColor=#F8FAFC;strokeColor=#E2E8F0;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="285" width="460" height="760" as="geometry"/>
         </mxCell>
-        <mxCell id="scope-user" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;USER SCOPE · DEFAULT&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;All projects  •  ~/.pi/agent/settings.json&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;pi install npm:@senad-d/drawme&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#EAF2F8;strokeColor=#1F4E78;strokeWidth=3;shadow=1;" vertex="1" parent="install">
-          <mxGeometry x="40" y="210" width="540" height="130" as="geometry"/>
+        <mxCell id="use-badge" value="03" style="ellipse;aspect=fixed;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#FFFFFF;fillColor=#2563EB;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="225" width="38" height="38" as="geometry"/>
         </mxCell>
-        <mxCell id="scope-project" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;PROJECT-LOCAL · TEAM&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;This project  •  .pi/settings.json&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;pi install npm:@senad-d/drawme -l&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="install">
-          <mxGeometry x="660" y="210" width="540" height="130" as="geometry"/>
+        <mxCell id="use-heading" value="Make a diagram" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=26;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1175" y="225" width="420" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="scope-trial" value="&lt;b&gt;&lt;font color=&quot;#1F4E78&quot;&gt;ONE-TIME TRIAL&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Current run only  •  no settings change&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;pi -e npm:@senad-d/drawme&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=14;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#6C8EBF;strokeWidth=2;shadow=1;" vertex="1" parent="install">
-          <mxGeometry x="1280" y="210" width="540" height="130" as="geometry"/>
+        <mxCell id="use" value="" style="rounded=1;absoluteArcSize=1;arcSize=18;container=1;pointerEvents=0;html=1;align=left;verticalAlign=top;spacingLeft=24;spacingTop=18;whiteSpace=wrap;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#64748B;fillColor=#F8FAFC;strokeColor=#E2E8F0;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="285" width="460" height="760" as="geometry"/>
         </mxCell>
-        <mxCell id="install-source" value="&lt;b&gt;PIN OR DEVELOP&lt;/b&gt;&lt;br&gt;Pinned npm: &lt;font face=&quot;Courier New&quot;&gt;npm:@senad-d/drawme@&amp;lt;version&amp;gt;&lt;/font&gt;  •  Git: &lt;font face=&quot;Courier New&quot;&gt;git:github.com/senad-d/DrawMe@&amp;lt;tag&amp;gt;&lt;/font&gt;&lt;br&gt;Source checkout: &lt;font face=&quot;Courier New&quot;&gt;npm ci --ignore-scripts&lt;/font&gt; → &lt;font face=&quot;Courier New&quot;&gt;npm run validate&lt;/font&gt; → &lt;font face=&quot;Courier New&quot;&gt;pi --no-extensions -e .&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=14;spacingTop=8;spacingBottom=8;fontSize=13;fontColor=#405466;fillColor=#F3F6F8;strokeColor=#AAB7C4;dashed=1;" vertex="1" parent="install">
-          <mxGeometry x="40" y="360" width="1780" height="80" as="geometry"/>
+        <mxCell id="runtime" value="&lt;b&gt;Node.js + Pi&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;Node.js ≥ 22.19 · node --version&lt;br&gt;Install Pi via pi.dev · pi --version&lt;br&gt;In Pi: /login, then /model&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="35" width="410" height="130" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-scope-user" value="all projects" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-user">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="860" y="190"/><mxPoint x="310" y="190"/></Array></mxGeometry>
+        <mxCell id="prepare-rule-1" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="195" width="410" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-scope-project" value="this project" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-project">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="930" y="190"/></Array></mxGeometry>
+        <mxCell id="desktop" value="&lt;b&gt;draw.io Desktop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;brew install --cask drawio&lt;/font&gt;&lt;br&gt;macOS command above&lt;br&gt;Linux: .deb / .rpm · Windows: installer&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="220" width="410" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-scope-trial" value="current run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#1F4E78;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="install" source="scope-decision" target="scope-trial">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1000" y="190"/><mxPoint x="1550" y="190"/></Array></mxGeometry>
+        <mxCell id="prepare-rule-2" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="400" width="410" height="1" as="geometry"/>
         </mxCell>
-
-        <mxCell id="use" value="3  LOAD, VERIFY, DESCRIBE  ·  DRAWME DOES THE REST" style="swimlane;horizontal=1;startSize=60;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=19;fontStyle=1;fontColor=#FFFFFF;fillColor=#674274;swimlaneFillColor=#FCF9FD;strokeColor=#9673A6;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="965" width="1920" height="340" as="geometry"/>
+        <mxCell id="trust" value="&lt;b&gt;Trust before execution&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;Pi packages have full system access.&lt;br&gt;Review SECURITY.md and the source.&lt;br&gt;Use a vision model for rendered review.&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="425" width="410" height="145" as="geometry"/>
         </mxCell>
-        <mxCell id="use-load" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;01 · LOAD&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Start Pi after installation&lt;br&gt;Already open? Use &lt;font face=&quot;Courier New&quot;&gt;/reload&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="40" y="95" width="300" height="170" as="geometry"/>
+        <mxCell id="downloads" value="Desktop releases&lt;br&gt;github.com/jgraph/drawio-desktop/releases" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=15;fontStyle=0;" vertex="1" parent="prepare">
+          <mxGeometry x="25" y="645" width="410" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="use-verify" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;02 · VERIFY&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;/drawme-check&lt;/font&gt;&lt;br&gt;Confirm path · version · v30+ features" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="410" y="95" width="300" height="170" as="geometry"/>
+        <mxCell id="personal" value="&lt;b&gt;Personal · persistent&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;pi install npm:@senad-d/drawme&lt;/font&gt;&lt;br&gt;Default: ~/.pi/agent/settings.json&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=1.5;" vertex="1" parent="scope">
+          <mxGeometry x="20" y="35" width="420" height="140" as="geometry"/>
         </mxCell>
-        <mxCell id="use-describe" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;03 · DESCRIBE&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;/drawme a login flow with retry&lt;/font&gt;&lt;br&gt;Use plain language" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#B69BC2;strokeWidth=2;" vertex="1" parent="use">
-          <mxGeometry x="780" y="95" width="300" height="170" as="geometry"/>
+        <mxCell id="project" value="&lt;b&gt;Project · persistent&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;pi install npm:@senad-d/drawme -l&lt;/font&gt;&lt;br&gt; .pi/settings.json; loads after trust&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#FFFFFF;strokeColor=#E2E8F0;strokeWidth=1.5;" vertex="1" parent="scope">
+          <mxGeometry x="20" y="220" width="420" height="140" as="geometry"/>
         </mxCell>
-        <mxCell id="use-autonomous" value="&lt;b&gt;&lt;font color=&quot;#674274&quot;&gt;04 · AUTONOMOUS RUN&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;plan → author → validate → critique&lt;br&gt;refine (≤8) → confirm → export&lt;br&gt;&lt;font color=&quot;#6B7C8A&quot;&gt;no approval pause&lt;/font&gt;" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#F7F0FA;strokeColor=#9673A6;strokeWidth=3;shadow=1;" vertex="1" parent="use">
-          <mxGeometry x="1150" y="95" width="300" height="170" as="geometry"/>
+        <mxCell id="trial" value="&lt;b&gt;One invocation · try it&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;pi -e npm:@senad-d/drawme&lt;/font&gt;&lt;br&gt;Starts Pi; does not change settings&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#FFFFFF;strokeColor=#E2E8F0;strokeWidth=1.5;" vertex="1" parent="scope">
+          <mxGeometry x="20" y="405" width="420" height="140" as="geometry"/>
         </mxCell>
-        <mxCell id="use-delivered" value="&lt;b&gt;&lt;font color=&quot;#2D5E36&quot;&gt;05 · DELIVERED&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Editable .drawio source&lt;br&gt;PNG by default&lt;br&gt;SVG · PDF · JPG when requested" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=12;fontSize=14;fontColor=#263746;fillColor=#EAF4E8;strokeColor=#82B366;strokeWidth=2;shadow=1;" vertex="1" parent="use">
-          <mxGeometry x="1520" y="95" width="300" height="170" as="geometry"/>
+        <mxCell id="load-note" value="Persistent install: start pi, or /reload.&lt;br&gt;The one-invocation command already starts Pi." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=17;fontStyle=0;" vertex="1" parent="scope">
+          <mxGeometry x="25" y="605" width="410" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-use-load-verify" value="loaded" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-load" target="use-verify">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="375" y="180"/></Array></mxGeometry>
+        <mxCell id="start" value="&lt;b&gt;In your terminal&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:18px&quot;&gt;cd /path/to/project&lt;br&gt;pi&lt;/font&gt;&lt;br&gt;Grant project trust after review&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="use">
+          <mxGeometry x="25" y="35" width="410" height="125" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-use-verify-describe" value="CLI ready" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-verify" target="use-describe">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="745" y="180"/></Array></mxGeometry>
+        <mxCell id="verify" value="&lt;b&gt;Inside Pi · verify&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:19px&quot;&gt;/drawme-check&lt;/font&gt;&lt;br&gt;Reports the detected path + version&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#FFFFFF;strokeColor=#E2E8F0;strokeWidth=1.5;" vertex="1" parent="use">
+          <mxGeometry x="25" y="245" width="410" height="115" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-use-describe-autonomous" value="one prompt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#674274;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-describe" target="use-autonomous">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1115" y="180"/></Array></mxGeometry>
+        <mxCell id="describe" value="&lt;b&gt;Inside Pi · describe&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;/drawme a login flow with retry&lt;/font&gt;&lt;br&gt;Add “animated SVG” for motion&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=1.5;" vertex="1" parent="use">
+          <mxGeometry x="25" y="460" width="410" height="145" as="geometry"/>
         </mxCell>
-        <mxCell id="edge-use-autonomous-delivered" value="automatic" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=blockThin;endFill=1;strokeColor=#2D5E36;strokeWidth=2;fontSize=11;fontColor=#405466;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="use" source="use-autonomous" target="use-delivered">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1485" y="180"/></Array></mxGeometry>
+        <mxCell id="delivered" value="Delivered: editable .drawio + PNG by default.&lt;br&gt;Motion requests: verified SVG + PNG fallback." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=17;fontStyle=0;" vertex="1" parent="use">
+          <mxGeometry x="25" y="650" width="410" height="70" as="geometry"/>
         </mxCell>
-
-        <mxCell id="support" value="TROUBLESHOOTING, TRUST, AND COMPATIBILITY" style="swimlane;horizontal=1;startSize=56;rounded=1;arcSize=8;container=1;pointerEvents=0;html=1;fontSize=18;fontStyle=1;fontColor=#FFFFFF;fillColor=#405466;swimlaneFillColor=#F8FAFB;strokeColor=#7E8E9E;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1345" width="1920" height="300" as="geometry"/>
+        <mxCell id="e-start-verify" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="start" target="verify">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="1350" y="485"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="support-cli" value="&lt;b&gt;CLI NOT FOUND?&lt;/b&gt;&lt;br&gt;&lt;br&gt;Install draw.io Desktop at a standard path, then rerun &lt;font face=&quot;Courier New&quot;&gt;/drawme-check&lt;/font&gt;. XML authoring and validation can still run, but preview, export, Mermaid import, and ELK layout need the CLI." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=14;fontSize=13;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#AAB7C4;" vertex="1" parent="support">
-          <mxGeometry x="40" y="80" width="540" height="130" as="geometry"/>
+        <mxCell id="e-verify-describe" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="verify" target="describe">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="1350" y="690"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="support-package" value="&lt;b&gt;PACKAGE NOT VISIBLE?&lt;/b&gt;&lt;br&gt;&lt;br&gt;Run &lt;font face=&quot;Courier New&quot;&gt;pi list&lt;/font&gt;, check &lt;font face=&quot;Courier New&quot;&gt;pi config&lt;/font&gt;, and use &lt;font face=&quot;Courier New&quot;&gt;/reload&lt;/font&gt;. Project-local packages load from trusted projects; Pi installs missing project packages on startup." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=14;fontSize=13;fontColor=#263746;fillColor=#FFFFFF;strokeColor=#AAB7C4;" vertex="1" parent="support">
-          <mxGeometry x="660" y="80" width="540" height="130" as="geometry"/>
+        <mxCell id="footer-rule" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1090" width="1540" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="support-trust" value="&lt;b&gt;&lt;font color=&quot;#9A5B13&quot;&gt;INSTALL TRUSTED CODE ONLY&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Pi packages run with full system access. Review third-party source before installation. DrawMe reads and writes requested diagram files and may launch draw.io or the OS file opener." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=14;fontSize=13;fontColor=#6A4513;fillColor=#FFF4E6;strokeColor=#D79B00;strokeWidth=1.5;" vertex="1" parent="support">
-          <mxGeometry x="1280" y="80" width="540" height="130" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend" value="" style="rounded=1;arcSize=10;container=1;pointerEvents=0;html=1;fillColor=#F7F9FC;strokeColor=#C7D1DC;" vertex="1" parent="support">
-          <mxGeometry x="40" y="230" width="1780" height="45" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-title" value="COLOR KEY" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#405466;" vertex="1" parent="legend">
-          <mxGeometry x="20" y="8" width="90" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-blue" value="" style="rounded=1;arcSize=6;html=1;fillColor=#D9EAF7;strokeColor=#6C8EBF;" vertex="1" parent="legend">
-          <mxGeometry x="130" y="14" width="18" height="18" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-blue-text" value="Setup / installation" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
-          <mxGeometry x="155" y="8" width="210" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-purple" value="" style="rounded=1;arcSize=6;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;" vertex="1" parent="legend">
-          <mxGeometry x="430" y="14" width="18" height="18" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-purple-text" value="Autonomous workflow" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
-          <mxGeometry x="455" y="8" width="210" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-green" value="" style="rounded=1;arcSize=6;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="legend">
-          <mxGeometry x="730" y="14" width="18" height="18" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-green-text" value="Delivered files" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
-          <mxGeometry x="755" y="8" width="170" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-orange" value="" style="rounded=1;arcSize=6;html=1;fillColor=#FFF4E6;strokeColor=#D79B00;" vertex="1" parent="legend">
-          <mxGeometry x="990" y="14" width="18" height="18" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend-orange-text" value="Security / caution" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#405466;" vertex="1" parent="legend">
-          <mxGeometry x="1015" y="8" width="190" height="28" as="geometry"/>
+        <mxCell id="compatibility" value="v30+ adds Mermaid conversion + ELK layout; older versions still render and export.&lt;br&gt;No CLI? Author + validate XML only — no preview or export." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=17;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1120" width="1540" height="55" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

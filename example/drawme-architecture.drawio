@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="31.7.0">
+  <diagram id="drawme-architecture" name="Architecture">
+    <mxGraphModel grid="1" gridSize="10" guides="1" page="1" pageScale="1" pageWidth="1440" pageHeight="1120" background="#FFFFFF" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Local tools, editable outputs" style="text;html=1;whiteSpace=wrap;fontFamily=Helvetica;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontSize=32;fontStyle=1;fontColor=#0F172A;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1360" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Pi orchestrates authoring; DrawMe supplies ten tools; draw.io renders on demand" style="text;html=1;whiteSpace=wrap;fontFamily=Helvetica;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontSize=18;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1360" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="tools" value="DRAWME EXTENSION • TEN TOOLS" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;container=1;pointerEvents=0;verticalAlign=top;align=left;spacingLeft=20;spacingTop=16;fontFamily=Helvetica;fontSize=16;fontStyle=1;strokeWidth=1.5;fillColor=#F8FAFC;strokeColor=#E2E8F0;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="500" y="180" width="430" height="670" as="geometry"/>
+        </mxCell>
+        <mxCell id="agent" value="&lt;b&gt;Pi agent + /drawme&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;Plan, author and critique&lt;br&gt;Built-in read / write / edit tools&lt;br&gt;Configured model may be remote&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="40" y="430" width="360" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="core" value="&lt;b&gt;Pure TypeScript • no CLI&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;validate · fit canvas&lt;br&gt;shape search · explain&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="tools">
+          <mxGeometry x="30" y="70" width="370" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="open" value="&lt;b&gt;OS file handler&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;open • optional desktop fine-tuning&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontColor=#475569;" vertex="1" parent="tools">
+          <mxGeometry x="30" y="270" width="370" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="bridge" value="&lt;b&gt;Desktop CLI adapter&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;check · export · animate&lt;br&gt;Mermaid import · ELK layout&lt;br&gt;Import + layout require v30+&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="tools">
+          <mxGeometry x="30" y="420" width="370" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="source" value="&lt;b&gt;Editable source of truth&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;.drawio XML authored by Pi&lt;br&gt;Validation does not render pixels&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="1">
+          <mxGeometry x="40" y="760" width="360" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="renderer" value="&lt;b&gt;draw.io Desktop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;Local CLI process&lt;br&gt;Preview · render · convert · layout&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="600" width="360" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="deliverables" value="&lt;b&gt;Derived deliverables&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;PNG · SVG · PDF · JPG&lt;br&gt;Verified animated SVG + fallback&lt;br&gt;PNG / SVG / PDF embed XML&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="250" width="360" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-agent-core" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeColor=#94A3B8;strokeWidth=1.5;" edge="1" parent="1" source="agent" target="core">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="460" y="472.5"/><mxPoint x="460" y="330"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-agent-bridge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="bridge">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="460" y="557.5"/><mxPoint x="460" y="700"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-agent-source" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="agent" target="source">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="220" y="680"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-bridge-renderer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="bridge" target="renderer">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="980" y="700"/><mxPoint x="980" y="685"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-renderer-deliverables" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="renderer" target="deliverables">
+          <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="1220" y="510"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e-source-renderer" value="reads source" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=16;fontColor=#475569;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0.5;entryY=1;strokeColor=#94A3B8;strokeWidth=1.5;" edge="1" parent="1" source="source" target="renderer">
+          <mxGeometry x="0.35" relative="1" as="geometry"><mxPoint x="0" y="-22" as="offset"/><Array as="points"><mxPoint x="460" y="820"/><mxPoint x="460" y="920"/><mxPoint x="1220" y="920"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="locality" value="&lt;b&gt;Local rendering is not an offline-model promise&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:18px&quot;&gt;Diagram files, the bundled shape index, structural checks and desktop rendering stay local.&lt;br&gt;Pi uses the selected model/provider for planning and authoring; an SVG needs no draw.io web viewer.&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=20;spacing=16;strokeWidth=1.5;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontColor=#475569;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="980" width="1360" height="100" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
