@@ -33,6 +33,59 @@ describe("validateXml", () => {
     );
   });
 
+  it("validates animated SVG connector controls and portable page sequences", () => {
+    const animation = JSON.stringify({
+      animation: {
+        loop: false,
+        steps: [
+          { opacity: { cells: ["a"], value: 0 } },
+          { fadeIn: { cells: ["a"], delay: 500 } },
+        ],
+      },
+    }).replaceAll('"', "&quot;");
+    const animated = `<mxfile><diagram name="Animated"><mxGraphModel><root>
+      <UserObject label="" id="0" animation="${animation}"><mxCell/></UserObject>
+      <mxCell id="1" parent="0"/>
+      ${vertex("a", 0, 0)}${vertex("b", 200, 0)}
+      ${routedEdge("flow", "a", "b", 140, 20).replace(">", ' style="flowAnimation=1;flowAnimationDuration=1200;flowAnimationDirection=reverse;">')}
+    </root></mxGraphModel></diagram></mxfile>`;
+    const result = validateXml(animated);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.observations).toContain(
+      "page 'Animated': 1 connector(s) use persistent flow animation; SVG preserves it, static formats do not: 'flow'",
+    );
+    expect(result.observations).toContain(
+      "page 'Animated': page animation contains 2 step(s); standalone animated SVG supports visibility, opacity, fade, and wait actions",
+    );
+
+    const invalid = validateXml(
+      doc(
+        vertex("a", 0, 0) +
+          vertex("b", 200, 0) +
+          edge("bad", "a", "b", "flowAnimation=1;flowAnimationDuration=fast;flowAnimationDirection=sideways"),
+      ),
+    );
+    expect(invalid.errors).toContain(
+      "page 'Page-1': edge 'bad' has invalid flowAnimationDuration 'fast' (expected a positive millisecond value)",
+    );
+    expect(invalid.errors).toContain("page 'Page-1': edge 'bad' has invalid flowAnimationDirection 'sideways'");
+  });
+
+  it("warns when page animation effects cannot be compiled to standalone SVG", () => {
+    const animation = JSON.stringify({ animation: { steps: [{ highlight: { cells: ["a"] } }] } }).replaceAll(
+      '"',
+      "&quot;",
+    );
+    const xml = `<mxfile><diagram name="Animated"><mxGraphModel><root>
+      <UserObject label="" id="0" animation="${animation}"><mxCell/></UserObject>
+      <mxCell id="1" parent="0"/>${vertex("a", 0, 0)}
+    </root></mxGraphModel></diagram></mxfile>`;
+    expect(validateXml(xml).warnings).toContain(
+      "page 'Animated': page animation step 1 action 'highlight' is not supported in standalone animated SVG",
+    );
+  });
+
   it("warns when edges are auto-routed and cannot be route-checked", () => {
     const result = validateXml(doc(vertex("a", 0, 0) + vertex("b", 200, 0) + edge("e1", "a", "b")));
     expect(result.warnings).toContain(

@@ -119,6 +119,14 @@ describe("extension registration", () => {
     expect(workflow).toContain("drawio_fit_canvas");
     expect(workflow).toContain("do NOT fix page dimensions up front");
     expect(workflow).toContain("never shrink or squeeze elements");
+    // Motion requests use verified standalone SVG plus an accessible static fallback.
+    expect(workflow).toContain("plan an animated SVG");
+    expect(workflow).toContain("persistent connector flow");
+    expect(workflow).toContain("portable page sequence");
+    expect(workflow).toContain("the PNG preview is intentionally static");
+    expect(workflow).toContain("`animated: true`");
+    expect(workflow).toContain("`Animation verified`");
+    expect(workflow).toContain("static PNG fallback");
     expect(workflow).toContain(`allow at most ${AUTOMATIC_CORRECTION_LIMIT} correction retries`);
     // Fully autonomous: no human gate anywhere in the flow.
     expect(workflow).toContain("fully autonomous");
@@ -348,11 +356,40 @@ describe("real draw.io export", async () => {
   const run = cli.available ? it : it.skip;
   let dir: string;
   let file: string;
+  let animatedFile: string;
+  let sequenceFile: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "drawme-export-"));
     file = join(dir, "sample.drawio");
+    animatedFile = join(dir, "animated.drawio");
+    sequenceFile = join(dir, "sequence.drawio");
     await writeFile(file, SAMPLE);
+    await writeFile(
+      animatedFile,
+      SAMPLE.replace(
+        '<mxCell id="e1" edge="1"',
+        '<mxCell id="e1" style="flowAnimation=1;flowAnimationDuration=750;flowAnimationDirection=reverse;" edge="1"',
+      ),
+    );
+    const animation = JSON.stringify({
+      animation: {
+        loop: true,
+        steps: [
+          { opacity: { cells: ["a", "b", "e1"], value: 0 } },
+          { fadeIn: { cells: ["a"], delay: 250 } },
+          { fadeIn: { cells: ["e1"], delay: 250 } },
+          { fadeIn: { cells: ["b"], delay: 250 } },
+        ],
+      },
+    }).replaceAll('"', "&quot;");
+    await writeFile(
+      sequenceFile,
+      SAMPLE.replace(
+        '<mxCell id="0"/>',
+        `<UserObject label="" id="0" animation="${animation}"><mxCell/></UserObject>`,
+      ),
+    );
   });
 
   run(
@@ -392,6 +429,37 @@ describe("real draw.io export", async () => {
     drawme(pi as never);
     await tools.get("drawio_export")!.execute("t", { input: file, format: "svg", mode: "final" }, undefined, undefined, {});
     expect(existsSync(join(dir, "sample.svg"))).toBe(true);
+  }, 120_000);
+
+  run("animated SVG export compiles and verifies a page sequence", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const result = await tools
+      .get("drawio_export")!
+      .execute("t", { input: sequenceFile, animated: true, mode: "final" }, undefined, undefined, {});
+    const svg = await readFile(join(dir, "sequence.svg"), "utf8");
+    expect(textOf(result.content[0])).toContain("Animation verified: 0 connector flow(s), 4 page step(s)");
+    expect(result.details).toMatchObject({
+      animated: true,
+      animation: { sequenceCompiled: true, sequenceDurationMs: 750, verified: true },
+    });
+    expect(svg).toContain("data-drawme-animation=\"opacity-timeline\"");
+    expect(svg).toContain("prefers-reduced-motion: reduce");
+  }, 120_000);
+
+  run("animated SVG export preserves and verifies connector flow", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const result = await tools
+      .get("drawio_export")!
+      .execute("t", { input: animatedFile, animated: true, mode: "final" }, undefined, undefined, {});
+    expect(existsSync(join(dir, "animated.svg"))).toBe(true);
+    expect(textOf(result.content[0])).toContain("Animation verified: 1 connector flow(s)");
+    expect(result.details).toMatchObject({
+      animated: true,
+      animation: { connectorFlows: 1, sequenceCompiled: false, verified: true },
+    });
+    expect(await readFile(join(dir, "animated.svg"), "utf8")).toMatch(/animation:\s*750ms/);
   }, 120_000);
 });
 

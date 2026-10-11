@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- Verified standalone animated SVG export. `drawio_export` accepts `animated:true` (final SVG only), preserves and checks native connector flow animation, and compiles portable page-root visibility/opacity/fade/wait sequences into self-contained SVG CSS with loop, parallel-step, and reduced-motion support. Animation-aware validation catches malformed JSON, dangling targets, invalid flow/timing controls, and viewer-only effects before export; `/drawme-export ... animated-svg`, the autonomous workflow, authoring reference, and public docs expose the feature. Static PNG review/fallback remains separate; GIF, video, and network-loaded HTML viewers are intentionally out of scope.
+
 - `drawio_validate` no longer stays silent about what it cannot see: auto-routed edges (no explicit
   waypoints) are reported as an actionable warning naming each edge, because the renderer routes them
   blindly and the route-through/crossing checks skip them — the main way visibly broken routing used to

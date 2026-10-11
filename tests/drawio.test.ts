@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,6 +63,20 @@ describe("planExport", () => {
     expect(p.args).not.toContain("--width");
   });
 
+  it("animated mode defaults to final SVG and rejects static formats or preview mode", () => {
+    const animated = planExport({ input: "a.drawio", animated: true }, "darwin");
+    expect(animated.format).toBe("svg");
+    expect(animated.mode).toBe("final");
+    expect(animated.animated).toBe(true);
+    expect(animated.args).toContain("-e");
+    expect(() => planExport({ input: "a.drawio", format: "png", animated: true }, "darwin")).toThrow(
+      "animated export requires format='svg'",
+    );
+    expect(() => planExport({ input: "a.drawio", mode: "preview", animated: true }, "darwin")).toThrow(
+      "animated export requires mode='final'",
+    );
+  });
+
   it("JPG never embeds (draw.io cannot embed XML in JPG)", () => {
     const p = planExport({ input: "a.drawio", format: "jpg" }, "darwin");
     expect(p.embed).toBe(false);
@@ -102,6 +116,68 @@ describe("planExport", () => {
   it("on Linux the headless flags trail the input; --no-sandbox only as root", () => {
     expect(planExport({ input: "a.drawio" }, "linux", false).linuxExtra).toEqual(["--disable-gpu"]);
     expect(planExport({ input: "a.drawio" }, "linux", true).linuxExtra).toEqual(["--disable-gpu", "--no-sandbox"]);
+  });
+});
+
+describe("exportDiagram animated SVG", () => {
+  it("compiles and verifies a portable sequence after CLI export", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-animated-export-"));
+    try {
+      const input = join(dir, "sequence.drawio");
+      const output = join(dir, "sequence.svg");
+      const binary = join(dir, "fake-drawio.mjs");
+      const animation = JSON.stringify({
+        animation: {
+          loop: false,
+          steps: [
+            { opacity: { cells: ["a"], value: 0 } },
+            { fadeIn: { cells: ["a"], delay: 500 } },
+          ],
+        },
+      }).replaceAll('"', "&quot;");
+      await writeFile(
+        input,
+        `<mxfile><diagram name="Animated"><mxGraphModel><root>
+          <UserObject label="" id="0" animation="${animation}"><mxCell/></UserObject>
+          <mxCell id="1" parent="0"/>
+          <mxCell id="a" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>
+        </root></mxGraphModel></diagram></mxfile>`,
+      );
+      await writeFile(
+        binary,
+        `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--version")) process.stdout.write("31.0.0\\n");
+else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');
+`,
+      );
+      await chmod(binary, 0o755);
+
+      const result = await exportDiagram({ input, output, animated: true, binary });
+      const svg = await readFile(output, "utf8");
+      expect(result).toMatchObject({ format: "svg", animated: true });
+      expect(result.animation).toMatchObject({ sequenceCompiled: true, verified: true, sequenceDurationMs: 500 });
+      expect(svg).toContain("data-drawme-animation");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("deletes a misleading static result when animation verification fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-animation-failure-"));
+    try {
+      const input = join(dir, "static.drawio");
+      const output = join(dir, "static.svg");
+      const binary = await makeFakeDrawio(dir);
+      await writeFile(input, "<mxfile><diagram><mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/></root></mxGraphModel></diagram></mxfile>");
+      await expect(exportDiagram({ input, output, animated: true, binary })).rejects.toThrow(
+        "animated SVG verification failed",
+      );
+      expect(existsSync(output)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

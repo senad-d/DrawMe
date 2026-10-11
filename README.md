@@ -12,7 +12,7 @@
 
 <p align="center">
   Natural-language diagrams for <a href="https://pi.dev">pi</a>.
-  <br />Turns a description into editable <code>.drawio</code> XML and exports it to PNG / SVG / PDF / JPG with the native draw.io desktop CLI — entirely on your machine.
+  <br />Turns a description into editable <code>.drawio</code> XML and exports it to PNG / SVG / PDF / JPG, including verified standalone animated SVG — entirely on your machine.
 </p>
 
 ---
@@ -40,6 +40,7 @@ DrawMe is a native Pi **extension** for diagram authoring. Describe a diagram an
 - **Deterministic validation:** a structural linter catches dangling edges, duplicate/reserved ids, malformed geometry, page/container overflow, inadequate margins, conservative readability defects, overlaps, and explicit edge-routing defects before you look at a pixel.
 - **Vision-aware previews:** successful PNG previews attach the actual image only when the active model can view images — the result text says which case applies — so text-only models get an honest structural-review path instead of a placeholder; each replacement removes the previous same-source preview file so only the latest remains on disk.
 - **Exact shapes, not guesses:** search 10k+ official AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN styles from a bundled local index.
+- **Animated SVG:** persistent connector flow and portable timed visibility/opacity/fade/wait sequences export as verified standalone SVG animation, with reduced-motion handling and an optional static PNG fallback.
 - **Editable source of truth:** final PNG/SVG/PDF exports embed the diagram XML, the truncated `-e` PNG chunk is auto-repaired, and final export removes the one remaining latest preview.
 
 > **Security:** Pi packages run with your full system permissions. DrawMe reads and writes diagram files and can launch the draw.io CLI or your OS file opener. Review [`SECURITY.md`](SECURITY.md) before installation.
@@ -141,7 +142,7 @@ pi --no-extensions -e .
 | --- | --- |
 | `/drawme <description>` | Kick off authoring, per-edit validation, the gated multi-pass visual review, and autonomous final export. |
 | `/drawme-check` | Report whether the draw.io CLI is available, its version, and v30+ feature support. |
-| `/drawme-export <file> [png\|svg\|pdf\|jpg]` | One-shot final export of an existing `.drawio`. |
+| `/drawme-export <file> [png\|svg\|animated-svg\|pdf\|jpg]` | One-shot final export of an existing `.drawio`; `animated-svg` requires and verifies motion. |
 
 ## Tools
 
@@ -150,7 +151,7 @@ Registered for the model to call directly.
 | Tool | Purpose |
 | --- | --- |
 | `drawio_check` | Resolve the draw.io binary, version, and whether it supports Mermaid import / `--layout` (v30+). |
-| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `mode:"preview"` → clean width-capped PNG returned as text/metadata, with the image block attached when the active model can view images (the text states which); each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
+| `drawio_export` | Export a `.drawio` to PNG/SVG/PDF/JPG. `animated:true` requires a final SVG, preserves connector flow, compiles portable page sequences, and verifies that the result actually contains animation. `mode:"preview"` → clean width-capped static PNG returned as text/metadata, with the image block attached when the active model can view images (the text states which); each successful preview removes the previous same-source preview file so only the latest remains. `mode:"final"` → embedded editable deliverable, with truncated PNG repair and cleanup of the remaining preview. |
 | `drawio_validate` | Deterministic lint for XML structure, geometry, page/container bounds, margins, overlap, explicit route-through/crossings, anchors facing away from their route, edge-label collisions, labels on connector lines, small fonts, and unchecked auto-routes. Likely direct-path obstructions for auto-routed edges are preview-review observations. The readability score reports route-through, crossings, overlaps, and anchors separately. |
 | `drawio_fit_canvas` | Fit each page's canvas to its content plus a margin (default 40px): grows cramped pages, tightens oversized ones, and shifts content to the margin origin — instead of shrinking or cramming elements. Deterministic, no CLI. |
 | `drawio_shapesearch` | Exact official `style=` strings for 10k+ AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN shapes, from a bundled local index. Use instead of guessing a style. |
@@ -166,7 +167,7 @@ Natural-language request
   └── Pi agent
         └── DrawMe extension  (check · validate · export · shape search · Mermaid · layout · explain · open)
               └── draw.io desktop CLI  (renders and exports, local process)
-                    └── Deliverables: .drawio source + PNG / SVG / PDF / JPG
+                    └── Deliverables: .drawio source + PNG / SVG (static or animated) / PDF / JPG
 ```
 
 The extension factory in `src/index.ts` registers the tools and commands. Rendering, conversion, and layout launch the draw.io CLI on demand with an argument list rather than a shell; validation, shape search, and explanation run directly in the extension.
@@ -176,14 +177,14 @@ The extension factory in `src/index.ts` registers the tools and commands. Render
 `/drawme` injects a guided nine-step workflow that the model follows using the tools above:
 
 1. **Check** — the command itself resolves the CLI and embeds the result plus the authoring references into the workflow message (v30+ unlocks Mermaid conversion and ELK layout), so the run starts with everything in context — no upfront tool calls or file reads.
-2. **Plan** — pick the diagram type, relationships, finite canvas, and layout direction.
-3. **Author** — write editable uncompressed XML (or Mermaid on v30+), using exact searched shapes and optional ELK layout.
-4. **Validate after every edit** — fix all errors; fix each warning or record why it is reviewed and acceptable.
+2. **Plan** — pick the diagram type, relationships, finite canvas, and layout direction; motion requests plan an animated SVG plus a static fallback.
+3. **Author** — write editable uncompressed XML (or Mermaid on v30+), using exact searched shapes and optional ELK layout. Animation may use persistent connector flow and portable page-root JSON sequences.
+4. **Validate after every edit** — fix all errors; fix each warning or record why it is reviewed and acceptable. Malformed animation, dangling targets, invalid timing, and standalone-SVG-incompatible effects are diagnosed before export.
 5. **Visual review in gated passes** — with the preview image attached (one preview per page for multi-page files), the model runs three focused passes, each answering explicit questions on its own preview: **fit and sizing** (does the diagram fit its page; does the canvas or an element need resizing), **element placement** (is every element positioned correctly; is there a visibly better arrangement), and **connections** (is every connection correct, cleanly routed, symmetric where the layout is symmetric, and anchored to the middle of the facing element side where possible). A fourth **holistic pass** reads every label word for word, checks contrast, semantics, and the diagram type's own review checklist, and re-checks the earlier passes for regressions. Concrete defects to hunt (overlapping or clipped text, labels struck through by lines, floating endpoints, edges through unrelated shapes, …) are spelled out per pass, and each finding lands in a numbered ledger naming the affected cells and planned fix. Without the image, the model reviews structurally with validation and explanation instead of describing renders.
 6. **Fix and verify before the next pass** — a pass's findings become targeted edits, validation, and a replacement preview; the new image is compared against the previous one and every addressed finding gets an explicit verdict (fixed / not fixed / regressed) — a fix counts only when the new render shows the defect gone, and the next pass starts only when the current one is clean. Each successful preview removes the previous preview file, leaving only the current image.
 7. **Bound corrections** — pass inspection previews do not count as retries; permit at most eight targeted edit → validation → replacement-preview correction retries total. If a finding is still open at the limit, the run keeps the best validated state, finishes the remaining passes as inspection-only, continues to final export, and names the unresolved finding, its pass, and its last verdict in the report; `drawio_open` is offered afterwards for manual fine-tuning.
 8. **No human gate** — the run never pauses for approval or feedback; if the user interrupts with feedback, it is handled as new critique findings and the run continues.
-9. **Final export** — immediately after the holistic confirmation, export requested embedded/editable formats (each page of a multi-page file separately), remove the one remaining latest review preview, and report deliverables (including any unresolved finding from the correction limit) plus cleanup warnings.
+9. **Final export** — immediately after the holistic confirmation, export requested embedded/editable formats (each page of a multi-page file separately). Motion requests use `animated:true` for a verified SVG and normally include a static PNG fallback. Final export removes the latest review preview and reports deliverables, animation verification, unresolved findings, and cleanup warnings.
 
 Deterministic checks cover XML contracts, IDs/references, finite page and container bounds, outer margins, overlaps, explicit waypoint routes, edge-label placement, conservative font/wrapping cases, and pinned anchors that face away from their adjacent waypoint or auto-routed peer. Auto-routed edges remain renderer-dependent: validation warns that their route is unchecked and adds a focused observation when the direct connection line pierces a shape, but the preview remains the final arbiter. Rendered clipping and wrapping, contrast, typography at full-diagram scale, visual balance, semantics, and draw.io's automatic connector routes can only be judged from the preview image, so they are critiqued when the active model can view images and reported as unverified when it cannot. Vision's job in the loop is to narrow every rendered defect down to specific cells (the authoring reference maps each defect to a source fix) and then to confirm from the replacement image that the defect is actually gone. A 2000px preview that makes labels unreadable requires a tighter/simpler layout, page splitting, or a focused re-export — it must never be accepted as-is.
 
@@ -242,7 +243,8 @@ Source layout:
 
 - `src/index.ts` — registers the tools and commands.
 - `src/drawio.ts` — binary resolution, a pure/testable export planner, the CLI runner, Mermaid conversion, ELK layout, and file-open.
-- `src/validate.ts` — structural linter.
+- `src/animation.ts` — native animation analysis, portable page-sequence compilation, reduced-motion CSS, and animated-SVG verification.
+- `src/validate.ts` — structural and animation linter.
 - `src/shapesearch.ts` — shape search over the bundled index.
 - `src/explain.ts` — diagram-to-Markdown describer.
 - `src/dom.ts` — shared xmldom helpers used by `validate`/`explain`.

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="31.1.5">
+  <diagram id="request-flow" name="Animated request flow">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageScale="1" background="#ffffff" math="0" shadow="0" pageWidth="1200" pageHeight="340">
+      <root>
+        <UserObject label="" id="0" animation="{&quot;animation&quot;:{&quot;enabled&quot;:true,&quot;loop&quot;:true,&quot;steps&quot;:[{&quot;opacity&quot;:{&quot;cells&quot;:[&quot;7&quot;,&quot;8&quot;],&quot;value&quot;:0}},{&quot;fadeIn&quot;:{&quot;cells&quot;:[&quot;7&quot;],&quot;delay&quot;:600}},{&quot;wait&quot;:600},{&quot;fadeIn&quot;:{&quot;cells&quot;:[&quot;8&quot;],&quot;delay&quot;:600}},{&quot;wait&quot;:1800}]}}">
+          <mxCell/>
+        </UserObject>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Request flow" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=28;fontStyle=1;fontColor=#0f172a;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1120" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="A request passes through the API to the database." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1120" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="&lt;b&gt;Client&lt;/b&gt;&lt;br&gt;Send request" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=16;fontColor=#172554;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="200" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="&lt;b&gt;API&lt;/b&gt;&lt;br&gt;Process request" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=16;fontColor=#172554;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="180" width="200" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="&lt;b&gt;Database&lt;/b&gt;&lt;br&gt;Read / write data" style="shape=cylinder3;size=18;boundedLbl=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=16;fontColor=#14532d;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="960" y="180" width="200" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="1 · Request" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Helvetica;fontSize=14;fontColor=#334155;labelBackgroundColor=#ffffff;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;endSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;flowAnimation=1;flowAnimationDuration=1200;flowAnimationTimingFunction=linear;flowAnimationDirection=normal;" edge="1" parent="1" source="4" target="5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-24" as="offset"/>
+            <Array as="points">
+              <mxPoint x="370" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="8" value="2 · Query" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Helvetica;fontSize=14;fontColor=#334155;labelBackgroundColor=#ffffff;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;endSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;flowAnimation=1;flowAnimationDuration=1200;flowAnimationTimingFunction=linear;flowAnimationDirection=normal;" edge="1" parent="1" source="5" target="6">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-24" as="offset"/>
+            <Array as="points">
+              <mxPoint x="830" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

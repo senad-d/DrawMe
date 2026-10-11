@@ -165,12 +165,46 @@ For architecture diagrams with nested elements, use draw.io's parent-child conta
 ```
 
 **Edge style rules:**
-- **Animated connectors:** add `flowAnimation=1;` to any edge style to show a moving dot animation along the arrow. Works in SVG export and draw.io desktop — ideal for data-flow and pipeline diagrams. Example: `style="edgeStyle=orthogonalEdgeStyle;flowAnimation=1;rounded=1;..."`
+- **Animated connectors:** add `flowAnimation=1;` to an edge style to show moving dashes from source to target. Optional controls are `flowAnimationDuration=500;` (positive milliseconds; larger is slower), `flowAnimationTimingFunction=linear;` (`linear`, `ease`, `ease-in`, `ease-out`, or `ease-in-out`), and `flowAnimationDirection=normal;` (`normal`, `reverse`, `alternate`, or `alternate-reverse`). Example: `style="edgeStyle=orthogonalEdgeStyle;flowAnimation=1;flowAnimationDuration=1200;flowAnimationDirection=normal;rounded=1;..."`. A verified animated SVG preserves this motion; PNG/PDF/JPG remain static.
 - **Always** include `rounded=1;orthogonalLoop=1;jettySize=auto` — these enable smart routing that avoids overlaps
 - Pin `exitX/exitY/entryX/entryY` on every edge when a node has 2+ connections. Pick the side facing each peer and spread that side's edges over evenly spaced slots so they do not stack or cross at the boundary.
 - Add `<Array as="points">` waypoints when an edge must detour around an intermediate shape
 - **Leave room for arrowheads:** the final straight segment between the last bend and the target shape must be ≥20px long. If too short, the arrowhead overlaps the bend and looks broken. Fix by increasing node spacing or adding explicit waypoints
 - **Obstacle-avoiding routing (draw.io ≥ 30):** the desktop editor can recompute connectors around shapes without moving nodes. This is an interactive editor feature, not a `drawio_layout` preset. If a dense diagram still has crossings after preview, offer to open the `.drawio` in draw.io desktop for manual routing.
+
+### Timed page animation in standalone SVG
+
+Use a page sequence when elements should appear, disappear, or fade in a defined order. The sequence is native draw.io animation JSON stored on a `UserObject` that wraps root cell `0`. Replace the normal `<mxCell id="0" />` with the wrapper — never include both:
+
+```xml
+<UserObject label="" id="0" animation="{&quot;animation&quot;:{&quot;loop&quot;:true,&quot;steps&quot;:[{&quot;opacity&quot;:{&quot;cells&quot;:[&quot;service&quot;,&quot;edge-1&quot;],&quot;value&quot;:0}},{&quot;fadeIn&quot;:{&quot;cells&quot;:[&quot;service&quot;],&quot;delay&quot;:500}},{&quot;wait&quot;:300},{&quot;fadeIn&quot;:{&quot;cells&quot;:[&quot;edge-1&quot;],&quot;delay&quot;:500}}]}}">
+  <mxCell />
+</UserObject>
+<mxCell id="1" parent="0" />
+```
+
+`drawio_export` with `animated: true` and `mode: "final"` compiles the portable sequence into standalone SVG CSS, verifies that motion exists, and keeps the editable diagram embedded by default. Animated mode defaults to SVG when `format` is omitted. It rejects non-SVG formats, preview mode, malformed or dangling animation references, and effects that cannot be represented reliably without draw.io's JavaScript viewer.
+
+**Portable standalone-SVG actions:**
+
+| JSON action | Required fields | Result |
+|-------------|-----------------|--------|
+| `opacity` | `cells`, `value` from 0 to 1 | Set opacity immediately |
+| `show` / `hide` / `toggle` | `cells` | Change visibility immediately |
+| `fadeIn` / `fadeOut` | `cells`, optional `delay` in ms | Fade to visible/hidden; default 1000ms |
+| `fadeTo` | `cells`, `value`, optional `delay` | Fade to a specific opacity |
+| `wait` | non-negative milliseconds | Delay the next sequential step |
+
+Rules:
+
+- `cells` is an array of cell ids. `"*"` selects all vertices and edges; `excludeCells` removes ids from that selection.
+- Steps run sequentially. Add `"immediate":true` to a following step to run it in parallel with the previous step. Do not target the same cell twice in one parallel batch.
+- `loop` and `enabled` default to `true`. Set `loop:false` for a one-shot sequence or `enabled:false` to retain but disable it.
+- Use `opacity` to establish an initially hidden state. Do **not** set `visible="0"`: draw.io omits that cell from SVG, so it cannot be revealed later.
+- Always specify explicit fade delays for deliberate pacing. Keep labels visible long enough to read and avoid fast flashing.
+- Standalone SVG intentionally rejects draw.io viewer-only actions such as wipe/pop, highlight, dynamic flow toggles, style changes, navigation, tags, layers, and links. Use persistent `flowAnimation=1;` on an edge for connector motion.
+- The generated SVG includes a `prefers-reduced-motion` fallback that stops motion and shows sequenced cells. Export a static PNG fallback too unless the user requests SVG only.
+- PNG previews are static geometry reviews. Cross-check sequence order, targets, timing, direction, and loop settings structurally; only a verified final animated-SVG result proves the export retained animation.
 
 ### Distributing connections on a shape
 

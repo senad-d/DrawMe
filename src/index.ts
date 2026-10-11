@@ -1,7 +1,7 @@
 /**
  * DrawMe — a native Pi extension that turns natural-language descriptions into
  * `.drawio` diagrams and exports them to PNG/SVG/PDF/JPG via the draw.io desktop
- * CLI. It exposes the authoring workflow as plain commands and model-callable
+ * CLI, including verified animated SVGs. It exposes the authoring workflow as plain commands and model-callable
  * tools.
  *
  * Tools:    drawio_check · drawio_export · drawio_validate · drawio_fit_canvas
@@ -48,6 +48,12 @@ const exportParams = Type.Object({
   pageIndex: Type.Optional(Type.Number({ description: "1-based page to export from a multi-page file" })),
   embed: Type.Optional(
     Type.Boolean({ description: "Embed diagram XML for an editable output. Default: on for final PNG/SVG/PDF, off for preview" }),
+  ),
+  animated: Type.Optional(
+    Type.Boolean({
+      description:
+        "Require a verified final animated SVG. Defaults format to SVG; preserves connector flow and compiles portable page fade/visibility/wait sequences.",
+    }),
   ),
   binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
 });
@@ -106,15 +112,21 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview.",
     promptSnippet:
-      "Export a .drawio to PNG/SVG/PDF/JPG (mode:'preview' attaches the review image when the current model can view images — the result text says so — and removes the previous preview file; mode:'final' creates the deliverable and cleans the remaining preview).",
+      "Export a .drawio to PNG/SVG/PDF/JPG; set animated:true for a verified final animated SVG. Preview mode attaches a PNG for visual review when supported.",
     parameters: exportParams,
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
         const r = await exportDiagram(params as ExportOptions);
         const canView = modelSupportsImages(ctx);
-        const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed}`];
+        const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed} animated=${r.animated}`];
+        if (r.animation) {
+          lines.push(
+            `Animation verified: ${r.animation.connectorFlows} connector flow(s), ${r.animation.sequenceSteps} page step(s)` +
+              (r.animation.sequenceCompiled ? ` (${r.animation.sequenceDurationMs}ms sequence compiled)` : ""),
+          );
+        }
         if (r.repaired) lines.push("(repaired truncated -e PNG IEND chunk)");
         if (r.removedPreviews.length > 0) lines.push(`Removed preview artifact(s): ${r.removedPreviews.join(", ")}`);
         if (r.previewCleanupWarnings.length > 0) {
@@ -353,17 +365,26 @@ export default function drawme(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("drawme-export", {
-    description: "Export a .drawio file: /drawme-export <file> [png|svg|pdf|jpg]",
+    description: "Export a .drawio file: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]",
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts.length === 0) {
-        ctx.ui.notify("Usage: /drawme-export <file> [png|svg|pdf|jpg]", "info");
+        ctx.ui.notify("Usage: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]", "info");
         return;
       }
-      const [input, format = "png"] = parts;
+      const [input, requestedFormat = "png"] = parts;
+      const animated = requestedFormat === "animated-svg";
+      const format = animated ? "svg" : requestedFormat;
+      if (!["png", "svg", "pdf", "jpg"].includes(format)) {
+        ctx.ui.notify("Usage: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]", "info");
+        return;
+      }
       try {
-        const r = await exportDiagram({ input, format: format as ExportFormat, mode: "final" });
-        ctx.ui.notify(`Exported ${r.output}${r.repaired ? " (repaired PNG)" : ""}`, "info");
+        const r = await exportDiagram({ input, format: format as ExportFormat, mode: "final", animated });
+        ctx.ui.notify(
+          `Exported ${r.output}${r.animation ? " (animation verified)" : r.repaired ? " (repaired PNG)" : ""}`,
+          "info",
+        );
       } catch (e) {
         ctx.ui.notify(`Export failed: ${(e as Error).message}`, "error");
       }

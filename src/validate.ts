@@ -7,6 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { DOMParser } from "@xmldom/xmldom";
 import { type DomEl, attr, childrenByTag, directText, firstByTag } from "./dom";
+import { analyzeAnimationPage } from "./animation";
 import {
   type ById,
   type ContentBounds,
@@ -766,6 +767,10 @@ function checkPage(diagram: DomEl): [string[], string[], string[]] {
   const warnings: string[] = [];
   const observations: string[] = [];
   const ids = buildIds(cells, errors);
+  const animation = analyzeAnimationPage(diagram);
+  errors.push(...animation.errors);
+  warnings.push(...animation.warnings);
+  observations.push(...animation.observations);
   const parents = new Set<string | null>();
   for (const cell of cells) parents.add(attr(cell, "parent"));
 

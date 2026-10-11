@@ -10,6 +10,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { repairPng } from "./png";
+import { enhanceAnimatedSvg, type AnimatedSvgSummary } from "./animation";
 
 export type ExportFormat = "png" | "svg" | "pdf" | "jpg";
 export type ExportMode = "preview" | "final";
@@ -36,6 +37,8 @@ export interface ExportOptions {
   border?: number;
   pageIndex?: number;
   embed?: boolean;
+  /** Require and verify animation in a final SVG, compiling portable page sequences when present. */
+  animated?: boolean;
   binary?: string;
 }
 
@@ -43,6 +46,7 @@ export interface ExportPlan {
   format: ExportFormat;
   mode: ExportMode;
   embed: boolean;
+  animated: boolean;
   output: string;
   /** Export flags ending with `-o <output>`. The input path is appended after these. */
   args: string[];
@@ -122,12 +126,16 @@ export function deriveOutput(input: string, format: ExportFormat, embed: boolean
  * Export planning rules:
  * - preview → never `-e`, width-capped at 2000px (Claude vision rejects >2576px)
  * - final   → `-e` for png/svg/pdf (jpg can't embed), raster scale 2
+ * - animated → final SVG only; defaults the format to SVG and verifies motion after export
  * - `--width` and `-s` are never combined; an explicit width/height wins
  * - `-t` (transparent) is PNG-only; `--page-index` is 1-based
  */
 export function planExport(opts: ExportOptions, plat: string = platform(), isRoot = false): ExportPlan {
-  const format = opts.format ?? "png";
+  const animated = opts.animated ?? false;
+  const format = opts.format ?? (animated ? "svg" : "png");
   const mode = opts.mode ?? "final";
+  if (animated && format !== "svg") throw new Error("animated export requires format='svg'");
+  if (animated && mode !== "final") throw new Error("animated export requires mode='final'; use a PNG preview for review");
   const embed = opts.embed ?? (mode === "final" && format !== "jpg");
   const output = opts.output ?? deriveOutput(opts.input, format, embed);
   const raster = format === "png" || format === "jpg";
@@ -151,7 +159,7 @@ export function planExport(opts: ExportOptions, plat: string = platform(), isRoo
     linuxExtra.push("--disable-gpu");
     if (isRoot) linuxExtra.push("--no-sandbox");
   }
-  return { format, mode, embed, output, args, input: opts.input, linuxExtra };
+  return { format, mode, embed, animated, output, args, input: opts.input, linuxExtra };
 }
 
 export interface ExportResult {
@@ -159,6 +167,9 @@ export interface ExportResult {
   format: ExportFormat;
   mode: ExportMode;
   embed: boolean;
+  /** True only when animated SVG export was explicitly requested and verified. */
+  animated: boolean;
+  animation?: AnimatedSvgSummary;
   binary: string;
   version?: string;
   /** True if the truncated `-e` PNG IEND chunk was repaired after export. */
@@ -327,6 +338,15 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
   }
 
   const repaired = plan.embed && plan.format === "png" ? await repairPng(plan.output) : false;
+  let animation: AnimatedSvgSummary | undefined;
+  if (plan.animated) {
+    try {
+      animation = await enhanceAnimatedSvg(plan.input, plan.output, opts.pageIndex ?? 1);
+    } catch (error) {
+      await rm(plan.output, { force: true });
+      throw new Error(`animated SVG verification failed: ${(error as Error).message}`, { cause: error });
+    }
+  }
   const cleanup =
     plan.mode === "preview"
       ? await replaceTrackedPreview(plan.input, plan.output)
@@ -336,6 +356,8 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
     format: plan.format,
     mode: plan.mode,
     embed: plan.embed,
+    animated: plan.animated,
+    animation,
     binary: info.binary,
     version: info.version,
     repaired,
