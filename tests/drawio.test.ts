@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planExport, deriveOutput, exportDiagram } from "../src/drawio";
+import { planExport, deriveOutput, exportDiagram, run, xvfbScreen } from "../src/drawio";
 
 async function makeFakeDrawio(dir: string): Promise<string> {
   const binary = join(dir, "fake-drawio.mjs");
@@ -33,6 +33,33 @@ describe("deriveOutput", () => {
     expect(deriveOutput("diagram.drawio", "png", false)).toBe("diagram.png");
     expect(deriveOutput("dir/diagram.drawio", "svg", true)).toBe("dir/diagram.svg");
     expect(deriveOutput("diagram", "pdf", true)).toBe("diagram.pdf");
+  });
+});
+
+describe("xvfbScreen", () => {
+  it("fits the requested raster with a margin, floored at 1280x1024 and capped at 8192", () => {
+    const final = planExport({ input: "a.drawio" }, "linux", false, 1600).args;
+    expect(final).toContain("3360");
+    expect(xvfbScreen(final)).toBe("3616x3616x24");
+    expect(xvfbScreen(planExport({ input: "a.drawio", mode: "preview" }, "linux").args)).toBe("2256x2256x24");
+    expect(xvfbScreen(["-x", "-f", "svg", "-b", "0"])).toBe("1280x1024x24");
+    expect(xvfbScreen(["--height", "900"])).toBe("1280x1156x24");
+    expect(xvfbScreen(["--width", "20000"])).toBe("8192x8192x24");
+  });
+});
+
+describe.skipIf(process.platform === "win32")("run", () => {
+  it("kills the whole process group on timeout, leaving no orphans", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-run-"));
+    const pidFile = join(dir, "pid");
+    try {
+      await expect(run("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], 300)).rejects.toThrow("timed out");
+      const pid = Number(await readFile(pidFile, "utf8"));
+      await new Promise((r) => setTimeout(r, 200));
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

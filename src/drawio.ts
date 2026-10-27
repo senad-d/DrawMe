@@ -4,7 +4,7 @@
  * `-e` PNG IEND repair, page indexing, and headless-Linux handling so callers never
  * hand-build a draw.io command line.
  */
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -72,18 +72,55 @@ const CANDIDATES = [
   "/mnt/c/Program Files/draw.io/draw.io.exe", // WSL2
 ];
 
-function run(bin: string, args: string[], timeout = 120_000): Promise<{ stdout: string; stderr: string }> {
+/**
+ * Run a command and collect its output. Off Windows the child leads its own process
+ * group, so a timeout ends the whole tree (xvfb-run, Xvfb, Electron), not only the
+ * direct child: SIGTERM first so xvfb-run can clean up, SIGKILL after a grace period.
+ */
+export function run(bin: string, args: string[], timeout = 120_000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) {
-        (err as NodeJS.ErrnoException & { stderr?: string }).stderr = stderr?.toString();
-        const reason = err instanceof Error ? err : new Error("draw.io process failed with an unknown error");
-        reject(reason);
-      } else {
-        resolve({ stdout: stdout.toString(), stderr: stderr?.toString() ?? "" });
+    const group = platform() !== "win32";
+    const child = spawn(bin, args, { detached: group, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child.pid, group, "SIGTERM");
+      killTimer = setTimeout(() => killTree(child.pid, group, "SIGKILL"), 5_000);
+    }, timeout);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(Object.assign(err, { stderr }));
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        // Reap anything in the group that ignored SIGTERM.
+        clearTimeout(killTimer);
+        killTree(child.pid, group, "SIGKILL");
       }
+      if (code === 0 && !timedOut) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      const exitReason = signal ?? `code ${code}`;
+      const why = timedOut ? `timed out after ${timeout / 1000}s` : `exited with ${exitReason}`;
+      reject(Object.assign(new Error(`${bin} ${why}`), { code, signal, stderr }));
     });
   });
+}
+
+function killTree(pid: number | undefined, group: boolean, signal: NodeJS.Signals): void {
+  if (pid === undefined) return;
+  try {
+    process.kill(group ? -pid : pid, signal);
+  } catch {
+    // already gone
+  }
 }
 
 function parseMajor(version: string): number {
@@ -354,12 +391,30 @@ function isRootUser(): boolean {
   return typeof getuid === "function" && getuid() === 0;
 }
 
+/**
+ * Xvfb screen for an export: draw.io fails (UnknownVizError, then hangs) when the
+ * requested raster is wider than the virtual screen. The height is unknown when only
+ * a width is requested, so the larger requested side sizes both, plus a margin,
+ * floored at 1280x1024 and capped at 8192.
+ */
+export function xvfbScreen(args: string[]): string {
+  const want = Math.max(flagNumber(args, "--width"), flagNumber(args, "--height"));
+  const side = want > 0 ? Math.min(8192, want + 256) : 0;
+  return `${Math.max(1280, side)}x${Math.max(1024, side)}x24`;
+}
+
+function flagNumber(args: string[], flag: string): number {
+  const i = args.indexOf(flag);
+  return i >= 0 ? Number(args[i + 1]) || 0 : 0;
+}
+
 /** Run the export, wrapping in `xvfb-run` on headless Linux and falling back to a direct call if it's absent. */
 async function invoke(binary: string, fullArgs: string[]): Promise<string> {
   if (platform() === "linux" && !process.env.DISPLAY) {
+    const screen = `-screen 0 ${xvfbScreen(fullArgs)}`;
     try {
-      await run("xvfb-run", ["-a", "--server-args=-screen 0 1280x1024x24", binary, ...fullArgs]);
-      return `xvfb-run -a --server-args="-screen 0 1280x1024x24" ${binary} ${fullArgs.join(" ")}`;
+      await run("xvfb-run", ["-a", `--server-args=${screen}`, binary, ...fullArgs]);
+      return `xvfb-run -a --server-args="${screen}" ${binary} ${fullArgs.join(" ")}`;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
       // xvfb-run not installed — fall through to a direct call
@@ -379,6 +434,17 @@ export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> 
   return withSourceExportQueue(opts.input, () => exportDiagramQueued(opts));
 }
 
+async function invokeExport(binary: string, args: string[]): Promise<string> {
+  try {
+    return await invoke(binary, args);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    const stderr = (e as { stderr?: string }).stderr?.trim();
+    const detail = stderr ? `${message}\n${stderr}` : message;
+    throw new Error(`draw.io export failed: ${detail}`, { cause: e });
+  }
+}
+
 async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
   const info = await resolveBinary(opts.binary);
   if (!info.available || !info.binary) {
@@ -391,13 +457,7 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
   const plan = planExport(opts, platform(), isRootUser(), await pageContentWidth(opts.input, opts.pageIndex ?? 1));
   const fullArgs = [...plan.args, plan.input, ...plan.linuxExtra];
 
-  let command: string;
-  try {
-    command = await invoke(info.binary, fullArgs);
-  } catch (e) {
-    const detail = ((e as { stderr?: string }).stderr || (e as Error).message || String(e)).trim();
-    throw new Error(`draw.io export failed: ${detail}`, { cause: e });
-  }
+  const command = await invokeExport(info.binary, fullArgs);
   if (!existsSync(plan.output)) {
     throw new Error(`draw.io reported no error but the output was not created: ${plan.output}`);
   }
