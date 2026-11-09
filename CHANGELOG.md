@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-09
+
+### Fixed
+
+- Final PNG/JPG exports use the selected page's content width and height to lower the raster scale when needed, targeting a six-million-pixel budget to avoid draw.io `UnknownVizError` failures. Explicit width and height requests remain unchanged.
+
 ## [0.1.10] - 2026-10-27
 
 ### Fixed
@@ -142,7 +148,8 @@ Initial release: DrawMe as a native Pi extension for authoring, validating, and 
 - Tooling: ESLint flat config, custom `format:check`, `check:golden` asset-integrity check, Vitest suite
   with real-CLI integration tests, CI, SonarCloud, and release workflows.
 
-[Unreleased]: https://github.com/senad-d/DrawMe/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/senad-d/DrawMe/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/senad-d/DrawMe/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/senad-d/DrawMe/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/senad-d/DrawMe/compare/v0.0.1...v0.1.9
 [0.0.1]: https://github.com/senad-d/DrawMe/releases/tag/v0.0.1

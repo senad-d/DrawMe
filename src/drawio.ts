@@ -169,7 +169,8 @@ export function deriveOutput(input: string, format: ExportFormat, embed: boolean
  *
  * Export planning rules:
  * - preview → never `-e`, width-capped at 2000px (Claude vision rejects >2576px)
- * - final   → `-e` for png/svg/pdf (jpg can't embed), raster scale 2
+ * - final   → `-e` for png/svg/pdf (jpg can't embed), raster scale 2, lowered so the
+ *   raster stays within MAX_FINAL_RASTER_PIXELS (larger rasters fail with UnknownVizError)
  * - animated → final SVG only; defaults the format to SVG and verifies motion after export
  * - `--width` and `-s` are never combined; an explicit width/height wins
  * - `-t` (transparent) is PNG-only; `--page-index` is 1-based
@@ -183,6 +184,7 @@ export function planExport(
   plat: string = platform(),
   isRoot = false,
   contentWidth?: number,
+  contentHeight?: number,
 ): ExportPlan {
   const animated = opts.animated ?? false;
   const format = opts.format ?? (animated ? "svg" : "png");
@@ -196,7 +198,7 @@ export function planExport(
   const margin = opts.border ?? DEFAULT_FIT_MARGIN;
   const args: string[] = ["-x", "-f", format];
   if (embed) args.push("-e");
-  const border = planExportSize(opts, mode, raster, contentWidth, margin, args);
+  const border = planExportSize(opts, mode, raster, margin, args, contentWidth, contentHeight);
   // draw.io crops exports to the content, so the border is the image's only outer margin.
   args.push("-b", String(format === "svg" ? 0 : border));
   if (opts.transparent && format === "png") args.push("-t");
@@ -212,16 +214,27 @@ export function planExport(
   return { format, mode, embed, animated, output, args, input: opts.input, linuxExtra, svgMargin: format === "svg" ? margin : 0 };
 }
 
+/** Pixel budget for a final raster; draw.io fails with UnknownVizError on much larger images. */
+export const MAX_FINAL_RASTER_PIXELS = 6_000_000;
+
+/** The requested scale, lowered so the bordered raster stays within MAX_FINAL_RASTER_PIXELS. */
+export function cappedScale(scale: number, margin: number, contentWidth?: number, contentHeight?: number): number {
+  if (!contentWidth || !contentHeight || contentWidth <= 0 || contentHeight <= 0) return scale;
+  const area = (contentWidth + 2 * margin) * (contentHeight + 2 * margin);
+  const max = Math.floor(Math.sqrt(MAX_FINAL_RASTER_PIXELS / area) * 100) / 100;
+  return Math.min(scale, max);
+}
+
 function planExportSize(
-  opts: ExportOptions, mode: ExportMode, raster: boolean, contentWidth: number | undefined,
-  margin: number, args: string[],
+  opts: ExportOptions, mode: ExportMode, raster: boolean, margin: number, args: string[],
+  contentWidth?: number, contentHeight?: number,
 ): number {
   if (opts.width != null) args.push("--width", String(opts.width));
   else if (opts.height != null) args.push("--height", String(opts.height));
   else if (raster) {
     if (mode === "preview") args.push("--width", "2000");
     else {
-      const scale = opts.scale ?? 2;
+      const scale = cappedScale(opts.scale ?? 2, margin, contentWidth, contentHeight);
       if (contentWidth !== undefined && contentWidth > 0 && scale !== 1) {
         // With --width the border is in output pixels and applied evenly.
         const border = Math.round(margin * scale);
@@ -369,8 +382,8 @@ async function withSourceExportQueue<T>(input: string, action: () => Promise<T>)
   }
 }
 
-/** Width of the visible content of a page in diagram units, or undefined when it cannot be measured. */
-export async function pageContentWidth(input: string, pageIndex: number): Promise<number | undefined> {
+/** Size of the visible content of a page in diagram units, or undefined when it cannot be measured. */
+export async function pageContentSize(input: string, pageIndex: number): Promise<{ width: number; height: number } | undefined> {
   try {
     const root = new DOMParser().parseFromString(await readFile(input, "utf8"), "text/xml").documentElement as unknown as DomEl | null;
     if (!root) return undefined;
@@ -380,7 +393,7 @@ export async function pageContentWidth(input: string, pageIndex: number): Promis
     if (!model) return undefined;
     const { cells, ids } = collectCellsWithIds(firstByTag(model, "root"));
     const bounds = contentBounds(cells, ids);
-    return bounds ? bounds.maxX - bounds.minX : undefined;
+    return bounds ? { width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY } : undefined;
   } catch {
     return undefined;
   }
@@ -454,7 +467,8 @@ async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
     );
   }
 
-  const plan = planExport(opts, platform(), isRootUser(), await pageContentWidth(opts.input, opts.pageIndex ?? 1));
+  const content = await pageContentSize(opts.input, opts.pageIndex ?? 1);
+  const plan = planExport(opts, platform(), isRootUser(), content?.width, content?.height);
   const fullArgs = [...plan.args, plan.input, ...plan.linuxExtra];
 
   const command = await invokeExport(info.binary, fullArgs);

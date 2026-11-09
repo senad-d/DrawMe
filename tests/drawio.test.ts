@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planExport, deriveOutput, exportDiagram, run, xvfbScreen } from "../src/drawio";
+import { MAX_FINAL_RASTER_PIXELS, cappedScale, planExport, deriveOutput, exportDiagram, run, xvfbScreen } from "../src/drawio";
 
 async function makeFakeDrawio(dir: string): Promise<string> {
   const binary = join(dir, "fake-drawio.mjs");
@@ -129,6 +129,27 @@ describe("planExport", () => {
     expect(svg.svgMargin).toBe(40);
     const preview = planExport({ input: "a.drawio", mode: "preview" }, "darwin", false, 1000);
     expect(preview.args).toEqual(["-x", "-f", "png", "--width", "2000", "-b", "40", "-o", "a.png"]);
+  });
+
+  it("caps the final raster at about MAX_FINAL_RASTER_PIXELS by lowering the scale", () => {
+    // 3000x2000 content at scale 2 would be ~25M pixels.
+    const scale = cappedScale(2, 40, 3000, 2000);
+    expect(scale).toBeLessThan(2);
+    expect(scale * 3080 * (scale * 2080)).toBeLessThanOrEqual(MAX_FINAL_RASTER_PIXELS);
+    expect(scale * 3080 * (scale * 2080)).toBeGreaterThan(MAX_FINAL_RASTER_PIXELS * 0.97);
+    const big = planExport({ input: "a.drawio" }, "darwin", false, 3000, 2000);
+    const width = Number(big.args[big.args.indexOf("--width") + 1]);
+    expect(width).toBe(Math.round(3000 * scale + 2 * Math.round(40 * scale)));
+
+    // A scale-1 export that is still too large is sized down by width as well.
+    const one = planExport({ input: "a.drawio", scale: 1 }, "darwin", false, 4000, 3000);
+    expect(one.args).toContain("--width");
+    expect(one.args).not.toContain("-s");
+
+    // Small diagrams, unknown heights, and explicit sizes keep the requested scale.
+    expect(cappedScale(2, 40, 1000, 800)).toBe(2);
+    expect(cappedScale(2, 40, 3000)).toBe(2);
+    expect(planExport({ input: "a.drawio", width: 5000 }, "darwin", false, 3000, 2000).args).toContain("5000");
   });
 
   it("supports explicit height, scale, border, and embed options", () => {
