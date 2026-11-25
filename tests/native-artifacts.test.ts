@@ -236,7 +236,7 @@ describe("native draw.io artifacts through the registered tools", async () => {
     const result = await session.call("drawio_layout", { input, output, preset: "horizontalFlow" });
     expect(result.details).toMatchObject({ output: session.path(output), preset: "horizontalFlow" });
     const pages = parseXml((await regularFile(session.path(output))).toString()).getElementsByTagName("diagram");
-    expect(pages.length).toBe(2);
+    expect(pages).toHaveLength(2);
     const model = pages[0].getElementsByTagName("mxGraphModel")[0];
     expect(["page", "pageWidth", "pageHeight", "background"].map((key) => model.getAttribute(key))).toEqual(["1", "640", "480", "#172033"]);
     const graph = cells(model);
