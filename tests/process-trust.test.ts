@@ -17,17 +17,23 @@ vi.mock("node:os", async (importOriginal) => ({
   platform: vi.fn(),
 }));
 
+const VERSION = "30.2.4";
 const spawnMock = vi.mocked(spawn);
 let dir: string;
 
 beforeEach(async () => {
-  dir = await realpath(await mkdtemp(join(tmpdir(), "drawme-process-")));
+  dir = await realpath(await mkdtemp(join(tmpdir(), "drawme process trust ")));
   vi.stubEnv("DRAWME_DRAWIO_BINARY", undefined);
   vi.mocked(platform).mockReturnValue("darwin");
   spawnMock.mockReset().mockImplementation((_bin, args) => {
-    const child = Object.assign(new ChildProcess(), { stdout: new PassThrough(), stderr: new PassThrough() });
+    const child = Object.assign(new ChildProcess(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      unref: vi.fn().mockReturnThis(),
+    });
     queueMicrotask(() => {
-      child.stdout.end(Array.isArray(args) && args[0] === "--version" ? "30.0.0\n" : "");
+      child.emit("spawn");
+      child.stdout.end(Array.isArray(args) && args[0] === "--version" ? `${VERSION}\n` : "");
       child.stderr.end();
       child.emit("close", 0, null);
     });
@@ -42,12 +48,12 @@ afterEach(async () => {
 
 describe("CLI discovery trust", () => {
   it.each([
-    ["drawio_check", {}],
-    ["drawio_export", { format: "png" }],
-    ["drawio_animate", { steps: [{ effect: "fadeIn", cells: ["a"] }], storyboard: false }],
-    ["drawio_from_mermaid", { input: undefined, mermaid: "graph TD\n  A --> B" }],
-    ["drawio_layout", { preset: "verticalFlow" }],
-  ])("does not probe an unconfigured executable from %s", async (name, options) => {
+    { name: "drawio_check" },
+    { name: "drawio_export", hasInput: true, destination: "output.png", options: { format: "png" } },
+    { name: "drawio_animate", hasInput: true, destination: "output.svg", options: { steps: [{ effect: "fadeIn", cells: ["a"] }], storyboard: false } },
+    { name: "drawio_from_mermaid", destination: "output.drawio", options: { mermaid: "graph TD\n  A --> B" } },
+    { name: "drawio_layout", hasInput: true, destination: "output.drawio", options: { preset: "verticalFlow" } },
+  ])("does not probe an unconfigured executable from $name", async ({ name, hasInput, destination, options }) => {
     const input = join(dir, "diagram.drawio");
     await writeFile(input, `<mxfile><diagram><mxGraphModel><root>
       <mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -57,11 +63,18 @@ describe("CLI discovery trust", () => {
     await writeFile(binary, "");
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    await tools.get(name)!.execute("t", { input, output: join(dir, "output.drawio"), ...options, binary });
+    const tool = tools.get(name)!;
+    await tool.execute("t", {
+      ...options,
+      ...(hasInput && { input }),
+      ...(destination && { output: join(dir, destination) }),
+      binary,
+    });
 
-    expect(spawnMock.mock.calls.map(([bin]) => bin)).not.toContain(binary);
+    // Not spawning the supplied binary is not enough: the route must reach discovery.
     expect(spawnMock).toHaveBeenCalledWith("drawio", ["--version"], expect.anything());
-    expect(tools.get(name)!.parameters.properties).not.toHaveProperty("binary");
+    expect(spawnMock.mock.calls.map(([bin]) => bin)).not.toContain(binary);
+    expect(tool.parameters.properties).not.toHaveProperty("binary");
   });
 
   it("probes a custom CLI selected in Pi's launch environment before default candidates", async () => {
@@ -69,7 +82,7 @@ describe("CLI discovery trust", () => {
     await writeFile(binary, "");
     vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
 
-    await expect(resolveBinary()).resolves.toMatchObject({ available: true, binary, version: "30.0.0", supportsMermaid: true });
+    await expect(resolveBinary()).resolves.toMatchObject({ available: true, binary, version: VERSION, supportsMermaid: true });
     expect(spawnMock).toHaveBeenCalledExactlyOnceWith(binary, ["--version"], expect.anything());
   });
 
