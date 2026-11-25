@@ -32,6 +32,12 @@ describe("searchShapes (over the bundled shape index)", () => {
     expect(searchShapes("ec2", 1).map((shape) => shape.title.toLowerCase())).toEqual(["ec2"]);
   });
 
+  it("ranks DynamoDB above the spaced title for either query casing", () => {
+    for (const query of ["DynamoDB", "dynamodb"]) {
+      expect(searchShapes(query, 1).map((shape) => shape.title)).toEqual(["DynamoDB"]);
+    }
+  });
+
   it("finds the same Lambda matches with camel-case and spaced queries", () => {
     const spaced = searchShapes("aws lambda", 5);
     expect(spaced.length).toBeGreaterThan(0);
