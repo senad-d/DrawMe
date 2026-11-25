@@ -36,6 +36,21 @@ export function firstByTag(el: DomEl, tag: string): DomEl | null {
   return null;
 }
 
+/** Discover page envelopes without needing to inspect or decompress their content. */
+export function diagramPages(root: DomEl): DomEl[] {
+  switch (root.tagName) {
+    case "mxfile": return childrenByTag(root, "diagram");
+    case "diagram":
+    case "mxGraphModel": return [root];
+    default: throw new Error("expected <mxfile>, <diagram>, or <mxGraphModel> root");
+  }
+}
+
+/** Select the uncompressed graph, if present. Compressed envelopes remain opaque. */
+export function pageModel(page: DomEl): DomEl | null {
+  return page.tagName === "mxGraphModel" ? page : firstByTag(page, "mxGraphModel");
+}
+
 /** Attribute value, or null when absent (distinguishes absent from empty). */
 export function attr(el: DomEl, name: string): string | null {
   return el.hasAttribute(name) ? el.getAttribute(name) : null;
