@@ -12,8 +12,8 @@ Requires Node.js ≥ 22.19 and, for the real-export tests, the draw.io desktop C
 ```bash
 git clone https://github.com/senad-d/DrawMe.git
 cd DrawMe
-npm ci --ignore-scripts   # first time on a fresh clone without a lockfile: npm install
-npm run validate          # golden check + lint + tests
+npm ci --ignore-scripts   # install the locked dependency set
+npm run validate          # golden check + lint + tests + pack check
 pi --no-extensions -e .   # load this checkout in Pi
 ```
 
@@ -21,12 +21,13 @@ pi --no-extensions -e .   # load this checkout in Pi
 
 `npm run validate` must pass before a change is merged. It runs, in order:
 
-1. `npm run check:golden` — SHA-256 integrity of the bundled upstream assets under `assets/`.
+1. `npm run check:golden` — SHA-256 integrity of file paths and contents under `assets/`.
 2. `npm run lint` — `tsc --noEmit`, `eslint . --max-warnings=0`, and the custom `format:check`.
 3. `npm test` — the Vitest suite.
+4. `npm run check:pack` — check the npm dry-run contents, including the runtime imports reachable from the packaged extension entry point, without publishing.
 
-Individual checks are available as `npm run typecheck`, `npm run lint:eslint`, `npm run format:check`,
-`npm run check:golden`, `npm test`, and `npm run coverage`.
+The lint steps can also run individually as `npm run typecheck`, `npm run lint:eslint`, and `npm run format:check`.
+Use `npm run coverage` to run Vitest with coverage.
 
 ## Conventions
 
