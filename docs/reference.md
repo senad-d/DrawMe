@@ -35,7 +35,7 @@ Commands are user-facing shortcuts. Use the model-callable tools when you need e
 | `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
 | `/drawme-export <file> [png\|svg\|animated-svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. `animated-svg` requires motion and verifies the result. |
 
-`/drawme-export` intentionally exposes only the source path and format. Use `drawio_export` for output naming, dimensions, border, transparency, embedding, page selection, animation mode, or binary selection. The command uses whitespace-separated arguments and is unsuitable for paths containing spaces.
+`/drawme-export` intentionally exposes only the source path and format. Use `drawio_export` for output naming, dimensions, border, transparency, embedding, page selection, or animation mode. The command uses whitespace-separated arguments and is unsuitable for paths containing spaces.
 
 ## Tools
 
@@ -45,11 +45,7 @@ DrawMe registers ten model-callable tools.
 
 Detects the draw.io desktop CLI, its version, and version-gated features.
 
-#### Options
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `binary` | string | No | Explicit binary path to test first. Standard platform candidates are tried afterward if it fails. |
+This tool takes no arguments. All tools and commands share the same CLI discovery. To use a custom installation, set `DRAWME_DRAWIO_BINARY` to its absolute executable path in Pi's launch environment. DrawMe tries that path before the usual PATH and installation locations. Tool calls cannot choose an executable.
 
 #### Result behavior
 
@@ -68,7 +64,6 @@ Call once at the start of any workflow that may use conversion, layout, preview,
 
 ```text
 drawio_check({})
-drawio_check({ "binary": "/custom/path/to/drawio" })
 ```
 
 ---
@@ -92,7 +87,6 @@ Exports an existing `.drawio` through the local draw.io desktop CLI.
 | `pageIndex` | number | No | draw.io default | Positive, 1-based page number for multi-page files. |
 | `embed` | boolean | No | Mode/format dependent | Controls embedding of editable diagram XML. |
 | `animated` | boolean | No | `false` | Requires and verifies standalone animation. Valid only for final SVG; when format is omitted, animated mode defaults it to SVG. |
-| `binary` | string | No | Auto-detected | Explicit binary path to test first. |
 
 #### Mode and naming behavior
 
@@ -173,7 +167,6 @@ Adds motion to an existing `.drawio` page and exports a verified standalone anim
 | `pageIndex` | number | No | `1` | Positive, 1-based page to animate. |
 | `output` | string | No | `name.animated.svg` | Animated SVG path. |
 | `storyboard` | boolean | No | `true` | Render `name.storyboard.png`. |
-| `binary` | string | No | Auto-detected | Explicit binary path to test first. |
 
 Each step has an `effect` and, except for `wait`, a `cells` array of vertex or edge ids. Optional fields: `duration` (ms; required for `wait`), `stagger` (ms between consecutive cells), `parallel` (start with the previous step), `direction` (`slideIn`: `up`, `down`, `left`, `right`), `color` (hex, for `highlight` and `travel`), and `value` (`dim` opacity, default 0.25).
 
@@ -320,7 +313,6 @@ Converts Mermaid into an automatically laid-out, editable native `.drawio`. Requ
 | `mermaid` | string | One of `mermaid`/`input` | — | Inline Mermaid text. A temporary `.mmd` is removed after conversion. |
 | `input` | string | One of `mermaid`/`input` | — | Existing `.mmd` source path. |
 | `output` | string | No | See below | Destination `.drawio` path. |
-| `binary` | string | No | Auto-detected | Explicit binary path to test first. |
 
 Output defaults:
 
@@ -367,7 +359,6 @@ Repositions nodes and routes edges in an XML-authored `.drawio` using a safe ELK
 | `input` | string | Yes | — | Existing `.drawio` source. |
 | `preset` | layout preset | Yes | — | One of the six allowlisted values below. |
 | `output` | string | No | `<name>.layout.drawio` | Destination path beside the input. May equal `input` for intentional in-place layout. |
-| `binary` | string | No | Auto-detected | Explicit binary path to test first. |
 
 #### Presets
 
@@ -452,21 +443,21 @@ Explanation is a structural summary, not a validator and not a visual renderer.
 
 ### `drawio_open`
 
-Opens a local `.drawio` source or exported file with the operating system's default application.
+Opens a local diagram or export with the operating system's default application.
 
 #### Options
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | Yes | Existing local file to open. |
+| `path` | string | Yes | File to open. The resolved target must be a regular file with a `.drawio`, `.png`, `.svg`, `.pdf`, `.jpg`, or `.jpeg` extension (case-insensitive). |
 
 Platform behavior:
 
 - macOS: `open`;
-- Windows: `start`;
+- Windows: the system file-association helper, without `cmd.exe`;
 - Linux: `xdg-open`.
 
-Use it when the user requests desktop review or accepts an offer to fine-tune the source manually. Opening an application is a user-visible side effect.
+Use it when the user requests desktop review or accepts an offer to fine-tune the source manually. Opening a document is a user-visible side effect.
 
 ```text
 drawio_open({ "path": "architecture.drawio" })

@@ -10,7 +10,7 @@ import {
   realpathSync, renameSync, statSync, unlinkSync,
 } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, sep, win32 } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { repairPng } from "./png";
 import { enhanceAnimatedSvg, type AnimatedSvgSummary } from "./animation";
@@ -132,12 +132,14 @@ function parseMajor(version: string): number {
 }
 
 /**
- * Resolve the draw.io CLI. Tries an explicit `override` first, then the standard
- * candidates. Absolute paths are existence-checked before spawning; PATH names are
- * probed with `--version` (a short timeout guards the sandbox-hang case).
+ * Resolve the draw.io CLI. A trusted code override or an absolute path configured
+ * in Pi's launch environment takes priority over the standard candidates. Never
+ * pass a tool argument as the override. Paths are checked before probing with `--version`.
  */
-export async function resolveBinary(override?: string): Promise<DrawioInfo> {
-  const candidates = override ? [override, ...CANDIDATES] : CANDIDATES;
+export async function resolveBinary(trustedOverride?: string): Promise<DrawioInfo> {
+  const configured = process.env.DRAWME_DRAWIO_BINARY;
+  const preferred = trustedOverride || (configured && isAbsolute(configured) ? configured : undefined);
+  const candidates = preferred ? [preferred, ...CANDIDATES] : CANDIDATES;
   const tried = new Set<string>();
   for (const bin of candidates) {
     if (tried.has(bin)) continue;
@@ -538,7 +540,7 @@ async function exportDiagramQueued(
   if (!info.available || !info.binary) {
     throw new Error(
       "draw.io CLI not found. Install draw.io desktop (macOS: `brew install --cask drawio`; " +
-        "others: https://github.com/jgraph/drawio-desktop/releases), or pass an explicit `binary` path.",
+        "others: https://github.com/jgraph/drawio-desktop/releases), or set DRAWME_DRAWIO_BINARY in Pi's launch environment.",
     );
   }
 
@@ -594,7 +596,7 @@ async function requireBinary(minMajor: number, feature: string, override?: strin
   if (!info.available || !info.binary) {
     throw new Error(
       "draw.io CLI not found. Install draw.io desktop (macOS: `brew install --cask drawio`; " +
-        "others: https://github.com/jgraph/drawio-desktop/releases), or pass an explicit `binary` path.",
+        "others: https://github.com/jgraph/drawio-desktop/releases), or set DRAWME_DRAWIO_BINARY in Pi's launch environment.",
     );
   }
   if ((info.major ?? 0) < minMajor) {
@@ -696,18 +698,29 @@ export async function applyLayout(opts: LayoutOptions): Promise<LayoutResult> {
   return { output, preset: opts.preset, binary: info.binary, version: info.version, command };
 }
 
-/** Open a file in the OS default handler (draw.io desktop for `.drawio`). No version gate. */
+const DOCUMENT_EXTENSIONS = new Set([".drawio", ".png", ".svg", ".pdf", ".jpg", ".jpeg"]);
+
+/** Open an existing diagram or export in its OS default application. No version gate. */
 export async function openFile(path: string): Promise<{ opener: string }> {
   if (!existsSync(path)) throw new Error(`file not found: ${path}`);
+  const document = realpathSync.native(path);
+  if (!statSync(document).isFile()) throw new Error(`not a regular file: ${path}`);
+  if (!DOCUMENT_EXTENSIONS.has(extname(document).toLowerCase())) {
+    throw new Error(`not a supported diagram or export: ${path}`);
+  }
+
   const plat = platform();
   if (plat === "darwin") {
-    await run("open", [path], 15_000);
+    await run("open", [document], 15_000);
     return { opener: "open" };
   }
   if (plat === "win32") {
-    await run("cmd", ["/c", "start", "", path], 15_000);
-    return { opener: "start" };
+    const root = process.env.SystemRoot;
+    if (!root || !win32.isAbsolute(root)) throw new Error("Windows SystemRoot is not configured");
+    // Call the system's file-association helper directly, not cmd.exe's start command.
+    await run(win32.join(root, "System32", "rundll32.exe"), ["shell32.dll,ShellExec_RunDLL", document], 15_000);
+    return { opener: "rundll32" };
   }
-  await run("xdg-open", [path], 15_000);
+  await run("xdg-open", [document], 15_000);
   return { opener: "xdg-open" };
 }
