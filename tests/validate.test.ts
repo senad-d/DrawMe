@@ -127,21 +127,24 @@ describe("validation limits", () => {
   });
 
   it.each([
-    ["stored motion", MOTION_ATTRIBUTE, '{"steps":[false,false,false]}', /motion step 3 must be an object/],
-    ["native animation", "animation", '{"steps":[false,false,false]}', /page animation step 3 must be an object/],
-  ])("stops %s at diagnostic emission using the remaining shared budget", (_kind, attribute, json, lastError) => {
+    ["stored motion", MOTION_ATTRIBUTE, "motion"],
+    ["native animation", "animation", "page animation"],
+  ])("stops %s at diagnostic emission using the remaining shared budget", (_kind, attribute, dialect) => {
     const page = (name: string, attribute: string, value: string) =>
       `<diagram name="${name}"><mxGraphModel ${finitePage}><root><UserObject id="0" ${attribute}="${value.replaceAll('"', '&quot;')}"><mxCell/></UserObject></root></mxGraphModel></diagram>`;
     const first = page("First", "animation", "legacy text");
-    const second = page("Second", attribute, json);
+    const second = page("Second", attribute, '{"steps":[false,false,false]}');
     const firstWarning = "page 'First': legacy text page animations cannot be compiled to standalone animated SVG; save the animation as JSON";
+    const stepError = (step: number) => `page 'Second': ${dialect} step ${step} must be an object`;
     expect(validateXml(first, { maxDiagnostics: 1 })).toMatchObject({ incomplete: false, warnings: [firstWarning] });
     const xml = `<mxfile>${first}${second}</mxfile>`;
-    expect(validateXml(xml).errors).toContainEqual(expect.stringMatching(lastError));
+    expect(validateXml(xml).errors).toContain(stepError(3));
     const partial = validateXml(xml, { maxDiagnostics: 2 });
     expect(partial.incomplete).toBe(true);
-    // An interrupted helper never returns its local array to the validator.
-    expect(partial.errors).toEqual([expect.stringMatching(/validation incomplete:.*diagnostics budget/i)]);
+    expect(partial.errors).toEqual([
+      stepError(1),
+      "Validation incomplete: validation diagnostics budget exceeded",
+    ]);
     expect(partial.warnings).toEqual([firstWarning]);
     expect(partial.observations).toEqual([]);
   });
