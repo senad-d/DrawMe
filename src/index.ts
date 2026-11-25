@@ -130,8 +130,10 @@ function hasComparablePreview(ctx: ExtensionContext | undefined, source: string,
     if (details?.source !== source) continue;
     if (details.mode === "final") return false;
     if (details.mode === "preview" && details.pageIndex === pageIndex) {
+      // Pi can resize a PNG attachment to JPEG in history without changing the PNG export receipt.
       return details.format === "png" && details.imageAttached === true &&
-        message.content.some((block) => block.type === "image" && block.mimeType === "image/png" && !!block.data);
+        message.content.some((block) => block.type === "image" && !!block.data &&
+          (block.mimeType === "image/png" || block.mimeType === "image/jpeg"));
     }
   }
   return false;
