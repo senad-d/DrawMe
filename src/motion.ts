@@ -7,6 +7,7 @@
  * so the motion can be reviewed as static images.
  */
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import { verifyFlowGroups } from "./animation";
 import { type DomEl, attr, childrenByTag, elemChildren, firstByTag } from "./dom";
 import { collectCellsWithIds } from "./geometry";
 
@@ -789,9 +790,9 @@ function motionSvgGroups(root: DomEl): Map<string, DomEl> {
 }
 
 /**
- * Inject compiled motion into a draw.io SVG string. Throws when a targeted
- * cell or connector line is missing from the SVG, so a static file is never
- * presented as animated.
+ * Inject compiled motion into a draw.io SVG string. Throws when targeted
+ * cells or connector lines are missing, or the renderer did not preserve
+ * a declared connector flow.
  */
 export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: string[] = []): string {
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
@@ -802,6 +803,7 @@ export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: s
   if (missing.length > 0) {
     throw new Error(`SVG is missing animated cell group(s): ${missing.join(", ")}; do not use visible=0 on animated cells`);
   }
+  verifyFlowGroups(flowEdgeIds, groups);
 
   for (const id of motion.drawInEdgeIds) {
     const group = groups.get(id)!;
