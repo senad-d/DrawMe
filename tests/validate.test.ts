@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
-import { MIN_OUTER_MARGIN, validateXml } from "../src/validate";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { MOTION_ATTRIBUTE } from "../src/motion";
+import { MIN_OUTER_MARGIN, validateFile, validateXml } from "../src/validate";
 
 /** Wrap a set of <mxCell> lines in a minimal valid .drawio document. */
 function doc(cells: string, modelAttributes = ""): string {
@@ -475,9 +478,88 @@ describe("validateXml", () => {
     expect(examples.length).toBeGreaterThan(0);
     for (const name of examples) {
       const result = validateXml(readFileSync(resolve("example", name), "utf8"));
+      expect(result.incomplete, name).toBeUndefined();
       expect(result.errors, name).toEqual([]);
       expect(result.warnings, name).toEqual([]);
     }
+  });
+
+  it("recognizes an equivalent bare graph model and wrapped page", () => {
+    const model = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>${vertex("n", -1, 0)}</root></mxGraphModel>`;
+    const result = validateXml(`<mxfile><diagram>${model}</diagram></mxfile>`);
+    expect(result.warnings).toEqual(["page '?': vertex 'n' negative position (-1,0)"]);
+    expect(validateXml(model)).toEqual(result);
+  });
+
+  it("requires a direct graph root but accepts an empty one", () => {
+    const xml = (content: string) => `<mxfile><diagram name="Root"><mxGraphModel>${content}</mxGraphModel></diagram></mxfile>`;
+    expect(validateXml(xml("<other><root/></other>")).errors).toEqual(["page 'Root': no <root> in <mxGraphModel>"]);
+    expect(validateXml(xml("<root/>"))).toMatchObject({ errors: [], warnings: [] });
+  });
+
+  it.each([
+    ['<mxCell id="a" parent="a"/>', "cell 'a' is its own parent"],
+    ['<mxCell id="a" parent="b"/><mxCell id="b" parent="a"/>', "cell parent cycle: 'a' → 'b' → 'a'"],
+  ])("reports a containment cycle once: %s", (cells, message) => {
+    expect(validateXml(doc(cells)).errors).toEqual([`page 'Page-1': ${message}`]);
+    expect(validateXml(doc('<mxCell id="a" parent="b"/><mxCell id="b" parent="1"/>')).errors).toEqual([]);
+  });
+
+  it("reports recoverable XML diagnostics as errors without mistaking the page for compressed XML", () => {
+    const malformed = doc("").replace('name="Page-1"', "name=Unquoted");
+    const result = validateXml(malformed);
+    expect(result.errors).toEqual([expect.stringMatching(/malformed XML: .*attribute .*Unquoted/i)]);
+    expect(result.warnings).toEqual([]);
+    expect(validateXml(doc("")).errors).toEqual([]);
+  });
+
+  it("keeps readability scores independent of diagnostic phrases in diagram prose", () => {
+    const xml = doc(vertex("a", 0, 0) + vertex("b", 0, 0) + vertex("c", -400, 0));
+    const baseline = validateXml(xml);
+    const renamed = validateXml(xml.replace("Page-1", "routes through and cross").replaceAll('"c"', '"routes through and overlap"'));
+    expect(renamed.warnings).toHaveLength(baseline.warnings.length);
+    expect(renamed.score).toEqual({ through: 0, crossings: 0, overlaps: 1, anchors: 0, total: 5 });
+  });
+
+  it("gives wrapped and plain labels equivalent font and wrapping advice", () => {
+    const text = "This label is definitely much too long for this narrow node";
+    const plain = vertex("node", 0, 0, 100, 40, "fontSize=8;", text);
+    const wrapped = `<UserObject id="node" label="${text}">${plain.replace(`id="node" `, "").replace(`value="${text}"`, "")}</UserObject>`;
+    const result = validateXml(doc(plain));
+    expect(result.warnings).toHaveLength(2);
+    expect(validateXml(doc(wrapped)).warnings).toEqual(result.warnings);
+  });
+
+  it.each(["inline", "child"])("uses the relative normal and explicit offset together for %s label advice", (kind) => {
+    const nodes = vertex("a", 0, 100) + vertex("b", 400, 100) + vertex("above", 200, 35);
+    const link = routedEdge("link", "a", "b", 240, 120);
+    const labeled = (offsetY: number) => {
+      const offset = `<mxPoint as="offset" x="0" y="${offsetY}"/>`;
+      return kind === "inline"
+        ? link.replace('id="link"', 'id="link" value="DATA TRANSFER"').replace('<mxGeometry relative="1"', '<mxGeometry relative="1" y="60"').replace("</mxGeometry>", `${offset}</mxGeometry>`)
+        : `${link}<mxCell id="caption" value="DATA TRANSFER" style="edgeLabel;" vertex="1" parent="link"><mxGeometry y="60" width="80" height="20" relative="1" as="geometry">${offset}</mxGeometry></mxCell>`;
+    };
+    const labelId = kind === "inline" ? "link" : "caption";
+    const displaced = validateXml(doc(nodes + labeled(0))).warnings;
+    expect(displaced).toContain(`page 'Page-1': edge label '${labelId}' likely overlaps vertex 'above'`);
+    expect(displaced).not.toEqual(expect.arrayContaining([expect.stringContaining("sits directly on its line")]));
+    const restored = validateXml(doc(nodes + labeled(60))).warnings;
+    expect(restored).not.toEqual(expect.arrayContaining([expect.stringContaining("likely overlaps vertex")]));
+    expect(restored).toEqual(expect.arrayContaining([expect.stringContaining("sits directly on its line")]));
+  });
+
+  it("warns when a normal displacement moves a label onto another segment of its own edge", () => {
+    const nodes = vertex("a", 0, 0) + vertex("b", 120, 200);
+    const labeled = (normal: number) => `<mxCell id="link" edge="1" parent="1" source="a" target="b" value="Data" style="labelBackgroundColor=#ffffff;"><mxGeometry relative="1" y="${normal}" as="geometry"><Array as="points"><mxPoint x="160" y="20"/><mxPoint x="160" y="120"/><mxPoint x="40" y="120"/><mxPoint x="40" y="220"/></Array></mxGeometry></mxCell>`;
+    const bend = expect.arrayContaining([expect.stringContaining("label 'link' likely sits on a bend or another segment")]);
+    expect(validateXml(doc(nodes + labeled(100))).warnings).toEqual(bend);
+    expect(validateXml(doc(nodes + labeled(0))).warnings).not.toEqual(bend);
+  });
+
+  it("includes free edge terminals when checking finite page bounds", () => {
+    const floating = `<mxCell id="free" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="40" y="40" as="sourcePoint"/><mxPoint x="430" y="40" as="targetPoint"/></mxGeometry></mxCell>`;
+    const result = validateXml(doc(floating, 'page="1" pageWidth="400" pageHeight="200"'));
+    expect(result.warnings).toContain("page 'Page-1': content extends beyond right page boundary by 30px");
   });
 
   it("reports compressed and missing page models", () => {
@@ -486,5 +568,133 @@ describe("validateXml", () => {
 
     const empty = validateXml(`<mxfile><diagram name="Empty"/></mxfile>`);
     expect(empty.errors).toContain("page 'Empty': no <mxGraphModel>");
+  });
+});
+
+describe("validation limits", () => {
+  it("rejects oversized inline XML before parsing using UTF-8 bytes, not string length", () => {
+    const xml = doc("<!--é-->");
+    expect(validateXml(xml, { maxBytes: xml.length })).toMatchObject({
+      incomplete: true, errors: [expect.stringContaining("byte limit")], warnings: [], observations: [],
+    });
+    expect(validateXml(xml, { maxBytes: Buffer.byteLength(xml) }).incomplete).toBeUndefined();
+  });
+
+  it("uses bounded regular-file intake for validation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-validate-"));
+    try {
+      const file = join(dir, "diagram.drawio");
+      const xml = doc("");
+      await writeFile(file, xml);
+      expect(await validateFile(file, { maxBytes: 16 })).toMatchObject({ errors: [expect.stringContaining("16 byte limit")] });
+      expect(await validateFile(dir)).toMatchObject({ errors: [expect.stringContaining("not a regular file")] });
+      expect(await validateFile(file)).toEqual(validateXml(xml));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stops before linting a page past the page limit", () => {
+    const xml = doc(vertex("a", -1, 0)).replace("</mxfile>", '<diagram name="Omitted"/></mxfile>');
+    const result = validateXml(xml, { maxPages: 1 });
+    expect(result.incomplete).toBe(true);
+    expect(result.errors).toEqual([expect.stringContaining("page limit (1)")]);
+    expect(result.warnings).toEqual(["page 'Page-1': vertex 'a' negative position (-1,0)"]);
+  });
+
+  it("stops before validating a page with too many cells, including wrapped cells", () => {
+    const cell = '<UserObject id="wrapped"><mxCell parent="missing"/></UserObject>';
+    const xml = doc("").replace("</mxfile>", `<diagram name="Crowded"><mxGraphModel><root><mxCell id="0"/><mxCell id="1"/>${cell}</root></mxGraphModel></diagram></mxfile>`);
+    const result = validateXml(xml, { maxCellsPerPage: 2 });
+    expect(result.incomplete).toBe(true);
+    expect(result.errors).toEqual([expect.stringMatching(/Crowded.*cell limit \(2\)/)]);
+    expect(result.observations).toEqual([expect.stringContaining("page 'Page-1': page dimensions are omitted")]);
+  });
+
+  it("charges individual sibling comparisons and retains earlier findings and their score", () => {
+    const crowded = vertex("a", -1, 0) + vertex("b", 0, 0) +
+      Array.from({ length: 150 }, (_, i) => vertex(`n${i}`, 200 + i * 100, 0)).join("");
+    const result = validateXml(doc(crowded), { maxWork: 8_000 });
+    expect(result.incomplete).toBe(true);
+    expect(result.errors).toEqual([expect.stringContaining("work limit (8000)")]);
+    expect(result.warnings).toEqual([
+      "page 'Page-1': vertex 'a' negative position (-1,0)",
+      "page 'Page-1': vertices 'a' and 'b' overlap",
+    ]);
+    expect(result.score).toMatchObject({ total: 5, overlaps: 1 });
+    expect(validateXml(doc(crowded)).incomplete).toBeUndefined();
+  });
+
+  it("charges individual segment pairs even for a single non-crossing route pair", () => {
+    const route = (id: string, source: string, target: string, y: number) => {
+      const points = Array.from({ length: 90 }, (_, i) => `<mxPoint x="${100 + 4 * i}" y="${y + i % 2}"/>`).join("");
+      return `<mxCell id="${id}" edge="1" parent="1" source="${source}" target="${target}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`;
+    };
+    const nodes = vertex("a", 0, 0) + vertex("b", 500, 0) + vertex("c", 0, 200) + vertex("d", 500, 200);
+    const firstPage = doc(vertex("early", -1, 0));
+    const laterPages = doc(nodes + route("top", "a", "b", 20) + route("bottom", "c", "d", 220))
+      .replace('<mxfile><diagram name="Page-1">', '<diagram name="Segments">')
+      .replace("</mxfile>", '<diagram name="Unvisited"/></mxfile>');
+    const xml = firstPage.replace("</mxfile>", laterPages);
+    const result = validateXml(xml, { maxWork: 6_000 });
+    expect(result.incomplete).toBe(true);
+    expect(result.errors).toEqual([expect.stringMatching(/Segments.*work limit \(6000\)/)]);
+    expect(result.warnings).toEqual(["page 'Page-1': vertex 'early' negative position (-1,0)"]);
+    expect(validateXml(xml).errors).toEqual(["page 'Unvisited': no <mxGraphModel>"]);
+  });
+
+  it("shares one diagnostic limit across errors, warnings, observations, and pages", () => {
+    const xml = doc('<mxCell id="dangling" parent="missing"/>' + vertex("a", -1, 0)).replace(
+      "</mxfile>", '<diagram name="Omitted"/><diagram name="Also omitted"/></mxfile>',
+    );
+    const result = validateXml(xml, { maxDiagnostics: 3 });
+    expect(result.incomplete).toBe(true);
+    expect(result.errors).toEqual([
+      "page 'Page-1': cell 'dangling' parent 'missing' does not exist",
+      expect.stringContaining("diagnostic limit (3)"),
+    ]);
+    expect(result.warnings).toEqual(["page 'Page-1': vertex 'a' negative position (-1,0)"]);
+    expect(result.observations).toEqual([expect.stringContaining("page 'Page-1': page dimensions are omitted")]);
+  });
+
+  it("restores a parser diagnostic stop wrapped by xmldom and retains only admitted diagnostics", () => {
+    const xml = doc("").replace('name="Page-1"', 'name=First note=Second desc=Third');
+    const result = validateXml(xml, { maxDiagnostics: 2 });
+    expect(result).toMatchObject({ incomplete: true, warnings: [], observations: [] });
+    expect(result.errors).toEqual([
+      expect.stringContaining('attribute "First"'),
+      expect.stringContaining('attribute "Second"'),
+      expect.stringContaining("diagnostic limit (2)"),
+    ]);
+  });
+
+  it("bounds the retained length of a parser diagnostic", () => {
+    const result = validateXml(doc("").replace('name="Page-1"', `name=${"x".repeat(2000)}`));
+    expect(result.errors).toEqual([expect.stringContaining("malformed XML: attribute")]);
+    expect(result.errors[0].length).toBeLessThanOrEqual(512);
+  });
+
+  it("reports a genuine fatal parse failure below budget without an incomplete result", () => {
+    const result = validateXml('<mxfile><diagram></mxfile>', { maxDiagnostics: 2 });
+    expect(result.incomplete).toBeUndefined();
+    expect(result.errors).toEqual([expect.stringMatching(/malformed XML: .*tag mismatch/i)]);
+    expect(result.observations).toEqual([]);
+  });
+
+  it.each([
+    ["native", "animation", { animation: { steps: [{ fadeIn: { cells: ["absent-first", "absent-second"] } }] } }],
+    ["stored", MOTION_ATTRIBUTE, { steps: [{ effect: "fadeIn", cells: ["absent-first", "absent-second"] }] }],
+  ])("shares its diagnostic budget with %s motion analysis", (_dialect, attribute, spec) => {
+    const encoded = JSON.stringify(spec).replaceAll('"', "&quot;");
+    const xml = doc("").replace('<mxCell id="0"/>', `<UserObject id="0" ${attribute}="${encoded}"><mxCell/></UserObject>`)
+      .replace("<mxfile>", '<mxfile><diagram name="Packed">compressed-data</diagram>');
+    const result = validateXml(xml, { maxDiagnostics: 2 });
+    expect(result.incomplete).toBe(true);
+    expect(result.warnings).toEqual(["page 'Packed': compressed, skipped (cannot lint)"]);
+    expect(result.observations).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.stringMatching(/page 'Page-1': .*absent-first/),
+      expect.stringContaining("diagnostic limit (2)"),
+    ]);
   });
 });
