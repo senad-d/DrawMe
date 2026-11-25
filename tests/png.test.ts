@@ -1,30 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { repairPngBuffer } from "../src/png";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { repairPng, repairPngBuffer } from "../src/png";
+import { TINY_PNG } from "./fixtures";
 
-const IEND = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+const PNG = Buffer.from(TINY_PNG, "base64");
+
+it("repairs a valid embedded PNG with the existing one-argument file API", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drawme-repair-png-"));
+  try {
+    const path = join(dir, "embedded.png");
+    await writeFile(path, PNG.subarray(0, -8));
+    expect(await repairPng(path)).toBe(true);
+    expect(await readFile(path)).toEqual(PNG);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 describe("repairPngBuffer", () => {
   it("appends a full IEND chunk when it is entirely missing", () => {
-    const data = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
-    const fixed = repairPngBuffer(data);
-    expect(fixed).not.toBeNull();
-    expect(fixed!.subarray(fixed!.length - 12).equals(IEND)).toBe(true);
-    // original bytes are preserved before the appended chunk
-    expect(fixed!.subarray(0, data.length).equals(data)).toBe(true);
+    expect(repairPngBuffer(PNG.subarray(0, -12))).toEqual(PNG);
   });
 
   it("replaces a bare trailing length field with a full IEND chunk (the draw.io -e case)", () => {
-    const body = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-    const truncated = Buffer.concat([body, Buffer.from([0x00, 0x00, 0x00, 0x00])]);
-    const fixed = repairPngBuffer(truncated);
-    expect(fixed).not.toBeNull();
-    expect(fixed!.equals(Buffer.concat([body, IEND]))).toBe(true);
-    // exactly one IEND, not the truncated field plus a chunk
-    expect(fixed!).toHaveLength(body.length + 12);
+    expect(repairPngBuffer(PNG.subarray(0, -8))).toEqual(PNG);
   });
 
   it("is a no-op when the file already ends with a valid IEND chunk", () => {
-    const data = Buffer.concat([Buffer.from([0x89, 0x50]), IEND]);
-    expect(repairPngBuffer(data)).toBeNull();
+    expect(repairPngBuffer(PNG)).toBeNull();
+  });
+
+  it("does not repair a truncated unembedded PNG", () => {
+    expect(() => repairPngBuffer(PNG.subarray(0, -8), false)).toThrow("not a complete PNG");
   });
 });

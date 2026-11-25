@@ -3,14 +3,15 @@
  * The export cases skip automatically when the draw.io CLI is unavailable, so
  * this file is safe to run in CI without draw.io installed.
  */
-import { describe, it, expect, beforeAll } from "vitest";
-import { chmod, mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { chmod, lstat, mkdtemp, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import drawme from "../src/index";
 import { resolveBinary } from "../src/drawio";
 import { AUTOMATIC_CORRECTION_LIMIT } from "../src/workflow";
+import { TINY_PNG } from "./fixtures";
 
 // --- Minimal mock of the bits of ExtensionAPI the extension touches ---
 type ResultContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -41,13 +42,16 @@ const SAMPLE = `<mxfile><diagram name="Page-1"><mxGraphModel><root>
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const IEND = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
 
-/** Stand-in draw.io CLI: reports v30 and writes a tiny PNG to the -o path. */
-const FAKE_DRAWIO = `#!/usr/bin/env node
+/** Stand-in draw.io CLI that exits successfully without rendering. */
+const FAKE_DRAWIO_NO_OUTPUT = `#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) process.stdout.write("30.0.0\\n");
-else if (args[args.indexOf("-f") + 1] === "svg") writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>');
-else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("iVBORw0KGgo=", "base64"));
+`;
+
+/** Stand-in draw.io CLI that writes an artifact to the -o path. */
+const FAKE_DRAWIO = `${FAKE_DRAWIO_NO_OUTPUT}else if (args[args.indexOf("-f") + 1] === "svg") writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>');
+else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("${TINY_PNG}", "base64"));
 `;
 
 const VISION_CTX = { model: { input: ["text", "image"] } };
@@ -178,7 +182,7 @@ describe("extension registration", () => {
         .get("drawio_export")!
         .execute("t", { input, mode: "preview", output: firstOutput, binary }, undefined, undefined, VISION_CTX);
       expect(first.content).toHaveLength(2);
-      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
       expect(textOf(first.content[0])).toContain("Preview image attached below");
       expect(textOf(first.content[0])).toContain("Critique it against the current review pass's checklist");
 
@@ -187,7 +191,7 @@ describe("extension registration", () => {
         .execute("t", { input, mode: "preview", output: latestOutput, binary }, undefined, undefined, VISION_CTX);
       expect(latest.content).toHaveLength(2);
       expect(latest.content[0]).toMatchObject({ type: "text" });
-      expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
       expect(textOf(latest.content[0])).toContain(`Removed preview artifact(s): ${firstOutput}`);
       // A replacement preview demands a before/after verdict instead of a fresh critique.
       expect(textOf(latest.content[0])).toContain("It replaces the previous preview");
@@ -222,6 +226,34 @@ describe("extension registration", () => {
     }
   });
 
+  it("reports no new preview without attaching or deleting the previous image at the same path", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const dir = await mkdtemp(join(tmpdir(), "drawme-stale-preview-"));
+    try {
+      const input = join(dir, "sample.drawio");
+      const output = join(dir, "sample.review.png");
+      const binary = join(dir, "fake-drawio.mjs");
+      const noOutputBinary = join(dir, "fake-drawio-no-output.mjs");
+      await writeFile(input, SAMPLE);
+      await writeFile(binary, FAKE_DRAWIO, { mode: 0o755 });
+      await writeFile(noOutputBinary, FAKE_DRAWIO_NO_OUTPUT, { mode: 0o755 });
+
+      const exportTool = tools.get("drawio_export")!;
+      const params = { input, output, mode: "preview", binary };
+      const first = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
+      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+
+      const retry = await exportTool.execute("t", { ...params, binary: noOutputBinary }, undefined, undefined, VISION_CTX);
+      expect(retry.content).toEqual([
+        { type: "text", text: expect.stringContaining(`the output was not created: ${output}`) },
+      ]);
+      expect(await readFile(output)).toEqual(Buffer.from(TINY_PNG, "base64"));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("attaches the preview image only when the current model can view images", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
@@ -247,7 +279,7 @@ describe("extension registration", () => {
         .get("drawio_export")!
         .execute("t", { input, mode: "preview", output, binary }, undefined, undefined, VISION_CTX);
       expect(vision.content).toHaveLength(2);
-      expect(vision.content[1]).toEqual({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+      expect(vision.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
       expect(textOf(vision.content[0])).toContain("Preview image attached below");
       expect(vision.details).toMatchObject({ imageAttached: true });
 
@@ -404,13 +436,17 @@ describe("real draw.io export", async () => {
     );
   });
 
+  afterAll(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
   run(
     "preview export produces a clean (non-embedded) PNG",
     async () => {
       const { pi, tools } = makeMockPi();
       drawme(pi as never);
       const res = await tools.get("drawio_export")!.execute("t", { input: file, mode: "preview" }, undefined, undefined, {});
-      const out = join(dir, "sample.png");
+      const out = join(dir, "sample.preview.png");
       expect(existsSync(out)).toBe(true);
       const data = await readFile(out);
       expect(data.subarray(0, 4).equals(PNG_SIG)).toBe(true);
@@ -435,6 +471,63 @@ describe("real draw.io export", async () => {
     },
     120_000,
   );
+
+  run("a preview requesting embedding cannot replace or retire the native final PNG", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const work = await mkdtemp(join(tmpdir(), "drawme-native-ownership-"));
+    try {
+      const input = join(work, "sample.drawio");
+      await writeFile(input, SAMPLE);
+      const exportTool = tools.get("drawio_export")!;
+      const finalPng = join(work, "sample.drawio.png");
+      const previewPng = join(work, "sample.preview.png");
+      // draw.io stores embedded diagrams in a zTXt chunk with this keyword.
+      const embeddedDiagram = Buffer.from("zTXtmxGraphModel\0");
+
+      await exportTool.execute("t", { input, mode: "final" }, undefined, undefined, {});
+      const original = await readFile(finalPng);
+      expect(original.includes(embeddedDiagram)).toBe(true);
+
+      const preview = await exportTool.execute("t", { input, mode: "preview", embed: true }, undefined, undefined, VISION_CTX);
+      expect(preview.details).toMatchObject({ output: previewPng, embed: false });
+      const previewBytes = await readFile(previewPng);
+      expect(previewBytes.includes(embeddedDiagram)).toBe(false);
+      expect(await readFile(finalPng)).toEqual(original);
+
+      const final = await exportTool.execute("t", { input, format: "svg", mode: "final" }, undefined, undefined, {});
+      expect(final.details).toMatchObject({ removedPreviews: [previewPng] });
+      expect(existsSync(previewPng)).toBe(false);
+      expect(await readFile(finalPng)).toEqual(original);
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  run("an explicit output symlink still updates an existing final artifact", async () => {
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const work = await mkdtemp(join(tmpdir(), "drawme-native-linked-output-"));
+    try {
+      const input = join(work, "sample.drawio");
+      const requested = join(work, "linked.png");
+      const target = join(work, "target.png");
+      const previous = Buffer.from(TINY_PNG, "base64");
+      await writeFile(input, SAMPLE);
+      await writeFile(target, previous);
+      await symlink(target, requested);
+
+      const result = await tools.get("drawio_export")!
+        .execute("t", { input, output: requested, mode: "final", embed: false }, undefined, undefined, {});
+      expect(textOf(result.content[0])).toContain(`Exported ${requested}`);
+      expect.soft((await lstat(requested)).isSymbolicLink(), "explicit destination lost its symlink").toBe(true);
+      const published = await readFile(target);
+      expect(published.subarray(0, 4)).toEqual(PNG_SIG);
+      expect(published.length, "linked artifact was not refreshed").toBeGreaterThan(previous.length);
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  }, 120_000);
 
   run("final SVG export is produced", async () => {
     const { pi, tools } = makeMockPi();

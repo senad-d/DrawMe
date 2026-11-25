@@ -4,6 +4,8 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { animateDiagram } from "../src/animate";
+import { exportDiagram } from "../src/drawio";
+import { TINY_PNG } from "./fixtures";
 
 const source = `<?xml version="1.0"?>
 <mxfile><diagram name="Motion"><mxGraphModel pageWidth="200" pageHeight="100"><root>
@@ -26,7 +28,7 @@ else {
   const svg = args[args.indexOf("-f") + 1] === "svg";
   writeFileSync(args[args.indexOf("-o") + 1], svg
     ? '<svg xmlns="http://www.w3.org/2000/svg" width="200px" height="100px"><g data-cell-id="${missingGroup ? "other" : "a"}"><rect width="80" height="40"/></g></svg>'
-    : "storyboard image");
+    : Buffer.from("${TINY_PNG}", "base64"));
 }
 `);
   await chmod(binary, 0o755);
@@ -83,12 +85,17 @@ describe("animateDiagram", () => {
     }
   });
 
-  it("removes a misleading SVG when motion injection cannot find its cell", async () => {
+  it("preserves the previous final and preview if motion injection cannot find its cell", async () => {
     const { dir, input, binary } = await fixture(true);
     try {
-      const output = join(dir, "invalid.svg");
+      const final = await exportDiagram({ input, binary, format: "svg" });
+      const preview = await exportDiagram({ input, binary, mode: "preview" });
+      const finalBytes = await readFile(final.output);
+      const previewBytes = await readFile(preview.output);
+      const output = final.output;
       await expect(animateDiagram({ input, binary, steps, output, storyboard: false })).rejects.toThrow("animated SVG verification failed");
-      expect(existsSync(output)).toBe(false);
+      expect(await readFile(output)).toEqual(finalBytes);
+      expect(await readFile(preview.output)).toEqual(previewBytes);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

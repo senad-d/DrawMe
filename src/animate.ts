@@ -125,14 +125,13 @@ export async function animateDiagram(opts: AnimateOptions): Promise<AnimateResul
   }
 
   const output = opts.output ?? `${stem(opts.input)}.animated.svg`;
-  const exported = await exportDiagram({ input: opts.input, format: "svg", mode: "final", output, pageIndex, binary: opts.binary });
-  try {
-    const svg = await readFile(output, "utf8");
-    await writeFile(output, injectMotion(svg, motion, native.flowEdgeIds), "utf8");
-  } catch (error) {
-    await rm(output, { force: true });
-    throw new Error(`animated SVG verification failed: ${(error as Error).message}`, { cause: error });
-  }
+  const exported = await exportDiagram(
+    { input: opts.input, format: "svg", mode: "final", output, pageIndex, binary: opts.binary },
+    async (staged) => {
+      const svg = await readFile(staged, "utf8");
+      await writeFile(staged, injectMotion(svg, motion, native.flowEdgeIds), "utf8");
+    },
+  );
 
   const result: AnimateResult = {
     source: opts.input,
