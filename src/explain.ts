@@ -4,10 +4,11 @@
  * them (edge labels become the relation verb), and a per-page breakdown for
  * multi-page files. Handy for a README/PR summary or a text-only read-back.
  */
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
-import { type DomEl, attr, childrenByTag, elemChildren, firstByTag } from "./dom";
+import { type DomEl, attr, diagramPages, directText, elemChildren, firstByTag, pageModel } from "./dom";
+import { isEdgeLabel } from "./geometry";
+import { readDiagramXml } from "./xml-input";
 
 // style fragment -> human noun. First match wins; order matters (specific first).
 const SHAPE_TYPES: [string, string][] = [
@@ -26,11 +27,17 @@ const SHAPE_TYPES: [string, string][] = [
   ["shape=hexagon", "queue"],
 ];
 
+const NUMERIC_REFERENCE = /&#(?:x([0-9a-fA-F]+)|(\d+));/g;
+
+function scalarValue(hex: string | undefined, decimal: string): number | null {
+  const value = hex === undefined ? Number.parseInt(decimal, 10) : Number.parseInt(hex, 16);
+  return value <= 0x10FFFF && (value < 0xD800 || value > 0xDFFF) ? value : null;
+}
+
 /** Decode the HTML entities draw.io may leave in a doubly-encoded label. */
 function decodeEntities(s: string): string {
   return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(Number.parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number.parseInt(d, 10)))
+    .replace(NUMERIC_REFERENCE, (_reference, hex, decimal) => String.fromCodePoint(scalarValue(hex, decimal) ?? 0xFFFD))
     .replaceAll("&quot;", '"')
     .replaceAll("&apos;", "'")
     .replaceAll("&lt;", "<")
@@ -49,7 +56,7 @@ function stripTags(text: string): string {
     if (text[i] === "<" && tagStart === -1) {
       tagStart = i;
     } else if (text[i] === ">" && tagStart !== -1) {
-      if (i > tagStart + 1) {
+      if (/^\/?[a-z][\w-]*(?=\s|\/|$)/i.test(text.slice(tagStart + 1, i))) {
         parts.push(text.slice(copiedThrough, tagStart));
         copiedThrough = i + 1;
       }
@@ -68,8 +75,18 @@ function clean(text: string | null): string {
   return decodeEntities(stripTags(withLineBreaks)).replace(/\s+/g, " ").trim();
 }
 
+/** Emit one line of literal text; escape GFM autolinks as well as Markdown delimiters. */
+function markdownText(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    // The empty angle pair is already literal; other angles can start tags or quotes.
+    .replace(/<>|[\\`*_{}[\]<>#|!+.:=@~&-]/g, (token) => token === "<>" ? token : `\\${token}`)
+    .replace(/^(\d+)\)(?= |$)/, "$1\\)");
+}
+
 function shapeOf(style: string): string | null {
-  for (const [frag, noun] of SHAPE_TYPES) if ((style || "").includes(frag)) return noun;
+  for (const [frag, noun] of SHAPE_TYPES) if (style.includes(frag)) return noun;
   return null;
 }
 
@@ -79,11 +96,8 @@ interface Entry {
   label: string;
 }
 
-/** Entries for a page, unwrapping UserObject/object wrappers; null for a compressed/empty page. */
-function cellsOf(page: DomEl): Entry[] | null {
-  const model = firstByTag(page, "mxGraphModel");
-  const root = model ? firstByTag(model, "root") : null;
-  if (!root) return null;
+/** Read the effective ID and label without changing wrapped cells. */
+function cellsOf(root: DomEl): Entry[] {
   const out: Entry[] = [];
   for (const child of elemChildren(root)) {
     if (child.tagName === "mxCell") {
@@ -91,8 +105,11 @@ function cellsOf(page: DomEl): Entry[] | null {
     } else if (child.tagName === "UserObject" || child.tagName === "object") {
       const inner = firstByTag(child, "mxCell");
       if (inner) {
-        inner.setAttribute("id", attr(child, "id") ?? "");
-        out.push({ cell: inner, id: attr(child, "id"), label: clean(attr(child, "label") ?? attr(child, "value")) });
+        out.push({
+          cell: inner,
+          id: attr(child, "id") ?? attr(inner, "id"),
+          label: clean(attr(child, "label")) || clean(attr(child, "value")) || clean(attr(inner, "value")),
+        });
       }
     }
   }
@@ -100,70 +117,62 @@ function cellsOf(page: DomEl): Entry[] | null {
 }
 
 interface PageIndex {
-  /** cell id -> cleaned label */
-  label: Map<string | null, string>;
-  /** cell id -> style string */
-  style: Map<string | null, string>;
-  /** ids of vertices that are a parent of some other cell */
-  containers: Set<string>;
+  byId: Map<string, Entry>;
+  containers: Set<Entry>;
+  edgeChildren: Set<Entry>;
+  edgeLabels: Map<Entry, Set<string>>;
 }
 
-/** Index a page's cells: labels, styles, and which vertices act as containers. */
+/** Index all terminals, then collect distinct edge labels in document order. */
 function indexPage(cells: Entry[]): PageIndex {
-  const label = new Map<string | null, string>();
-  const style = new Map<string | null, string>();
-  const parents = new Set<string>();
-  for (const e of cells) {
-    label.set(e.id, e.label);
-    style.set(e.id, attr(e.cell, "style") ?? "");
-    const p = attr(e.cell, "parent");
-    if (p) parents.add(p);
-  }
-  const containers = new Set<string>();
-  for (const e of cells) {
-    if (e.cell.getAttribute("vertex") === "1" && e.id !== null && parents.has(e.id)) containers.add(e.id);
-  }
-  return { label, style, containers };
-}
+  const byId = new Map<string, Entry>();
+  for (const e of cells) if (e.id) byId.set(e.id, e);
 
-/** Leaf vertices: real nodes (not containers, not edge labels). */
-function leafEntries(cells: Entry[], idx: PageIndex): Entry[] {
-  return cells.filter(
-    (e) =>
-      e.cell.getAttribute("vertex") === "1" &&
-      (e.id === null || !idx.containers.has(e.id)) &&
-      !(idx.style.get(e.id) ?? "").includes("edgeLabel"),
-  );
-}
-
-/** Group leaves by their container's label (else "Ungrouped"), keeping first-seen order. */
-function groupLeaves(leaves: Entry[], idx: PageIndex): { groups: Map<string, string[]>; order: string[] } {
-  const groups = new Map<string, string[]>();
-  const order: string[] = [];
-  for (const e of leaves) {
-    const parent = attr(e.cell, "parent");
-    const named = parent !== null && idx.containers.has(parent) ? idx.label.get(parent) || "" : "";
-    const gname = named || "Ungrouped";
-    if (!groups.has(gname)) {
-      groups.set(gname, []);
-      order.push(gname);
+  const containers = new Set<Entry>();
+  const edgeChildren = new Set<Entry>();
+  const edgeLabels = new Map<Entry, Set<string>>();
+  for (const e of cells) {
+    const parent = byId.get(attr(e.cell, "parent") ?? "");
+    if (parent?.cell.getAttribute("vertex") === "1") containers.add(parent);
+    const childLabel = e.cell.getAttribute("vertex") === "1" && parent?.cell.getAttribute("edge") === "1";
+    if (childLabel) edgeChildren.add(e);
+    const edge = e.cell.getAttribute("edge") === "1" ? e : childLabel ? parent : undefined;
+    if (edge && e.label) {
+      let labels = edgeLabels.get(edge);
+      if (!labels) edgeLabels.set(edge, (labels = new Set()));
+      labels.add(e.label);
     }
-    const typ = shapeOf(idx.style.get(e.id) ?? "");
-    const name = idx.label.get(e.id) || `(unlabeled ${e.id})`;
-    groups.get(gname)!.push(name + (typ ? ` _${typ}_` : ""));
   }
-  return { groups, order };
+  return { byId, containers, edgeChildren, edgeLabels };
 }
 
-function renderComponents(leaves: Entry[], groups: Map<string, string[]>, order: string[]): string[] {
-  const lines: string[] = [`### Components (${leaves.length})`, ""];
-  const single = order.length === 1 && order[0] === "Ungrouped";
-  for (const gname of order) {
-    if (single) {
-      for (const item of groups.get(gname)!) lines.push(`- ${item}`);
-    } else {
-      lines.push(`- **${gname}**`);
-      for (const item of groups.get(gname)!) lines.push(`  - ${item}`);
+function entryName(e: Entry): string {
+  return e.label || `(unlabeled ${e.id})`;
+}
+
+/** Group leaf vertices by their container's label, keeping first-seen order. */
+function renderComponents(cells: Entry[], idx: PageIndex): string[] {
+  const groups = new Map<string, Entry[]>();
+  let count = 0;
+  for (const e of cells) {
+    if (e.cell.getAttribute("vertex") !== "1" || idx.containers.has(e) || idx.edgeChildren.has(e) || isEdgeLabel(e.cell)) {
+      continue;
+    }
+    const parent = idx.byId.get(attr(e.cell, "parent") ?? "");
+    const groupName = (parent && idx.containers.has(parent) && parent.label) || "Ungrouped";
+    let group = groups.get(groupName);
+    if (!group) groups.set(groupName, (group = []));
+    group.push(e);
+    count++;
+  }
+
+  const lines: string[] = [`### Components (${count})`, ""];
+  const grouped = !(groups.size === 1 && groups.has("Ungrouped"));
+  for (const [name, group] of groups) {
+    if (grouped) lines.push(`- **${markdownText(name)}**`);
+    for (const e of group) {
+      const typ = shapeOf(attr(e.cell, "style") ?? "");
+      lines.push(`${grouped ? "  " : ""}- ${markdownText(entryName(e))}${typ ? ` _${typ}_` : ""}`);
     }
   }
   lines.push("");
@@ -174,36 +183,43 @@ function renderRelations(cells: Entry[], idx: PageIndex): string[] {
   const rels: string[] = [];
   for (const e of cells) {
     if (e.cell.getAttribute("edge") !== "1") continue;
-    const s = idx.label.get(attr(e.cell, "source"));
-    const t = idx.label.get(attr(e.cell, "target"));
-    if (!s || !t) continue; // dangling endpoint — skip
-    const verb = clean(attr(e.cell, "value"));
-    rels.push(verb ? `- ${s} —${verb}→ ${t}` : `- ${s} → ${t}`);
+    const source = idx.byId.get(attr(e.cell, "source") ?? "");
+    const target = idx.byId.get(attr(e.cell, "target") ?? "");
+    if (!source || !target) continue; // dangling endpoint — skip
+    const verb = Array.from(idx.edgeLabels.get(e) ?? [], markdownText).join("; ");
+    rels.push(`- ${markdownText(entryName(source))} ${verb ? `—${verb}→` : "→"} ${markdownText(entryName(target))}`);
   }
   return [`### Relations (${rels.length})`, "", ...(rels.length ? rels : ["_(none)_"]), ""];
 }
 
 function describePage(page: DomEl): string[] {
-  const cells = cellsOf(page);
-  if (cells === null) return ["_(compressed page — cannot describe)_"];
+  const model = pageModel(page);
+  if (!model) {
+    const reason = directText(page).trim() ? "compressed page" : "missing graph model";
+    return [`_(${reason} — cannot describe)_`];
+  }
+  const root = firstByTag(model, "root");
+  if (!root) return ["_(missing graph root — cannot describe)_"];
+  const cells = cellsOf(root);
   const idx = indexPage(cells);
-  const leaves = leafEntries(cells, idx);
-  const { groups, order } = groupLeaves(leaves, idx);
-  return [...renderComponents(leaves, groups, order), ...renderRelations(cells, idx)];
+  return [...renderComponents(cells, idx), ...renderRelations(cells, idx)];
 }
 
 /** Describe a `.drawio` XML string as Markdown. */
 export function explainXml(xml: string, title = "diagram"): string {
-  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  // Keep valid references for XML parsing, but don't let the parser coerce invalid scalars.
+  const safeXml = xml.replace(NUMERIC_REFERENCE, (reference, hex, decimal) =>
+    scalarValue(hex, decimal) === null ? "&#xFFFD;" : reference,
+  );
+  const doc = new DOMParser().parseFromString(safeXml, "text/xml");
   const rootEl = doc.documentElement as unknown as DomEl | null;
   if (!rootEl) throw new Error("no root element (malformed XML)");
-  const pageList = childrenByTag(rootEl, "diagram");
-  const pages = pageList.length ? pageList : [rootEl];
+  const pages = diagramPages(rootEl);
 
-  const lines: string[] = [`# ${title}`, ""];
+  const lines: string[] = [`# ${markdownText(title)}`, ""];
   pages.forEach((page, i) => {
     if (pages.length > 1) {
-      const name = attr(page, "name");
+      const name = markdownText(attr(page, "name") ?? "");
       lines.push(name ? `## Page ${i + 1}: ${name}` : `## Page ${i + 1}`, "");
     }
     lines.push(...describePage(page));
@@ -213,7 +229,7 @@ export function explainXml(xml: string, title = "diagram"): string {
 
 /** Read a `.drawio` file and describe it as Markdown. */
 export async function explainFile(path: string): Promise<string> {
-  const xml = await readFile(path, "utf8");
+  const xml = await readDiagramXml(path);
   const title = basename(path).replace(/\.[^.]*$/, "");
   return explainXml(xml, title);
 }
