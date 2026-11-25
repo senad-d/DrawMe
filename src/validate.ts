@@ -4,9 +4,8 @@
  * checked without rendering. Typography and automatically routed connectors
  * still require visual review.
  */
-import { readFile } from "node:fs/promises";
-import { DOMParser } from "@xmldom/xmldom";
-import { type DomEl, attr, childrenByTag, directText, firstByTag } from "./dom";
+import { DOMParser, ParseError } from "@xmldom/xmldom";
+import { type DomEl, attr, childrenByTag, diagramPages, directText, firstByTag, pageModel } from "./dom";
 import { analyzeAnimationPage } from "./animation";
 import { analyzeStoredMotion } from "./motion";
 import {
@@ -17,6 +16,7 @@ import {
   absRect,
   collectCells,
   contentBounds,
+  edgeLabelAnchor,
   edgeRoute,
   edgeWaypoints,
   endpoint,
@@ -27,9 +27,10 @@ import {
   isVisible,
   pyFloat,
   rect,
-  routePointAt,
   styleNum,
 } from "./geometry";
+import { createValidationBudget, ValidationBudgetExceeded, type ValidationBudget } from "./validation-budget";
+import { DEFAULT_MAX_XML_BYTES, DiagramXmlTooLargeError, readDiagramXml } from "./xml-input";
 
 const RESERVED = new Set(["0", "1"]);
 export const MIN_OUTER_MARGIN = 20;
@@ -41,9 +42,30 @@ export interface ValidateResult {
   warnings: string[];
   /** Informational limitations/settings that do not require a source correction. */
   observations: string[];
-  /** Readability score (lower is better); comparable only across variants of the same graph. */
+  /** A resource limit prevented validation from finishing. */
+  incomplete: boolean;
+  /** Readability score (lower is better); partial when incomplete. */
   score: { total: number; through: number; crossings: number; overlaps: number; anchors: number };
 }
+
+export interface ValidationLimits {
+  maxBytes: number;
+  maxCellsPerPage: number;
+  maxWork: number;
+  maxDiagnostics: number;
+}
+
+const DEFAULT_LIMITS: ValidationLimits = {
+  maxBytes: DEFAULT_MAX_XML_BYTES,
+  maxCellsPerPage: 5_000,
+  maxWork: 100_000,
+  maxDiagnostics: 500,
+};
+
+type Severity = "errors" | "warnings" | "observations";
+type ScoreKind = Exclude<keyof ValidateResult["score"], "total">;
+const SCORE_WEIGHTS: Record<ScoreKind, number> = { through: 20, crossings: 10, overlaps: 5, anchors: 8 };
+type ReportFinding = (severity: Severity, message: string | null, kind?: ScoreKind) => void;
 
 /** Quote an optional attribute consistently in diagnostic messages. */
 function repr(s: string | null): string {
@@ -56,8 +78,18 @@ function overlap(a: Rect, b: Rect): boolean {
   return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
 }
 
-function styleHas(style: string | null, key: string, expected: string): boolean {
-  return (style ?? "").split(";").includes(`${key}=${expected}`);
+function hasStyleToken(style: string | null, token: string, budget: ValidationBudget, trim = false): boolean {
+  if (!style) return false;
+  let start = 0;
+  while (start < style.length) {
+    budget.work();
+    const end = style.indexOf(";", start);
+    const limit = end === -1 ? style.length : end;
+    const part = style.slice(start, limit);
+    if ((trim ? part.trim() : part) === token) return true;
+    start = limit + 1;
+  }
+  return false;
 }
 
 function orient(a: Point, b: Point, c: Point): number {
@@ -79,7 +111,7 @@ function pointInRect(point: Point, box: Rect, epsilon = 1e-6): boolean {
   return x + epsilon < point[0] && point[0] < x + w - epsilon && y + epsilon < point[1] && point[1] < y + h - epsilon;
 }
 
-function routeHitsRect(points: Point[], box: Rect): boolean {
+function routeHitsRect(points: Point[], box: Rect, budget: ValidationBudget): boolean {
   const [x, y, w, h] = box;
   const corners: Point[] = [
     [x, y],
@@ -89,6 +121,7 @@ function routeHitsRect(points: Point[], box: Rect): boolean {
   ];
   const borders: [Point, Point][] = corners.map((corner, index) => [corner, corners[(index + 1) % 4]]);
   for (let i = 0; i < points.length - 1; i++) {
+    budget.work();
     const start = points[i];
     const end = points[i + 1];
     if (pointInRect(start, box) || pointInRect(end, box)) return true;
@@ -97,76 +130,76 @@ function routeHitsRect(points: Point[], box: Rect): boolean {
   return false;
 }
 
-function routesCross(a: Point[], b: Point[]): boolean {
-  for (let i = 0; i < a.length - 1; i++)
-    for (let j = 0; j < b.length - 1; j++)
+function routesCross(a: Point[], b: Point[], budget: ValidationBudget): boolean {
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      budget.work();
       if (segmentsCross(a[i], a[i + 1], b[j], b[j + 1])) return true;
+    }
+  }
   return false;
 }
 
 type RoutedEdge = [string | null, Point[], Set<string | null>];
 type LeafBox = [string | null, Rect];
+type VisibleRoutes = Map<DomEl, Point[] | null>;
 
-/** Edges with a resolvable waypointed route, tagged with their id and endpoint ids. */
-function collectRoutedEdges(cells: DomEl[], ids: ById): RoutedEdge[] {
+/** Resolve each visible connector once for the route, anchor and label passes. */
+function collectRoutes(cells: DomEl[], ids: ById, budget: ValidationBudget): { visible: VisibleRoutes; routed: RoutedEdge[] } {
+  const visible: VisibleRoutes = new Map();
   const routed: RoutedEdge[] = [];
   for (const cell of cells) {
-    if (cell.getAttribute("edge") === "1" && isVisible(cell, ids)) {
-      const points = edgeRoute(cell, ids);
-      if (points) routed.push([attr(cell, "id"), points, new Set([attr(cell, "source"), attr(cell, "target")])]);
-    }
+    budget.work();
+    if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids, budget)) continue;
+    const points = edgeRoute(cell, ids, budget);
+    visible.set(cell, points);
+    if (points) routed.push([attr(cell, "id"), points, new Set([attr(cell, "source"), attr(cell, "target")])]);
   }
-  return routed;
+  return { visible, routed };
 }
 
 /** Absolute boxes of leaf vertices (real nodes, not containers or edge labels). */
-function collectLeafBoxes(cells: DomEl[], ids: ById, parents: Set<string | null>): LeafBox[] {
+function collectLeafBoxes(cells: DomEl[], ids: ById, parents: Set<string | null>, budget: ValidationBudget): LeafBox[] {
   const leaves: LeafBox[] = [];
   for (const cell of cells) {
-    if (
-      cell.getAttribute("vertex") === "1" &&
-      !parents.has(attr(cell, "id")) &&
-      !isEdgeLabel(cell) &&
-      !geometryIsRelative(cell) &&
-      isVisible(cell, ids)
-    ) {
-      const box = absRect(cell, ids);
+    budget.work();
+    if (!parents.has(attr(cell, "id")) && isContainmentCandidate(cell, ids, budget)) {
+      const box = absRect(cell, ids, budget);
       if (box) leaves.push([attr(cell, "id"), box]);
     }
   }
   return leaves;
 }
 
-function routeThroughWarnings(routed: RoutedEdge[], leaves: LeafBox[]): string[] {
-  const warnings: string[] = [];
+function routeThroughWarnings(routed: RoutedEdge[], leaves: LeafBox[], budget: ValidationBudget, report: ReportFinding): void {
   for (const [edgeId, points, ends] of routed) {
+    budget.work();
     for (const [vertexId, box] of leaves) {
-      if (!ends.has(vertexId) && routeHitsRect(points, box)) {
-        warnings.push(`edge ${repr(edgeId)} routes through vertex ${repr(vertexId)}`);
+      budget.work();
+      if (!ends.has(vertexId) && routeHitsRect(points, box, budget)) {
+        report("warnings", `edge ${repr(edgeId)} routes through vertex ${repr(vertexId)}`, "through");
       }
     }
   }
-  return warnings;
 }
 
-function routeCrossWarnings(routed: RoutedEdge[]): string[] {
-  const warnings: string[] = [];
+function routeCrossWarnings(routed: RoutedEdge[], budget: ValidationBudget, report: ReportFinding): void {
   for (let i = 0; i < routed.length; i++) {
     for (let j = i + 1; j < routed.length; j++) {
-      if (routesCross(routed[i][1], routed[j][1])) {
-        warnings.push(`edges ${repr(routed[i][0])} and ${repr(routed[j][0])} cross`);
+      budget.work();
+      if (routesCross(routed[i][1], routed[j][1], budget)) {
+        report("warnings", `edges ${repr(routed[i][0])} and ${repr(routed[j][0])} cross`, "crossings");
       }
     }
   }
-  return warnings;
 }
 
 type Side = "top" | "bottom" | "left" | "right";
 
 /** Side containing a pinned connection point, or null for an interior, corner, or unpinned point. */
-function pinnedSide(style: string, end: "source" | "target"): Side | null {
-  const x = styleNum(style, end === "source" ? "exitX" : "entryX");
-  const y = styleNum(style, end === "source" ? "exitY" : "entryY");
+function pinnedSide(style: string, end: "source" | "target", budget: ValidationBudget): Side | null {
+  const x = styleNum(style, end === "source" ? "exitX" : "entryX", budget);
+  const y = styleNum(style, end === "source" ? "exitY" : "entryY", budget);
   if (x === undefined && y === undefined) return null;
   const xBorder = x === 0 || x === 1;
   const yBorder = y === 0 || y === 1;
@@ -224,10 +257,11 @@ function anchorDirectionWarning(
   style: string,
   tolerance: number,
   direction: AnchorDirection,
+  budget: ValidationBudget,
 ): string | null {
   const dx = direction.reference[0] - direction.center[0];
   const dy = direction.reference[1] - direction.center[1];
-  const side = pinnedSide(style, direction.end);
+  const side = pinnedSide(style, direction.end, budget);
   if (!side || !sideFacesAway(side, dx, dy, tolerance)) return null;
   const suggested = facingSide(dx, dy);
   const endLabel = direction.end === "source" ? "source exit" : "target entry";
@@ -235,21 +269,19 @@ function anchorDirectionWarning(
 }
 
 /** Warn when a pinned border anchor faces away from its adjacent waypoint, or its peer when auto-routed. */
-function edgeAnchorFacingWarnings(cell: DomEl, ids: ById): string[] {
-  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) return [];
+function edgeAnchorFacingWarnings(cell: DomEl, route: Point[] | null, ids: ById, budget: ValidationBudget, report: ReportFinding): void {
   const sourceId = attr(cell, "source");
   const targetId = attr(cell, "target");
-  if (!sourceId || !targetId) return [];
+  if (!sourceId || !targetId) return;
   const source = ids.get(sourceId);
   const target = ids.get(targetId);
-  if (!source || !target || geometryIsRelative(source) || geometryIsRelative(target)) return [];
-  const sourceBox = absRect(source, ids);
-  const targetBox = absRect(target, ids);
-  if (!sourceBox || !targetBox) return [];
+  if (!source || !target || geometryIsRelative(source, budget) || geometryIsRelative(target, budget)) return;
+  const sourceBox = absRect(source, ids, budget);
+  const targetBox = absRect(target, ids, budget);
+  if (!sourceBox || !targetBox) return;
 
   const sourceCenter = rectCenter(sourceBox);
   const targetCenter = rectCenter(targetBox);
-  const route = edgeRoute(cell, ids);
   const directions: AnchorDirection[] = [
     {
       end: "source",
@@ -266,13 +298,9 @@ function edgeAnchorFacingWarnings(cell: DomEl, ids: ById): string[] {
   ];
   const tolerance = Math.max(sourceBox[2], sourceBox[3], targetBox[2], targetBox[3]) * 0.15;
   const style = attr(cell, "style") ?? "";
-  return directions
-    .map((direction) => anchorDirectionWarning(cell, style, tolerance, direction))
-    .filter((warning): warning is string => warning !== null);
-}
-
-function anchorFacingWarnings(cells: DomEl[], ids: ById): string[] {
-  return cells.flatMap((cell) => edgeAnchorFacingWarnings(cell, ids));
+  for (const direction of directions) {
+    report("warnings", anchorDirectionWarning(cell, style, tolerance, direction, budget), "anchors");
+  }
 }
 
 /** A segment that enters and exits a rectangle rather than merely touching its boundary. */
@@ -291,19 +319,18 @@ function segmentPiercesRect(start: Point, end: Point, box: Rect): boolean {
   return crossings === 1 && (pointInRect(start, box) || pointInRect(end, box));
 }
 
-function isDescendantOf(cell: DomEl, ancestorId: string | null, ids: ById): boolean {
+function isDescendantOf(cell: DomEl, ancestorId: string, ids: ById, budget: ValidationBudget): boolean {
   const seen = new Set<string>();
   let parent = attr(cell, "parent");
-  while (parent && ids.has(parent) && !seen.has(parent)) {
+  while (parent && !seen.has(parent)) {
+    budget.work();
+    const container = ids.get(parent);
+    if (!container) break;
     if (parent === ancestorId) return true;
     seen.add(parent);
-    parent = attr(ids.get(parent)!, "parent");
+    parent = attr(container, "parent");
   }
   return false;
-}
-
-function isTextAnnotation(cell: DomEl): boolean {
-  return (attr(cell, "style") ?? "").split(";").some((token) => token.trim() === "text");
 }
 
 interface AutoRouteContext {
@@ -314,60 +341,56 @@ interface AutoRouteContext {
   targetPoint: Point;
 }
 
-function autoRouteContext(cell: DomEl, ids: ById): AutoRouteContext | null {
-  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids) || edgeWaypoints(cell).length > 0) return null;
+function autoRouteContext(cell: DomEl, ids: ById, budget: ValidationBudget): AutoRouteContext | null {
+  if (edgeWaypoints(cell, budget).length > 0) return null;
   const sourceId = attr(cell, "source");
   const targetId = attr(cell, "target");
   if (!sourceId || !targetId) return null;
   const source = ids.get(sourceId);
   const target = ids.get(targetId);
-  if (!source || !target || geometryIsRelative(source) || geometryIsRelative(target)) return null;
-  const sourcePoint = endpoint(cell, "source", ids);
-  const targetPoint = endpoint(cell, "target", ids);
+  if (!source || !target || geometryIsRelative(source, budget) || geometryIsRelative(target, budget)) return null;
+  const sourcePoint = endpoint(cell, "source", ids, budget);
+  const targetPoint = endpoint(cell, "target", ids, budget);
   if (!sourcePoint || !targetPoint) return null;
   return { edgeId: attr(cell, "id"), sourceId, targetId, sourcePoint, targetPoint };
 }
 
-function routeThroughObservation(context: AutoRouteContext, leaf: LeafBox, ids: ById): string | null {
-  const [vertexId, box] = leaf;
-  if (vertexId === null || vertexId === context.sourceId || vertexId === context.targetId) return null;
-  const vertex = ids.get(vertexId);
-  if (!vertex || isTextAnnotation(vertex)) return null;
-  if (isDescendantOf(vertex, context.sourceId, ids) || isDescendantOf(vertex, context.targetId, ids)) return null;
-  if (!segmentPiercesRect(context.sourcePoint, context.targetPoint, box)) return null;
-  return `edge ${repr(context.edgeId)} may pass over vertex ${repr(vertexId)} (predicted from the direct line; verify in the preview, then add waypoints or move the shape if needed)`;
-}
-
-function edgeRouteThroughObservations(cell: DomEl, ids: ById, leaves: LeafBox[]): string[] {
-  const context = autoRouteContext(cell, ids);
-  if (!context) return [];
-  return leaves
-    .map((leaf) => routeThroughObservation(context, leaf, ids))
-    .filter((observation): observation is string => observation !== null);
-}
-
 /**
  * Identify auto-routed edges whose direct connection line pierces an unrelated
- * leaf vertex. This is only a preview-review hint because draw.io may route the
- * actual orthogonal connector around the shape.
+ * leaf vertex. This is only a preview hint; the actual connector may avoid it.
  */
-function predictedRouteThroughObservations(cells: DomEl[], ids: ById, leaves: LeafBox[]): string[] {
-  return cells.flatMap((cell) => edgeRouteThroughObservations(cell, ids, leaves));
-}
-
-function geometryWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
-  const routed = collectRoutedEdges(cells, ids);
-  const leaves = collectLeafBoxes(cells, ids, parents);
-  return [...routeThroughWarnings(routed, leaves), ...routeCrossWarnings(routed), ...anchorFacingWarnings(cells, ids)];
+function predictedRouteThroughObservations(
+  visible: VisibleRoutes, ids: ById, leaves: LeafBox[], budget: ValidationBudget, report: ReportFinding,
+): void {
+  const candidates: [DomEl, string, Rect][] = [];
+  for (const [id, box] of leaves) {
+    budget.work();
+    const vertex = id === null ? undefined : ids.get(id);
+    if (vertex && id !== null && !hasStyleToken(attr(vertex, "style"), "text", budget, true)) {
+      candidates.push([vertex, id, box]);
+    }
+  }
+  for (const [cell, route] of visible) {
+    budget.work();
+    if (route) continue;
+    const context = autoRouteContext(cell, ids, budget);
+    if (!context) continue;
+    const { edgeId, sourceId, targetId, sourcePoint, targetPoint } = context;
+    for (const [vertex, vertexId, box] of candidates) {
+      budget.work();
+      if (vertexId === sourceId || vertexId === targetId || !segmentPiercesRect(sourcePoint, targetPoint, box)) continue;
+      if (isDescendantOf(vertex, sourceId, ids, budget) || isDescendantOf(vertex, targetId, ids, budget)) continue;
+      report("observations", `edge ${repr(edgeId)} may pass over vertex ${repr(vertexId)} (predicted from the direct line; verify in the preview, then add waypoints or move the shape if needed)`);
+    }
+  }
 }
 
 /** Edges the route checks above cannot see: no explicit waypoints, so the renderer routes them blindly. */
-function autoRoutedEdgeWarning(cells: DomEl[], ids: ById): string | null {
+function autoRoutedEdgeWarning(visible: VisibleRoutes, budget: ValidationBudget): string | null {
   const unrouted: string[] = [];
-  for (const cell of cells) {
-    if (cell.getAttribute("edge") === "1" && isVisible(cell, ids) && edgeRoute(cell, ids) === null) {
-      unrouted.push(repr(attr(cell, "id")));
-    }
+  for (const [cell, route] of visible) {
+    budget.work();
+    if (!route) unrouted.push(repr(attr(cell, "id")));
   }
   if (unrouted.length === 0) return null;
   return (
@@ -377,91 +400,118 @@ function autoRoutedEdgeWarning(cells: DomEl[], ids: ById): string | null {
 }
 
 /** Map every cell by id (blank key for id-less cells); report duplicate ids as errors. */
-function buildIds(cells: DomEl[], errors: string[]): ById {
+function buildIds(cells: DomEl[], budget: ValidationBudget, report: ReportFinding): ById {
   const ids: ById = new Map();
   for (const cell of cells) {
+    budget.work();
     const id = attr(cell, "id");
-    if (id !== null && ids.has(id)) errors.push(`duplicate id ${repr(id)}`);
+    if (id !== null && ids.has(id)) report("errors", `duplicate id ${repr(id)}`);
     ids.set(id ?? "", cell);
   }
   return ids;
 }
 
+/** Each cell has at most one parent. Mark completed paths so shared ancestors are not revisited. */
+function checkParentCycles(cells: DomEl[], ids: ById, budget: ValidationBudget, report: ReportFinding): void {
+  const done = new Set<DomEl>();
+  for (const cell of cells) {
+    budget.work();
+    if (done.has(cell)) continue;
+    const path: DomEl[] = [];
+    const visiting = new Map<DomEl, number>();
+    let current: DomEl | undefined = cell;
+    while (current && !done.has(current)) {
+      budget.work();
+      const start = visiting.get(current);
+      if (start !== undefined) {
+        budget.work(path.length - start);
+        const cycle = path.slice(start).map((member) => repr(attr(member, "id")));
+        cycle.push(repr(attr(current, "id")));
+        report("errors", `containment cycle: ${cycle.join(" -> ")}`);
+        break;
+      }
+      visiting.set(current, path.length);
+      path.push(current);
+      const parent = attr(current, "parent");
+      current = parent ? ids.get(parent) : undefined;
+    }
+    budget.work(path.length);
+    for (const member of path) done.add(member);
+  }
+}
+
 /** Geometry checks for a single non-edge-label, non-relative vertex. */
-function checkVertexGeometry(cell: DomEl, id: string | null, errors: string[], warnings: string[]): void {
-  const box = rect(cell);
+function checkVertexGeometry(cell: DomEl, id: string | null, budget: ValidationBudget, report: ReportFinding): void {
+  const box = rect(cell, budget);
   if (box === null || hasInvalidNumber(box)) {
-    errors.push(`vertex ${repr(id)} has missing/invalid geometry`);
+    report("errors", `vertex ${repr(id)} has missing/invalid geometry`);
     return;
   }
   const [x, y, width, height] = box;
-  if (width <= 0 || height <= 0) warnings.push(`vertex ${repr(id)} non-positive size ${String(width)}x${String(height)}`);
-  if (x < 0 || y < 0) warnings.push(`vertex ${repr(id)} negative position (${String(x)},${String(y)})`);
+  if (width <= 0 || height <= 0) report("warnings", `vertex ${repr(id)} non-positive size ${String(width)}x${String(height)}`);
+  if (x < 0 || y < 0) report("warnings", `vertex ${repr(id)} negative position (${String(x)},${String(y)})`);
 }
 
-function checkEdgeGeometry(cell: DomEl, id: string | null, errors: string[]): void {
+function checkEdgeGeometry(cell: DomEl, id: string | null, budget: ValidationBudget, report: ReportFinding): void {
+  budget.work(cell.childNodes.length);
   const geometry = firstByTag(cell, "mxGeometry");
   if (!geometry) {
-    errors.push(`edge ${repr(id)} has missing geometry`);
+    report("errors", `edge ${repr(id)} has missing geometry`);
     return;
   }
   if (attr(geometry, "relative") !== "1" || attr(geometry, "as") !== "geometry") {
-    errors.push(`edge ${repr(id)} geometry must have relative='1' and as='geometry'`);
+    report("errors", `edge ${repr(id)} geometry must have relative='1' and as='geometry'`);
   }
 }
 
-function checkCellReferences(cell: DomEl, id: string | null, ids: ById, errors: string[]): void {
+function checkCellReferences(cell: DomEl, id: string | null, ids: ById, report: ReportFinding): void {
   const parent = attr(cell, "parent");
-  if (parent !== null && !ids.has(parent)) errors.push(`cell ${repr(id)} parent ${repr(parent)} does not exist`);
+  if (parent !== null && !ids.has(parent)) report("errors", `cell ${repr(id)} parent ${repr(parent)} does not exist`);
   for (const end of ["source", "target"] as const) {
     const reference = attr(cell, end);
-    if (reference && !ids.has(reference)) errors.push(`edge ${repr(id)} ${end} ${repr(reference)} does not exist`);
+    if (reference && !ids.has(reference)) report("errors", `edge ${repr(id)} ${end} ${repr(reference)} does not exist`);
   }
 }
 
 /** Per-cell reference and geometry checks. */
-function checkCell(cell: DomEl, ids: ById, errors: string[], warnings: string[]): void {
+function checkCell(cell: DomEl, ids: ById, budget: ValidationBudget, report: ReportFinding): void {
   const id = attr(cell, "id");
   const isVertex = cell.getAttribute("vertex") === "1";
   const isEdge = cell.getAttribute("edge") === "1";
-  checkCellReferences(cell, id, ids, errors);
-  if ((isVertex || isEdge) && id !== null && RESERVED.has(id)) errors.push(`cell ${repr(id)} reuses reserved id 0/1`);
-  if (isVertex && !isEdgeLabel(cell) && !geometryIsRelative(cell)) checkVertexGeometry(cell, id, errors, warnings);
-  if (isEdge) checkEdgeGeometry(cell, id, errors);
+  checkCellReferences(cell, id, ids, report);
+  if ((isVertex || isEdge) && id !== null && RESERVED.has(id)) report("errors", `cell ${repr(id)} reuses reserved id 0/1`);
+  if (isVertex && !isEdgeLabel(cell) && !geometryIsRelative(cell, budget)) checkVertexGeometry(cell, id, budget, report);
+  if (isEdge) checkEdgeGeometry(cell, id, budget, report);
 }
 
 /** Sibling overlap: visible leaf vertices only (containers legitimately wrap children). */
-function overlapWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
+function overlapWarnings(
+  cells: DomEl[], ids: ById, parents: Set<string | null>, budget: ValidationBudget, report: ReportFinding,
+): void {
   const boxes: [string | null, string | null, Rect][] = [];
   for (const cell of cells) {
-    if (
-      cell.getAttribute("vertex") === "1" &&
-      !parents.has(attr(cell, "id")) &&
-      !isEdgeLabel(cell) &&
-      !geometryIsRelative(cell) &&
-      isVisible(cell, ids)
-    ) {
-      const box = rect(cell);
+    budget.work();
+    if (!parents.has(attr(cell, "id")) && isContainmentCandidate(cell, ids, budget)) {
+      const box = rect(cell, budget);
       if (box && !hasInvalidNumber(box)) boxes.push([attr(cell, "id"), attr(cell, "parent"), box]);
     }
   }
-  const warnings: string[] = [];
   for (let i = 0; i < boxes.length; i++) {
+    const [aId, aParent, a] = boxes[i];
     for (let j = i + 1; j < boxes.length; j++) {
-      const [aId, aParent, a] = boxes[i];
+      budget.work();
       const [bId, bParent, b] = boxes[j];
-      if (aParent === bParent && overlap(a, b)) warnings.push(`vertices ${repr(aId)} and ${repr(bId)} overlap`);
+      if (aParent === bParent && overlap(a, b)) report("warnings", `vertices ${repr(aId)} and ${repr(bId)} overlap`, "overlaps");
     }
   }
-  return warnings;
 }
 
-function isContainmentCandidate(cell: DomEl, ids: ById): boolean {
+function isContainmentCandidate(cell: DomEl, ids: ById, budget: ValidationBudget): boolean {
   return (
     cell.getAttribute("vertex") === "1" &&
-    !geometryIsRelative(cell) &&
     !isEdgeLabel(cell) &&
-    isVisible(cell, ids)
+    !geometryIsRelative(cell, budget) &&
+    isVisible(cell, ids, budget)
   );
 }
 
@@ -476,23 +526,17 @@ function overflowSides(childBox: Rect, parentBox: Rect): string[] {
   return sides;
 }
 
-function containmentWarning(cell: DomEl, ids: ById): string | null {
-  if (!isContainmentCandidate(cell, ids)) return null;
+function containmentWarning(cell: DomEl, ids: ById, budget: ValidationBudget): string | null {
+  if (!isContainmentCandidate(cell, ids, budget)) return null;
   const parentId = attr(cell, "parent");
   const parent = parentId ? ids.get(parentId) : undefined;
-  if (parent?.getAttribute("vertex") !== "1" || !isVisible(parent, ids)) return null;
-  const childBox = absRect(cell, ids);
-  const parentBox = absRect(parent, ids);
+  if (parent?.getAttribute("vertex") !== "1" || !isVisible(parent, ids, budget)) return null;
+  const childBox = absRect(cell, ids, budget);
+  const parentBox = absRect(parent, ids, budget);
   if (!childBox || !parentBox) return null;
   const sides = overflowSides(childBox, parentBox);
   if (sides.length === 0) return null;
   return `vertex ${repr(attr(cell, "id"))} extends beyond parent ${repr(parentId)} (${sides.join(", ")})`;
-}
-
-function containmentWarnings(cells: DomEl[], ids: ById): string[] {
-  return cells
-    .map((cell) => containmentWarning(cell, ids))
-    .filter((warning): warning is string => warning !== null);
 }
 
 interface PageSettings {
@@ -502,24 +546,24 @@ interface PageSettings {
   scale: number;
 }
 
-function pageSettings(model: DomEl, warnings: string[], observations: string[]): PageSettings {
+function pageSettings(model: DomEl, report: ReportFinding): PageSettings {
   const enabled = attr(model, "page") !== "0";
   if (!enabled) {
-    observations.push("page canvas is disabled (infinite canvas); boundary, margin, and empty-space checks skipped");
+    report("observations", "page canvas is disabled (infinite canvas); boundary, margin, and empty-space checks skipped");
     return { enabled, scale: 1 };
   }
 
   const rawScale = attr(model, "pageScale");
   const parsedScale = rawScale === null ? 1 : pyFloat(rawScale);
   const scale = parsedScale && Number.isFinite(parsedScale) && parsedScale > 0 ? parsedScale : 1;
-  if (rawScale !== null && scale !== parsedScale) warnings.push(`invalid pageScale ${repr(rawScale)}; using 1`);
+  if (rawScale !== null && scale !== parsedScale) report("warnings", `invalid pageScale ${repr(rawScale)}; using 1`);
 
   const parseDimension = (name: "pageWidth" | "pageHeight"): number | undefined => {
     const raw = attr(model, name);
     if (raw === null) return undefined;
     const value = pyFloat(raw);
     if (value === undefined || !Number.isFinite(value) || value <= 0) {
-      warnings.push(`invalid ${name} ${repr(raw)}; page-boundary checks skipped`);
+      report("warnings", `invalid ${name} ${repr(raw)}; page-boundary checks skipped`);
       return undefined;
     }
     return value * scale;
@@ -527,20 +571,9 @@ function pageSettings(model: DomEl, warnings: string[], observations: string[]):
   const width = parseDimension("pageWidth");
   const height = parseDimension("pageHeight");
   if (width === undefined || height === undefined) {
-    observations.push(
-      "page dimensions are omitted or invalid; boundary, outer-margin, and empty-space checks require both pageWidth and pageHeight",
-    );
+    report("observations", "page dimensions are omitted or invalid; boundary, outer-margin, and empty-space checks require both pageWidth and pageHeight");
   }
   return { enabled, width, height, scale };
-}
-
-function boundaryWarnings(bounds: ContentBounds, width: number, height: number): string[] {
-  const warnings: string[] = [];
-  if (bounds.minX < 0) warnings.push(`content extends beyond left page boundary by ${-bounds.minX}px`);
-  if (bounds.minY < 0) warnings.push(`content extends beyond top page boundary by ${-bounds.minY}px`);
-  if (bounds.maxX > width) warnings.push(`content extends beyond right page boundary by ${bounds.maxX - width}px`);
-  if (bounds.maxY > height) warnings.push(`content extends beyond bottom page boundary by ${bounds.maxY - height}px`);
-  return warnings;
 }
 
 function outerMarginWarning(bounds: ContentBounds, width: number, height: number): string | null {
@@ -571,14 +604,14 @@ function excessiveCanvasWarning(bounds: ContentBounds, width: number, height: nu
   return `canvas has excessive empty space (content ${contentWidth}x${contentHeight}px within ${width}x${height}px page)`;
 }
 
-function canvasWarnings(bounds: ContentBounds | null, settings: PageSettings): string[] {
-  if (!bounds || !settings.enabled || settings.width === undefined || settings.height === undefined) return [];
-  const { width, height } = settings;
-  return [
-    ...boundaryWarnings(bounds, width, height),
-    outerMarginWarning(bounds, width, height),
-    excessiveCanvasWarning(bounds, width, height),
-  ].filter((warning): warning is string => warning !== null);
+function canvasWarnings(bounds: ContentBounds | null, width: number, height: number, report: ReportFinding): void {
+  if (!bounds) return;
+  if (bounds.minX < 0) report("warnings", `content extends beyond left page boundary by ${-bounds.minX}px`);
+  if (bounds.minY < 0) report("warnings", `content extends beyond top page boundary by ${-bounds.minY}px`);
+  if (bounds.maxX > width) report("warnings", `content extends beyond right page boundary by ${bounds.maxX - width}px`);
+  if (bounds.maxY > height) report("warnings", `content extends beyond bottom page boundary by ${bounds.maxY - height}px`);
+  report("warnings", outerMarginWarning(bounds, width, height));
+  report("warnings", excessiveCanvasWarning(bounds, width, height));
 }
 
 function isWhitespace(character: string): boolean {
@@ -595,10 +628,11 @@ function isLineBreakTag(content: string): boolean {
 }
 
 /** Remove draw.io's HTML-like label markup in one pass without regex backtracking. */
-function stripLabelMarkup(value: string): string {
+function stripLabelMarkup(value: string, budget: ValidationBudget): string {
   const text: string[] = [];
   let cursor = 0;
   while (cursor < value.length) {
+    budget.work();
     const open = value.indexOf("<", cursor);
     if (open === -1) {
       text.push(value.slice(cursor));
@@ -621,19 +655,17 @@ function stripLabelMarkup(value: string): string {
   return text.join("");
 }
 
-function labelText(cell: DomEl): string {
-  return stripLabelMarkup(attr(cell, "value") ?? "").replaceAll("&nbsp;", " ").trim();
+function labelText(cell: DomEl, budget: ValidationBudget): string {
+  return stripLabelMarkup(attr(cell, "value") ?? "", budget).replaceAll("&nbsp;", " ").trim();
 }
 
 const DEFAULT_FONT_SIZE = 11;
 const CHAR_WIDTH_FACTOR = 0.6;
 const LINE_HEIGHT_FACTOR = 1.4;
 
-function labelOffset(cell: DomEl): Point | null {
-  const geometry = firstByTag(cell, "mxGeometry");
-  const offset = geometry
-    ? childrenByTag(geometry, "mxPoint").find((point) => attr(point, "as") === "offset")
-    : undefined;
+function labelOffset(geometry: DomEl, budget: ValidationBudget): Point | null {
+  budget.work(geometry.childNodes.length);
+  const offset = childrenByTag(geometry, "mxPoint").find((point) => attr(point, "as") === "offset");
   if (!offset) return null;
   const x = pyFloat(attr(offset, "x") ?? "0");
   const y = pyFloat(attr(offset, "y") ?? "0");
@@ -642,65 +674,46 @@ function labelOffset(cell: DomEl): Point | null {
 }
 
 /** Where an inline edge label is anchored along its route, as a 0..1 fraction (geometry x runs -1..1). */
-function labelFraction(edge: DomEl): number {
-  const geometry = firstByTag(edge, "mxGeometry");
+function labelFraction(geometry: DomEl | null): number {
   const along = geometry ? pyFloat(attr(geometry, "x") ?? "0") : 0;
   return along !== undefined && Number.isFinite(along) ? Math.min(1, Math.max(0, (along + 1) / 2)) : 0.5;
 }
 
-/** Estimated box of an edge's inline label, centered on its explicit route like draw.io renders it. */
-function inlineEdgeLabelRect(edge: DomEl, ids: ById): Rect | null {
-  const route = labelText(edge) ? edgeRoute(edge, ids) : null;
-  return route ? labelBox(edge, route) : null;
-}
-
-/** Estimated label box for an edge along a given route. */
-function labelBox(edge: DomEl, route: Point[]): Rect {
-  const label = labelText(edge);
-  const [centerX, centerY] = routePointAt(route, labelFraction(edge));
-  const [offsetX, offsetY] = labelOffset(edge) ?? [0, 0];
-  const fontSize = styleNum(attr(edge, "style"), "fontSize") ?? DEFAULT_FONT_SIZE;
-  const lines = label.split("\n");
-  const width = Math.max(...lines.map((line) => line.length)) * fontSize * CHAR_WIDTH_FACTOR;
-  const height = lines.length * fontSize * LINE_HEIGHT_FACTOR;
-  return [centerX + offsetX - width / 2, centerY + offsetY - height / 2, width, height];
-}
-
-function edgeLabelBox(cell: DomEl, ids: ById): [string | null, Rect] | null {
-  if (cell.getAttribute("edge") === "1") {
-    const box = inlineEdgeLabelRect(cell, ids);
-    return box ? [attr(cell, "id"), box] : null;
+/** Estimated label box centered on the resolved anchor. */
+function labelBox(cell: DomEl, label: string, [x, y]: Point, budget: ValidationBudget): Rect {
+  const fontSize = styleNum(attr(cell, "style"), "fontSize", budget) ?? DEFAULT_FONT_SIZE;
+  let longestLine = 0;
+  let lineCount = 0;
+  let start = 0;
+  for (;;) {
+    budget.work();
+    const end = label.indexOf("\n", start);
+    longestLine = Math.max(longestLine, (end === -1 ? label.length : end) - start);
+    lineCount++;
+    if (end === -1) break;
+    start = end + 1;
   }
-  if (isEdgeLabel(cell) && labelText(cell)) {
-    const box = explicitEdgeLabelRect(cell, ids);
-    return box ? [attr(cell, "id"), box] : null;
-  }
-  return null;
+  const width = longestLine * fontSize * CHAR_WIDTH_FACTOR;
+  const height = lineCount * fontSize * LINE_HEIGHT_FACTOR;
+  return [x - width / 2, y - height / 2, width, height];
 }
 
 /** Edge-label text lying on top of a shape; sizes are estimated, so phrased as "likely". */
-function labelOverlapWarnings(cells: DomEl[], ids: ById, parents: Set<string | null>): string[] {
-  const leaves = collectLeafBoxes(cells, ids, parents);
-  const warnings: string[] = [];
-  for (const cell of cells) {
-    if (!isVisible(cell, ids)) continue;
-    const labeled = edgeLabelBox(cell, ids);
-    if (!labeled || hasInvalidNumber(labeled[1])) continue;
-    const [id, box] = labeled;
-    for (const [vertexId, vertexBox] of leaves) {
-      if (overlap(box, vertexBox)) warnings.push(`edge label ${repr(id)} likely overlaps vertex ${repr(vertexId)}`);
-    }
+function labelOverlapWarnings(id: string | null, box: Rect, leaves: LeafBox[], budget: ValidationBudget, report: ReportFinding): void {
+  for (const [vertexId, vertexBox] of leaves) {
+    budget.work();
+    if (overlap(box, vertexBox)) report("warnings", `edge label ${repr(id)} likely overlaps vertex ${repr(vertexId)}`);
   }
-  return warnings;
 }
 
 /** Drop waypoints on a straight run and sub-2px jogs (not real bends), keeping the route's shape. */
-function straightenRoute(points: Point[]): Point[] {
+function straightenRoute(points: Point[], budget: ValidationBudget): Point[] {
   const near = (a: number, b: number): boolean => Math.abs(a - b) < 2;
   const within = (value: number, a: number, b: number): boolean =>
     Math.min(a, b) - 2 <= value && value <= Math.max(a, b) + 2;
   const result: Point[] = [points[0]];
   for (let i = 1; i < points.length - 1; i++) {
+    budget.work();
     const previous = result.at(-1)!;
     const [point, next] = [points[i], points[i + 1]];
     const jog = near(point[0], previous[0]) && near(point[1], previous[1]);
@@ -732,16 +745,17 @@ function isOrthogonal(edge: DomEl): boolean {
  * horizontally, and mirrors that at the entry. Returns null when a diagonal
  * remains whose rendered path cannot be inferred.
  */
-function orthogonalRoute(edge: DomEl, route: Point[]): Point[] | null {
+function orthogonalRoute(edge: DomEl, route: Point[], budget: ValidationBudget): Point[] | null {
   if (!isOrthogonal(edge)) return route;
   const style = attr(edge, "style");
   const side = (x: string, y: string): "vertical" | "horizontal" | null => {
-    const fy = styleNum(style, y);
-    const fx = styleNum(style, x);
+    const fy = styleNum(style, y, budget);
+    const fx = styleNum(style, x, budget);
     if (fy === 0 || fy === 1) return "vertical";
     if (fx === 0 || fx === 1) return "horizontal";
     return null;
   };
+  budget.work(route.length);
   const points = [...route];
   const last = points.length - 1;
   if (!axisAligned(points[last - 1], points[last])) {
@@ -753,21 +767,38 @@ function orthogonalRoute(edge: DomEl, route: Point[]): Point[] | null {
   if (!axisAligned(points[0], points[1])) {
     const exit = side("exitX", "exitY");
     const [start, next] = [points[0], points[1]];
-    if (exit === "vertical") points.splice(1, 0, [start[0], next[1]]);
-    else if (exit === "horizontal") points.splice(1, 0, [next[0], start[1]]);
+    if (exit) {
+      budget.work(points.length - 1);
+      points.splice(1, 0, exit === "vertical" ? [start[0], next[1]] : [next[0], start[1]]);
+    }
   }
-  return points.slice(1).every((point, i) => axisAligned(points[i], point)) ? points : null;
+  for (let i = 1; i < points.length; i++) {
+    budget.work();
+    if (!axisAligned(points[i - 1], points[i])) return null;
+  }
+  return points;
 }
 
 /** Index of the route segment that holds the point at `fraction` of the route's length. */
-function anchorSegment(points: Point[], fraction: number): number {
-  const lengths = points.slice(1).map((point, i) => Math.hypot(point[0] - points[i][0], point[1] - points[i][1]));
-  let remaining = lengths.reduce((sum, length) => sum + length, 0) * fraction;
-  for (let i = 0; i < lengths.length; i++) {
-    if (remaining <= lengths[i]) return i;
-    remaining -= lengths[i];
+function anchorSegment(points: Point[], fraction: number, budget: ValidationBudget): number {
+  const lengths: number[] = [];
+  let total = 0;
+  let last = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    budget.work();
+    const length = Math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1]);
+    lengths.push(length);
+    total += length;
+    if (length > 0) last = i;
   }
-  return Math.max(0, lengths.length - 1);
+  const distance = total * fraction;
+  let traversed = 0;
+  for (let i = 0; i < last; i++) {
+    budget.work();
+    traversed += lengths[i];
+    if (distance < traversed) return i;
+  }
+  return last;
 }
 
 /**
@@ -776,64 +807,98 @@ function anchorSegment(points: Point[], fraction: number): number {
  * another explicitly routed connector. A background color cannot fix these:
  * the line visibly runs into the text.
  */
-function labelRouteWarnings(cells: DomEl[], ids: ById): string[] {
-  const routes: [string | null, Point[]][] = [];
-  for (const cell of cells) {
-    const route = visibleEdgeRoute(cell, ids);
-    if (route) routes.push([attr(cell, "id"), route]);
-  }
-  const warnings: string[] = [];
-  for (const cell of cells) {
-    const route = labelText(cell) ? visibleEdgeRoute(cell, ids) : null;
-    if (!route) continue;
-    const box = labelBox(cell, route);
-    if (hasInvalidNumber(box)) continue;
-    const id = attr(cell, "id");
-    warnings.push(...labelRouteIntersections(id, route, box, labelFraction(cell), routes));
-  }
-  return warnings;
-}
-
-function visibleEdgeRoute(cell: DomEl, ids: ById): Point[] | null {
-  if (cell.getAttribute("edge") !== "1" || !isVisible(cell, ids)) return null;
-  const explicit = edgeRoute(cell, ids);
-  return explicit ? orthogonalRoute(cell, straightenRoute(explicit)) : null;
-}
-
 function labelRouteIntersections(
-  id: string | null,
-  route: Point[],
-  box: Rect,
-  fraction: number,
-  routes: [string | null, Point[]][],
-): string[] {
-  const warnings: string[] = [];
-  const anchor = anchorSegment(route, fraction);
-  const hitsOwnRoute = route.slice(1).some((point, i) => i !== anchor && routeHitsRect([route[i], point], box));
-  if (hitsOwnRoute) {
-    warnings.push(
-      `edge label ${repr(id)} likely sits on a bend or another segment of its own connector; move it along the edge (geometry x) or change its offset so the text clears every segment`,
-    );
-  }
-  for (const [otherId, otherRoute] of routes) {
-    if (otherId !== id && routeHitsRect(otherRoute, box)) {
-      warnings.push(`edge label ${repr(id)} likely overlaps edge ${repr(otherId)}`);
+  cell: DomEl, route: Point[], box: Rect, fraction: number, routes: Map<DomEl, Point[]>,
+  budget: ValidationBudget, report: ReportFinding,
+): void {
+  const id = attr(cell, "id");
+  const anchor = anchorSegment(route, fraction, budget);
+  for (let i = 0; i < route.length - 1; i++) {
+    budget.work();
+    if (i !== anchor && routeHitsRect([route[i], route[i + 1]], box, budget)) {
+      report("warnings", `edge label ${repr(id)} likely sits on a bend or another segment of its own connector; move it along the edge (geometry x) or change its offset so the text clears every segment`);
+      break;
     }
   }
-  return warnings;
+  for (const [other, otherRoute] of routes) {
+    budget.work();
+    if (other !== cell && routeHitsRect(otherRoute, box, budget)) {
+      report("warnings", `edge label ${repr(id)} likely overlaps edge ${repr(attr(other, "id"))}`);
+    }
+  }
 }
 
-function labelOnLineWarning(cell: DomEl): string | null {
-  if (cell.getAttribute("edge") !== "1" || !labelText(cell)) return null;
-  if ((attr(cell, "style") ?? "").includes("labelBackgroundColor=")) return null;
-  if (labelOffset(cell)) return null;
-  return `edge ${repr(attr(cell, "id"))} label sits directly on its line; add an offset or labelBackgroundColor`;
+function pointOnRoute([x, y]: Point, route: Point[], budget: ValidationBudget): boolean {
+  const epsilon = 1e-6;
+  for (let i = 0; i < route.length - 1; i++) {
+    budget.work();
+    const [sx, sy] = route[i];
+    const [ex, ey] = route[i + 1];
+    const length = Math.hypot(ex - sx, ey - sy);
+    if (length === 0) continue;
+    const dx = (ex - sx) / length;
+    const dy = (ey - sy) / length;
+    const along = (x - sx) * dx + (y - sy) * dy;
+    const normal = (x - sx) * dy - (y - sy) * dx;
+    if (Math.abs(normal) < epsilon && along >= -epsilon && along <= length + epsilon) return true;
+  }
+  return false;
 }
 
-function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
+/** For auto-routes we cannot project an explicit displacement onto the unknown path. */
+function undisplacedLabel(geometry: DomEl | null, budget: ValidationBudget): boolean {
+  if (!geometry) return true;
+  const normal = pyFloat(attr(geometry, "y") ?? "0");
+  const [x, y] = labelOffset(geometry, budget) ?? [0, 0];
+  return (!Number.isFinite(normal) || normal === 0) && x === 0 && y === 0;
+}
+
+function checkEdgeLabels(
+  cells: DomEl[], ids: ById, visible: VisibleRoutes, leaves: LeafBox[], budget: ValidationBudget, report: ReportFinding,
+): void {
+  const inferredRoutes = new Map<DomEl, Point[]>();
+  for (const [cell, explicit] of visible) {
+    budget.work();
+    if (!explicit) continue;
+    const inferred = orthogonalRoute(cell, straightenRoute(explicit, budget), budget);
+    if (inferred) inferredRoutes.set(cell, inferred);
+  }
+
+  for (const cell of cells) {
+    budget.work();
+    const inline = cell.getAttribute("edge") === "1";
+    if (inline ? !visible.has(cell) : !isEdgeLabel(cell) || !isVisible(cell, ids, budget)) continue;
+    const label = labelText(cell, budget);
+    if (!label) continue;
+    const id = attr(cell, "id");
+    if (!inline) {
+      const box = explicitEdgeLabelRect(cell, ids, budget);
+      if (box && !hasInvalidNumber(box)) labelOverlapWarnings(id, box, leaves, budget, report);
+      continue;
+    }
+
+    const inferred = inferredRoutes.get(cell);
+    const route = inferred ?? visible.get(cell);
+    const anchor = route ? edgeLabelAnchor(cell, route, budget) : null;
+    budget.work(cell.childNodes.length);
+    const geometry = firstByTag(cell, "mxGeometry");
+    if (!(attr(cell, "style") ?? "").includes("labelBackgroundColor=")) {
+      const onLine = inferred && anchor ? pointOnRoute(anchor, inferred, budget) : undisplacedLabel(geometry, budget);
+      if (onLine) report("warnings", `edge ${repr(id)} label sits directly on its line; add an offset or labelBackgroundColor`);
+    }
+    if (anchor) {
+      const box = labelBox(cell, label, anchor, budget);
+      if (hasInvalidNumber(box)) continue;
+      labelOverlapWarnings(id, box, leaves, budget, report);
+      if (inferred) labelRouteIntersections(cell, inferred, box, labelFraction(geometry), inferredRoutes, budget, report);
+    }
+  }
+}
+
+function isCompactBorderPort(cell: DomEl, box: Rect | null, budget: ValidationBudget): boolean {
   return (
     cell.getAttribute("vertex") === "1" &&
-    geometryIsRelative(cell) &&
+    geometryIsRelative(cell, budget) &&
     !isEdgeLabel(cell) &&
     box !== null &&
     !hasInvalidNumber(box) &&
@@ -842,12 +907,12 @@ function isCompactBorderPort(cell: DomEl, box: Rect | null): boolean {
   );
 }
 
-function smallFontWarning(cell: DomEl, box: Rect | null): string | null {
-  const fontSize = styleNum(attr(cell, "style"), "fontSize");
+function smallFontWarning(cell: DomEl, box: Rect | null, budget: ValidationBudget): string | null {
+  const fontSize = styleNum(attr(cell, "style"), "fontSize", budget);
   const isEdgeText = cell.getAttribute("edge") === "1" || isEdgeLabel(cell);
   const minimum = isEdgeText ? 10 : 11;
   if (
-    isCompactBorderPort(cell, box) ||
+    isCompactBorderPort(cell, box, budget) ||
     fontSize === undefined ||
     !Number.isFinite(fontSize) ||
     fontSize <= 0 ||
@@ -858,142 +923,216 @@ function smallFontWarning(cell: DomEl, box: Rect | null): string | null {
   return `${isEdgeText ? "connector label" : "vertex"} ${repr(attr(cell, "id"))} has very small explicit fontSize ${fontSize}px`;
 }
 
-function longLabelWarning(cell: DomEl, label: string, box: Rect | null): string | null {
-  if (cell.getAttribute("vertex") !== "1" || isEdgeLabel(cell) || geometryIsRelative(cell)) return null;
+function longLabelWarning(cell: DomEl, label: string, box: Rect | null, budget: ValidationBudget): string | null {
+  if (cell.getAttribute("vertex") !== "1" || isEdgeLabel(cell) || geometryIsRelative(cell, budget)) return null;
   if (box === null || hasInvalidNumber(box)) return null;
-  const oneLineLength = label.replaceAll("\n", "").length;
   if (
-    oneLineLength <= 32 ||
+    label.length <= 32 ||
     label.includes("\n") ||
     box[2] >= 160 ||
-    styleHas(attr(cell, "style"), "whiteSpace", "wrap")
+    hasStyleToken(attr(cell, "style"), "whiteSpace=wrap", budget)
   ) {
     return null;
   }
   return `vertex ${repr(attr(cell, "id"))} has a long label in narrow geometry without whiteSpace=wrap`;
 }
 
-function cellReadabilityWarnings(cell: DomEl): string[] {
-  const label = labelText(cell);
-  if (!label) return [];
-  const box = rect(cell);
-  return [smallFontWarning(cell, box), longLabelWarning(cell, label, box), labelOnLineWarning(cell)].filter(
-    (warning): warning is string => warning !== null,
-  );
-}
-
 /** Conservative static checks only; uncertain typography remains a visual concern. */
-function readabilityWarnings(cells: DomEl[]): string[] {
-  return cells.flatMap(cellReadabilityWarnings);
-}
-
-function withPage(name: string, diagnostics: string[]): string[] {
-  return diagnostics.map((diagnostic) => `page '${name}': ${diagnostic}`);
-}
-
-function checkPage(diagram: DomEl): [string[], string[], string[]] {
-  const name = attr(diagram, "name") ?? "?";
-  const model = firstByTag(diagram, "mxGraphModel");
-  if (!model) {
-    if (directText(diagram).trim()) return [[], [`page '${name}': compressed, skipped (cannot lint)`], []];
-    return [[`page '${name}': no <mxGraphModel>`], [], []];
+function readabilityWarnings(cells: DomEl[], budget: ValidationBudget, report: ReportFinding): void {
+  for (const cell of cells) {
+    budget.work();
+    const label = labelText(cell, budget);
+    if (!label) continue;
+    const box = rect(cell, budget);
+    report("warnings", smallFontWarning(cell, box, budget));
+    report("warnings", longLabelWarning(cell, label, box, budget));
   }
-  const cells = collectCells(firstByTag(model, "root"));
+}
 
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const observations: string[] = [];
-  const motion = analyzeStoredMotion(model);
-  const ids = buildIds(cells, errors);
-  const animation = analyzeAnimationPage(diagram);
-  errors.push(...animation.errors);
-  warnings.push(...animation.warnings);
-  observations.push(...animation.observations);
+class ValidationCellLimitExceeded extends Error {
+  constructor(page: string, maxCells: number) {
+    super(`page '${page}' exceeds the limit of ${maxCells} cells`);
+  }
+}
+
+function checkPage(diagram: DomEl, budget: ValidationBudget, maxCells: number, result: ValidateResult): void {
+  const name = attr(diagram, "name") ?? "?";
+  const prefix = `page '${name}': `;
+  const report: ReportFinding = (severity, message, kind) => {
+    if (message === null) return;
+    budget.diagnostic();
+    result[severity].push(prefix + message);
+    if (kind) {
+      result.score[kind]++;
+      result.score.total += SCORE_WEIGHTS[kind];
+    }
+  };
+  // These diagnostics were charged at emission by the analyzers.
+  const forward = (severity: Severity, messages: string[]): void => {
+    for (const message of messages) result[severity].push(prefix + message);
+  };
+
+  if (diagram.tagName !== "mxGraphModel") budget.work(diagram.childNodes.length);
+  const model = pageModel(diagram);
+  if (!model) {
+    budget.work(diagram.childNodes.length);
+    if (directText(diagram).trim()) report("warnings", "compressed, skipped (cannot lint)");
+    else report("errors", "no <mxGraphModel>");
+    return;
+  }
+  budget.work(model.childNodes.length);
+  const root = firstByTag(model, "root");
+  if (!root) {
+    report("errors", "<mxGraphModel> has no <root>");
+    return;
+  }
+  const cells = collectCells(root, budget);
+  if (cells.length > maxCells) throw new ValidationCellLimitExceeded(name, maxCells);
+
+  const ids = buildIds(cells, budget, report);
+  checkParentCycles(cells, ids, budget, report);
+  const animation = analyzeAnimationPage(diagram, budget);
+  forward("errors", animation.errors);
+  forward("warnings", animation.warnings);
+  forward("observations", animation.observations);
+  const motion = analyzeStoredMotion(model, budget);
   if (motion) {
-    errors.push(...motion.errors);
+    forward("errors", motion.errors);
     if (motion.compiled) {
-      observations.push(
-        `stored motion has ${motion.spec!.steps.length} step(s) lasting ${Math.round(motion.compiled.sequenceMs)}ms; export it with drawio_animate`,
-      );
+      report("observations", `stored motion has ${motion.spec!.steps.length} step(s) lasting ${Math.round(motion.compiled.sequenceMs)}ms; export it with drawio_animate`);
     }
     if (animation.sequence?.enabled) {
-      errors.push("page has both stored motion and an enabled native page animation; keep only one timeline");
+      report("errors", "page has both stored motion and an enabled native page animation; keep only one timeline");
     }
   }
-  const parents = new Set<string | null>();
-  for (const cell of cells) parents.add(attr(cell, "parent"));
 
-  for (const cell of cells) checkCell(cell, ids, errors, warnings);
-  warnings.push(
-    ...overlapWarnings(cells, ids, parents),
-    ...geometryWarnings(cells, ids, parents),
-    ...labelOverlapWarnings(cells, ids, parents),
-    ...labelRouteWarnings(cells, ids),
-    ...containmentWarnings(cells, ids),
-    ...readabilityWarnings(cells),
-  );
-  observations.push(...predictedRouteThroughObservations(cells, ids, collectLeafBoxes(cells, ids, parents)));
-  const autoRouted = autoRoutedEdgeWarning(cells, ids);
-  if (autoRouted) warnings.push(autoRouted);
-  const settings = pageSettings(model, warnings, observations);
-  warnings.push(...canvasWarnings(contentBounds(cells, ids), settings));
-  return [withPage(name, errors), withPage(name, warnings), withPage(name, observations)];
+  const parents = new Set<string | null>();
+  for (const cell of cells) {
+    budget.work();
+    parents.add(attr(cell, "parent"));
+    checkCell(cell, ids, budget, report);
+  }
+  overlapWarnings(cells, ids, parents, budget, report);
+  const { visible, routed } = collectRoutes(cells, ids, budget);
+  const leaves = collectLeafBoxes(cells, ids, parents, budget);
+  routeThroughWarnings(routed, leaves, budget, report);
+  routeCrossWarnings(routed, budget, report);
+  for (const [cell, route] of visible) {
+    budget.work();
+    edgeAnchorFacingWarnings(cell, route, ids, budget, report);
+  }
+  checkEdgeLabels(cells, ids, visible, leaves, budget, report);
+  for (const cell of cells) {
+    budget.work();
+    report("warnings", containmentWarning(cell, ids, budget));
+  }
+  readabilityWarnings(cells, budget, report);
+  if (visible.size > routed.length) {
+    predictedRouteThroughObservations(visible, ids, leaves, budget, report);
+    report("warnings", autoRoutedEdgeWarning(visible, budget));
+  }
+  const { enabled, width, height } = pageSettings(model, report);
+  if (enabled && width !== undefined && height !== undefined) {
+    canvasWarnings(contentBounds(cells, ids, budget), width, height, report);
+  }
 }
 
-/** Lint a `.drawio` XML string. Throws only on unrecoverable parse failure. */
-export function validateXml(xml: string): ValidateResult {
-  const doc = new DOMParser().parseFromString(xml, "text/xml");
-  const root = doc.documentElement as unknown as DomEl | null;
-  if (!root) throw new Error("no root element (malformed XML)");
-  const pageList = childrenByTag(root, "diagram");
-  const pages = pageList.length > 0 ? pageList : [root];
-
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const observations: string[] = [];
-  for (const page of pages) {
-    const [pageErrors, pageWarnings, pageObservations] = checkPage(page);
-    errors.push(...pageErrors);
-    warnings.push(...pageWarnings);
-    observations.push(...pageObservations);
-  }
-  const through = warnings.filter((warning) => warning.includes("routes through")).length;
-  const crossings = warnings.filter((warning) => warning.endsWith(" cross")).length;
-  const overlaps = warnings.filter((warning) => warning.endsWith(" overlap")).length;
-  const anchors = warnings.filter((warning) => warning.endsWith("reduce bends")).length;
+function emptyResult(): ValidateResult {
   return {
-    errors,
-    warnings,
-    observations,
-    score: { total: 20 * through + 10 * crossings + 5 * overlaps + 8 * anchors, through, crossings, overlaps, anchors },
+    errors: [],
+    warnings: [],
+    observations: [],
+    incomplete: false,
+    score: { total: 0, through: 0, crossings: 0, overlaps: 0, anchors: 0 },
   };
 }
 
-function emptyScore(): ValidateResult["score"] {
-  return { total: 0, through: 0, crossings: 0, overlaps: 0, anchors: 0 };
+function stopValidation(result: ValidateResult, reason: string): ValidateResult {
+  result.incomplete = true;
+  result.errors.push(`Validation incomplete: ${reason}`);
+  return result;
 }
 
-/** Read and lint a `.drawio` file. Read/parse failures are returned as errors, never thrown. */
-export async function validateFile(path: string): Promise<ValidateResult> {
+function parseDiagram(xml: string, report: ReportFinding): DomEl | null {
+  let reportFailure: unknown;
+  let fatalReported = false;
+  try {
+    const doc = new DOMParser({
+      onError(level, message) {
+        try {
+          report("errors", `XML parse error: ${message}`);
+        } catch (error) {
+          // xmldom wraps callback exceptions in ParseError without retaining their cause.
+          reportFailure = error;
+          throw error;
+        }
+        if (level === "fatalError") fatalReported = true;
+      },
+    }).parseFromString(xml, "text/xml");
+    return doc.documentElement as unknown as DomEl;
+  } catch (error) {
+    if (reportFailure !== undefined) throw reportFailure;
+    if (!(error instanceof ParseError)) throw error;
+    if (!fatalReported) report("errors", `XML parse error: ${error.message}`);
+    return null;
+  }
+}
+
+/** Lint a `.drawio` XML string with a single diagnostic and work allowance across all pages. */
+export function validateXml(xml: string, limits: Partial<ValidationLimits> = {}): ValidateResult {
+  const maxBytes = limits.maxBytes ?? DEFAULT_LIMITS.maxBytes;
+  const maxCells = limits.maxCellsPerPage ?? DEFAULT_LIMITS.maxCellsPerPage;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("XML byte limit must be a nonnegative safe integer");
+  if (!Number.isSafeInteger(maxCells) || maxCells < 0) throw new RangeError("validation cell limit must be a nonnegative safe integer");
+  const budget = createValidationBudget(limits.maxWork ?? DEFAULT_LIMITS.maxWork, limits.maxDiagnostics ?? DEFAULT_LIMITS.maxDiagnostics);
+  const result = emptyResult();
+  const report: ReportFinding = (severity, message) => {
+    if (message === null) return;
+    budget.diagnostic();
+    result[severity].push(message);
+  };
+  try {
+    if (Buffer.byteLength(xml, "utf8") > maxBytes) throw new DiagramXmlTooLargeError(maxBytes);
+    const root = parseDiagram(xml, report);
+    if (!root) return result;
+    if (root.tagName === "mxfile") budget.work(root.childNodes.length);
+    let pages: DomEl[];
+    try {
+      pages = diagramPages(root);
+    } catch (error) {
+      report("errors", (error as Error).message);
+      return result;
+    }
+    if (pages.length === 0) report("errors", "diagram has no pages (expected a <diagram> inside <mxfile>)");
+    for (const page of pages) {
+      budget.work();
+      checkPage(page, budget, maxCells, result);
+    }
+  } catch (error) {
+    if (error instanceof ValidationBudgetExceeded || error instanceof ValidationCellLimitExceeded || error instanceof DiagramXmlTooLargeError) {
+      return stopValidation(result, error.message);
+    }
+    throw error;
+  }
+  return result;
+}
+
+/** Read and lint a regular `.drawio` file within the same intake limits as the string validator. */
+export async function validateFile(path: string, limits?: Partial<ValidationLimits>): Promise<ValidateResult> {
   let xml: string;
   try {
-    xml = await readFile(path, "utf8");
+    xml = await readDiagramXml(path, limits?.maxBytes ?? DEFAULT_LIMITS.maxBytes);
   } catch (error) {
-    return {
-      errors: [`cannot read ${path}: ${(error as Error).message}`],
-      warnings: [],
-      observations: [],
-      score: emptyScore(),
-    };
+    const result = emptyResult();
+    if (error instanceof DiagramXmlTooLargeError) return stopValidation(result, error.message);
+    result.errors.push(`cannot read ${path}: ${(error as Error).message}`);
+    return result;
   }
   try {
-    return validateXml(xml);
+    return validateXml(xml, limits);
   } catch (error) {
-    return {
-      errors: [`cannot parse ${path}: ${(error as Error).message}`],
-      warnings: [],
-      observations: [],
-      score: emptyScore(),
-    };
+    const result = emptyResult();
+    result.errors.push(`cannot parse ${path}: ${(error as Error).message}`);
+    return result;
   }
 }
