@@ -189,12 +189,14 @@ Use `drawio_animate` for any animation beyond continuous connector flow. Author 
 | `travel` | visible connector | A dot runs along the connector in `color` |
 | `wait` | none | Pause for `duration` ms |
 
-- Steps run one after another; `parallel: true` starts a step with the previous one. `stagger` offsets consecutive cells of one step for a cascade.
-- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden. Everything else is visible from the start.
-- `drawIn` needs a solid connector without `flowAnimation=1`; use `fadeIn` for dashed or flowing connectors.
+- Use 1–200 steps. Visual durations are positive and at most 60,000 ms; waits may be zero. `duration` is required for `wait`. `hold` and `stagger` accept 0–60,000 ms; the sequence before the hold can last at most 300,000 ms.
+- Steps run in order. With `parallel: true`, a step starts in the same batch as the previous step. `stagger` delays consecutive cells within a step for a cascade.
+- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden. `fadeIn` can also return a visible but dimmed cell to full opacity. Reveal a hidden container before emphasizing a child.
+- `drawIn` needs a solid connector without `flowAnimation=1`; use `fadeIn` for dashed or flowing connectors. A sequence must create effective visual motion; waits alone do not.
 - `loop` (default true) repeats the sequence after `hold` ms (default 1600) on the final state.
 - The tool stores the steps on the page root cell (`drawmeMotion`), so a later call without `steps` re-exports the same motion after layout edits. `drawio_validate` checks the stored steps against the page.
-- It writes `<name>.animated.svg` and a `<name>.storyboard.png` with one captioned frame per step. Use the storyboard to confirm order and visibility; it does not show easing or dot movement.
+- Inspect the storyboard for order and visibility, not easing or dot movement. It samples the end states of visual batches (at most 12 evenly sampled frames, including the first and last); parallel steps share a frame and standalone waits add none.
+- The default SVG is `<source-stem>.animated.svg` on every page. Give each page a distinct explicit SVG path to keep them all. For page 1, an SVG ending in `.animated.svg` gets the legacy `.storyboard.png` suffix in its place. Otherwise the tool appends `.storyboard-p<n>.png` to the entire SVG filename. See the [motion reference](../../docs/reference.md#drawio_animate) for details.
 - The motion plays in browsers and wherever the SVG is shown as an image (for example a README). draw.io itself does not play it.
 
 Example: reveal a three-hop flow, run traffic through it, then focus on the service.

@@ -1,10 +1,12 @@
 # Visual Review and Fixing Implementation Tasks
 
-## Goal
+> **Historical design checklist — not current instructions.** The current [`/drawme` workflow](../README.md#the-drawme-workflow) allows eight automatic correction retries across the run and does not require human approval before export. See the [tool reference](reference.md) for current preview and validation behavior.
+
+## Goal (historical)
 
 Make DrawMe's automatic review loop reliably catch and correct canvas, layout, typography, element-overlap, and connector problems before asking for user approval or creating final exports.
 
-## Current gaps
+## Gaps at the time
 
 - `/drawme` injects guidance for the model; it is not an enforced workflow or state machine.
 - The current self-check asks the model to inspect every visual concern at once and caps automatic review at two rounds.
