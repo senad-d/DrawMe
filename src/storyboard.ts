@@ -1,11 +1,11 @@
 /**
  * Storyboard: renders a motion timeline as a grid of static frames on one
- * draw.io page, one tile per sequential step, so motion order and visibility
- * can be reviewed in a single PNG. Each tile is a copy of the page with cell
- * opacity set to its state after that step; highlight and travel steps show
+ * draw.io page, one tile per sampled visual batch, so motion order and
+ * visibility can be reviewed in a single PNG. Each tile uses the cell
+ * opacity after that batch; highlight and travel steps show
  * their accent color on the stroke.
  */
-import { XMLSerializer } from "@xmldom/xmldom";
+import { type Element, XMLSerializer } from "@xmldom/xmldom";
 import { type DomEl, attr, elemChildren, firstByTag } from "./dom";
 import { contentBounds, collectCellsWithIds, pyFloat } from "./geometry";
 import { shiftCell } from "./fitcanvas";
@@ -83,18 +83,70 @@ function effectiveOpacity(id: string, frame: MotionFrame, parents: Map<string, s
   return opacity;
 }
 
-function storyboardCell(entry: PageEntry, prefix: string, layers: Set<string>, ox: number, oy: number): DomEl {
+const TERMINALS = ["source", "target"] as const;
+
+/** Drop authored-hidden entries and any connectors/descendants that depend on an omitted clone. */
+function visibleClones(entries: PageEntry[], layers: Set<string>): PageEntry[] {
+  const candidates = entries.filter(({ id }) => id !== "0" && !layers.has(id));
+  const cloneIds = new Set(candidates.map(({ id }) => id));
+  const sourceIds = new Set(entries.map(({ id }) => id));
+  const omitted = new Set<string>();
+  const queue: string[] = [];
+  const dependents = new Map<string, string[]>();
+  const omit = (id: string) => {
+    if (omitted.has(id)) return;
+    omitted.add(id);
+    queue.push(id);
+  };
+  const dependOn = (id: string, ref: string) => {
+    const others = dependents.get(ref) ?? [];
+    others.push(id);
+    dependents.set(ref, others);
+  };
+  for (const { id, cell } of entries) {
+    if (attr(cell, "visible") === "0") omit(id);
+    const parent = attr(cell, "parent");
+    if (parent !== null) {
+      if (sourceIds.has(parent)) dependOn(id, parent);
+      else omit(id);
+    }
+    for (const end of TERMINALS) {
+      const ref = attr(cell, end);
+      if (ref === null) continue;
+      if (cloneIds.has(ref)) dependOn(id, ref);
+      else omit(id);
+    }
+  }
+  for (const id of queue) for (const dependent of dependents.get(id) ?? []) omit(dependent);
+  return candidates.filter(({ id }) => !omitted.has(id));
+}
+
+function cloneIdsFor(entries: PageEntry[], prefix: string): Map<string, string> {
+  const decorations = new Set([`${prefix}frame`, `${prefix}caption`]);
+  const used = new Set([...decorations, ...entries.map(({ id }) => `${prefix}${id}`)]);
+  return new Map(entries.map(({ id }) => {
+    const preferred = `${prefix}${id}`;
+    if (!decorations.has(preferred)) return [id, preferred];
+    let n = 2;
+    while (used.has(`${preferred}-${n}`)) n++;
+    const unique = `${preferred}-${n}`;
+    used.add(unique);
+    return [id, unique];
+  }));
+}
+
+function storyboardCell(entry: PageEntry, ids: Map<string, string>, ox: number, oy: number): DomEl {
   const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
   const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
-  element.setAttribute("id", `${prefix}${entry.id}`);
-  const parent = attr(cell, "parent");
-  const topLevel = parent === null || layers.has(parent);
-  cell.setAttribute("parent", topLevel ? "1" : `${prefix}${parent}`);
-  for (const end of ["source", "target"]) {
+  element.setAttribute("id", ids.get(entry.id)!);
+  if (element !== cell) (cell as unknown as Element).removeAttribute("id");
+  const parent = ids.get(attr(cell, "parent") ?? "");
+  cell.setAttribute("parent", parent ?? "1");
+  for (const end of TERMINALS) {
     const ref = attr(cell, end);
-    if (ref !== null) cell.setAttribute(end, `${prefix}${ref}`);
+    if (ref !== null) cell.setAttribute(end, ids.get(ref)!);
   }
-  if (topLevel) shiftCell(cell, ox, oy);
+  if (parent === undefined) shiftCell(cell, ox, oy);
   return element;
 }
 
@@ -118,6 +170,7 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
   const entries = pageEntries(model);
   const parents = new Map(entries.map((entry) => [entry.id, attr(entry.cell, "parent")]));
   const layers = new Set(entries.filter((entry) => attr(entry.cell, "parent") === "0").map((entry) => entry.id));
+  const clones = visibleClones(entries, layers);
   const columns = Math.min(frames.length, width >= height ? 2 : 3);
   const rows = Math.ceil(frames.length / columns);
   const tileHeight = CAPTION_HEIGHT + height;
@@ -137,9 +190,9 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
       `<mxCell id="${prefix}frame" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;fillColor=none;strokeColor=${frameColor};dashed=1;" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy + CAPTION_HEIGHT}" width="${width}" height="${height}" as="geometry"/></mxCell>`,
       `<mxCell id="${prefix}caption" value="${escapeXml(caption)}" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=${captionColor};" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy}" width="${width}" height="${CAPTION_HEIGHT - 8}" as="geometry"/></mxCell>`,
     );
-    for (const entry of entries) {
-      if (entry.id === "0" || layers.has(entry.id)) continue;
-      const element = storyboardCell(entry, prefix, layers, ox, oy + CAPTION_HEIGHT);
+    const ids = cloneIdsFor(clones, prefix);
+    for (const entry of clones) {
+      const element = storyboardCell(entry, ids, ox, oy + CAPTION_HEIGHT);
       applyFrameStyle(element, entry.id, frame, parents);
       parts.push(serializer.serializeToString(element as never));
     }
