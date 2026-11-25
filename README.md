@@ -203,14 +203,14 @@ These stay plain Markdown files for easy editing. `/drawme` embeds the diagram-t
 ## Requirements and Compatibility
 
 - **Node.js** ≥ 22.19.
-- **draw.io desktop CLI** on PATH (or a known app path); resolved automatically on macOS (`.app`), Linux, Windows, and WSL. Pass an explicit `binary` to any tool to override.
+- **draw.io desktop CLI** on PATH (or a known app path); resolved automatically on macOS (`.app`), Linux, Windows, and WSL. See [CLI discovery](docs/reference.md#drawio_check) for custom installations.
 - **draw.io v30+** for `drawio_from_mermaid` and `drawio_layout`; on older versions those tools return a clear "needs v30+" message and everything else works normally.
 - **Headless Linux:** exports are wrapped in `xvfb-run` automatically when no display is present.
 
 ## Security
 
 DrawMe works with diagram files and may launch the draw.io CLI, `xvfb-run` on headless Linux, or the OS
-file opener (`open`/`xdg-open`/`start`). Pi extensions inherit the permissions of the Pi process, so
+[file opener](docs/reference.md#drawio_open). Pi extensions inherit the permissions of the Pi process, so
 install only packages you trust. See [`SECURITY.md`](SECURITY.md) for runtime and dependency details.
 
 ## Examples

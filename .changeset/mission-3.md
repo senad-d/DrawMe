@@ -1,5 +1,5 @@
 ---
-"@senad-d/drawme": patch
+"@senad-d/drawme": major
 ---
 
-Exports reject aliases of the editable source, preserve existing files when rendering or verification fails, and use separate `.preview.<format>` names for default previews.
+The five tools no longer accept a `binary` option; set `DRAWME_DRAWIO_BINARY` in Pi’s launch environment for a custom CLI, and use the desktop opener only for supported documents.
