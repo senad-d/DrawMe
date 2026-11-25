@@ -88,10 +88,12 @@ function dimension(value: string | null): number | undefined {
  * full-size background rect) into the middle.
  */
 export function padSvg(svg: string, margin: number): string {
-  if (margin <= 0 || Number.isNaN(margin)) return svg;
-  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  const doc = new DOMParser({ onError: (level, message) => {
+    if (level !== "warning") throw new Error(message);
+  } }).parseFromString(svg, "image/svg+xml");
   const root = doc.documentElement as unknown as DomEl | null;
   if (root?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
+  if (margin <= 0 || Number.isNaN(margin)) return svg;
   const box = (attr(root, "viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
   const width = box.length === 4 && box.every(Number.isFinite) ? box[2] : dimension(attr(root, "width"));
   const height = box.length === 4 && box.every(Number.isFinite) ? box[3] : dimension(attr(root, "height"));

@@ -9,7 +9,7 @@ launch:
 
 - the **draw.io desktop CLI** for conversion, layout, rendering, and export;
 - **`xvfb-run`** for draw.io on headless Linux;
-- the **OS file opener** (`open` / `xdg-open` / `start`) when `drawio_open` is requested.
+- the **[OS file opener](docs/reference.md#drawio_open)** when `drawio_open` is requested for a supported document.
 
 Child processes are invoked with argument lists rather than through a shell. Shape lookup uses the
 bundled `assets/data/shape-index.json.gz` file.

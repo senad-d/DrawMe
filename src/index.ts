@@ -21,7 +21,6 @@ import {
   openFile,
   resolveBinary,
   type ExportFormat,
-  type ExportOptions,
   type LayoutPreset,
 } from "./drawio";
 import { validateFile } from "./validate";
@@ -57,7 +56,6 @@ const exportParams = Type.Object({
         "Require a verified final animated SVG. Defaults format to SVG; preserves connector flow and compiles portable page fade/visibility/wait sequences.",
     }),
   ),
-  binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
 });
 export type DrawioExportInput = Static<typeof exportParams>;
 
@@ -89,7 +87,6 @@ const animateParams = Type.Object({
   storyboard: Type.Optional(
     Type.Boolean({ description: "Render <name>.storyboard.png with one frame per step for review (default true)" }),
   ),
-  binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
 });
 
 const textResult = (text: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text }], details });
@@ -123,9 +120,9 @@ export default function drawme(pi: ExtensionAPI): void {
     description:
       "Detect the draw.io desktop CLI: returns the binary path, version, and whether it supports Mermaid import / the --layout pass (both need v30+). Call before exporting.",
     promptSnippet: "Check whether the draw.io CLI is available before exporting a diagram.",
-    parameters: Type.Object({ binary: Type.Optional(Type.String({ description: "Explicit binary path to test first" })) }),
-    async execute(_id, params) {
-      const info = await resolveBinary(params.binary);
+    parameters: Type.Object({}),
+    async execute() {
+      const info = await resolveBinary();
       if (!info.available) {
         return textResult(
           "draw.io CLI not found. Install with `brew install --cask drawio` (macOS) or from " +
@@ -145,13 +142,14 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. Each successful preview removes the prior preview artifact for the same source, leaving only the latest file; a replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired) and removes the remaining preview. SVG output is pinned to the authored colors so it matches PNG/PDF in every viewer, including dark-mode ones.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. A successful preview or final export can retire superseded files still owned by a preview of the same source. A replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired). SVG output is pinned to the authored colors so it matches PNG/PDF in every viewer, including dark-mode ones.",
     promptSnippet:
       "Export a .drawio to PNG/SVG/PDF/JPG; set animated:true for a verified final animated SVG. Preview mode attaches a PNG for visual review when supported.",
     parameters: exportParams,
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await exportDiagram(params as ExportOptions);
+        // Tool arguments can contain undeclared properties. Never forward an executable selector.
+        const r = await exportDiagram({ ...params, binary: undefined });
         const canView = modelSupportsImages(ctx);
         const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed} animated=${r.animated}`];
         if (r.animation) {
@@ -197,7 +195,7 @@ export default function drawme(pi: ExtensionAPI): void {
     parameters: animateParams,
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await animateDiagram(params);
+        const r = await animateDiagram({ ...params, binary: undefined });
         const playback = r.loop ? `loop every ${r.durationMs}ms` : "plays once";
         const lines = [
           `Animated ${r.output} (page '${r.page}')`,
@@ -309,11 +307,10 @@ export default function drawme(pi: ExtensionAPI): void {
       mermaid: Type.Optional(Type.String({ description: "Inline Mermaid diagram text" })),
       input: Type.Optional(Type.String({ description: "Path to a .mmd file (alternative to `mermaid`)" })),
       output: Type.Optional(Type.String({ description: "Output .drawio path" })),
-      binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
     }),
     async execute(_id, params) {
       try {
-        const r = await convertMermaid(params);
+        const r = await convertMermaid({ ...params, binary: undefined });
         const versionSuffix = r.version ? ` (${r.version})` : "";
         return textResult(`Converted Mermaid → ${r.output}\nbinary=${r.binary}${versionSuffix}`, r);
       } catch (e) {
@@ -339,7 +336,6 @@ export default function drawme(pi: ExtensionAPI): void {
         Type.Literal("organic"),
       ]),
       output: Type.Optional(Type.String({ description: "Output path (default: sibling .layout.drawio)" })),
-      binary: Type.Optional(Type.String({ description: "Explicit path to the draw.io binary" })),
     }),
     async execute(_id, params) {
       try {
@@ -347,7 +343,6 @@ export default function drawme(pi: ExtensionAPI): void {
           input: params.input,
           preset: params.preset as LayoutPreset,
           output: params.output,
-          binary: params.binary,
         });
         return textResult(`Laid out (${r.preset}) → ${r.output}`, r);
       } catch (e) {
@@ -395,9 +390,9 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_open",
     label: "draw.io: open",
     description:
-      "Open a .drawio source or an exported file in the OS default application (draw.io desktop for .drawio) so the user can fine-tune it.",
-    promptSnippet: "Open a .drawio or exported file in the desktop app.",
-    parameters: Type.Object({ path: Type.String({ description: "File to open" }) }),
+      "Open a .drawio source or a PNG, SVG, PDF, or JPEG export in the OS default application so the user can review it or fine-tune the source.",
+    promptSnippet: "Open a .drawio or supported export in the desktop app.",
+    parameters: Type.Object({ path: Type.String({ description: "Path to an existing diagram or supported export" }) }),
     async execute(_id, params) {
       try {
         const r = await openFile(params.path);

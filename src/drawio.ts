@@ -5,9 +5,12 @@
  * hand-build a draw.io command line.
  */
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import {
+  type BigIntStats, accessSync, chmodSync, chownSync, constants, existsSync, lstatSync, readlinkSync,
+  realpathSync, renameSync, statSync, unlinkSync,
+} from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, sep, win32 } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { repairPng } from "./png";
 import { enhanceAnimatedSvg, type AnimatedSvgSummary } from "./animation";
@@ -129,12 +132,14 @@ function parseMajor(version: string): number {
 }
 
 /**
- * Resolve the draw.io CLI. Tries an explicit `override` first, then the standard
- * candidates. Absolute paths are existence-checked before spawning; PATH names are
- * probed with `--version` (a short timeout guards the sandbox-hang case).
+ * Resolve the draw.io CLI. A trusted code override or an absolute path configured
+ * in Pi's launch environment takes priority over the standard candidates. Never
+ * pass a tool argument as the override. Paths are checked before probing with `--version`.
  */
-export async function resolveBinary(override?: string): Promise<DrawioInfo> {
-  const candidates = override ? [override, ...CANDIDATES] : CANDIDATES;
+export async function resolveBinary(trustedOverride?: string): Promise<DrawioInfo> {
+  const configured = process.env.DRAWME_DRAWIO_BINARY;
+  const preferred = trustedOverride || (configured && isAbsolute(configured) ? configured : undefined);
+  const candidates = preferred ? [preferred, ...CANDIDATES] : CANDIDATES;
   const tried = new Set<string>();
   for (const bin of candidates) {
     if (tried.has(bin)) continue;
@@ -156,10 +161,11 @@ export async function resolveBinary(override?: string): Promise<DrawioInfo> {
 }
 
 /** Derive a default output path next to the input, using the `.drawio.png` convention when embedding. */
-export function deriveOutput(input: string, format: ExportFormat, embed: boolean): string {
+export function deriveOutput(input: string, format: ExportFormat, embed: boolean, mode: ExportMode = "final"): string {
   const dir = dirname(input);
   const ext = extname(input);
   const base = ext ? basename(input).slice(0, -ext.length) : basename(input);
+  if (mode === "preview") return join(dir, `${base}.preview.${format}`);
   if (format === "png" && embed) return join(dir, `${base}.drawio.png`);
   return join(dir, `${base}.${format}`);
 }
@@ -191,8 +197,8 @@ export function planExport(
   const mode = opts.mode ?? "final";
   if (animated && format !== "svg") throw new Error("animated export requires format='svg'");
   if (animated && mode !== "final") throw new Error("animated export requires mode='final'; use a PNG preview for review");
-  const embed = opts.embed ?? (mode === "final" && format !== "jpg");
-  const output = opts.output ?? deriveOutput(opts.input, format, embed);
+  const embed = mode === "final" && (opts.embed ?? format !== "jpg");
+  const output = opts.output ?? deriveOutput(opts.input, format, embed, mode);
   const raster = format === "png" || format === "jpg";
 
   const margin = opts.border ?? DEFAULT_FIT_MARGIN;
@@ -272,14 +278,21 @@ export interface ExportResult {
   command: string;
 }
 
-/** Successful preview outputs still present, grouped by their canonical source path. */
-const previewOutputs = new Map<string, Map<string, string>>();
+interface TrackedPreview {
+  displayPath: string;
+  /** Never unlink the target of a user-supplied output symlink. */
+  removable: boolean;
+  file: BigIntStats;
+}
+
+/** Preview ownership snapshots, grouped by canonical source and destination. */
+const previewOutputs = new Map<string, Map<string, TrackedPreview>>();
 /** Serialize exports per source so concurrent preview calls cannot leave multiple latest artifacts. */
 const exportQueues = new Map<string, Promise<void>>();
 
 function sourceKey(input: string): string {
   try {
-    return realpathSync(input);
+    return realpathSync.native(input);
   } catch {
     return resolve(input);
   }
@@ -292,78 +305,50 @@ interface PreviewCleanup {
   replaced: boolean;
 }
 
-/**
- * Keep the newly exported preview and retire every older tracked preview for the
- * same source. Cleanup happens only after the replacement exists, so a failed
- * export never destroys the last usable review image.
- */
-async function replaceTrackedPreview(input: string, latestOutput: string): Promise<PreviewCleanup> {
-  const key = sourceKey(input);
-  const previous = previewOutputs.get(key) ?? new Map<string, string>();
-  const latestPath = resolve(latestOutput);
-  const retained = new Map<string, string>([[latestPath, latestOutput]]);
+function fileAt(path: string): BigIntStats | undefined {
+  return lstatSync(path, { bigint: true, throwIfNoEntry: false });
+}
+
+function sameFile(a: BigIntStats, b: BigIntStats): boolean {
+  return a.dev === b.dev && a.ino === b.ino;
+}
+
+function stillOwned(current: BigIntStats | undefined, tracked: TrackedPreview): boolean {
+  return current?.isFile() === true && sameFile(current, tracked.file) && current.ctimeNs === tracked.file.ctimeNs &&
+    current.mtimeNs === tracked.file.mtimeNs && current.size === tracked.file.size;
+}
+
+/** Check and unlink without yielding to another export between those operations. */
+function retirePreviews(key: string, destination: string, latest: TrackedPreview | undefined): PreviewCleanup {
   const removed: string[] = [];
   const warnings: string[] = [];
-
-  const cleanup = await deletePreviewFiles(previous, latestPath);
-  for (const result of cleanup) {
-    if (result.warning !== undefined) {
-      retained.set(result.path, result.displayPath);
-      warnings.push(result.warning);
-    } else if (result.existed) removed.push(result.displayPath);
-  }
-
-  previewOutputs.set(key, retained);
-  return { removed, warnings, replaced: previous.size > 0 };
-}
-
-async function removeTrackedPreviews(input: string, finalOutput: string): Promise<PreviewCleanup> {
-  const key = sourceKey(input);
-  const previews = previewOutputs.get(key);
-  if (!previews) return { removed: [], warnings: [], replaced: false };
-
-  previewOutputs.delete(key);
-  const finalPath = resolve(finalOutput);
-  const removed: string[] = [];
-  const warnings: string[] = [];
-  const retry = new Map<string, string>();
-
-  const cleanup = await deletePreviewFiles(previews, finalPath);
-  for (const result of cleanup) {
-    if (result.warning !== undefined) {
-      retry.set(result.path, result.displayPath);
-      warnings.push(result.warning);
-    } else if (result.existed) removed.push(result.displayPath);
-  }
-
-  if (retry.size > 0) previewOutputs.set(key, retry);
-  return { removed, warnings, replaced: false };
-}
-
-interface PreviewDeletion {
-  path: string;
-  displayPath: string;
-  existed: boolean;
-  warning?: string;
-}
-
-/** Independent file deletions run concurrently; receipts retain insertion order. */
-async function deletePreviewFiles(previews: Map<string, string>, protectedPath: string): Promise<PreviewDeletion[]> {
-  return Promise.all(
-    [...previews].filter(([path]) => path !== protectedPath).map(async ([path, displayPath]) => {
-      const existed = existsSync(path);
-      try {
-        await rm(path, { force: true });
-        return { path, displayPath, existed };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { path, displayPath, existed, warning: `${displayPath}: ${message}` };
+  const retained = new Map<string, TrackedPreview>();
+  let replaced = false;
+  if (latest) retained.set(destination, latest);
+  for (const [path, preview] of previewOutputs.get(key) ?? []) {
+    if (path === destination) continue;
+    try {
+      const current = fileAt(path);
+      if (current && !current.isFile()) {
+        warnings.push(`${preview.displayPath}: no longer a regular file; left in place`);
+      } else if (stillOwned(current, preview)) {
+        replaced = true;
+        if (preview.removable) {
+          unlinkSync(path);
+          removed.push(preview.displayPath);
+        }
       }
-    }),
-  );
+    } catch (error) {
+      retained.set(path, preview);
+      warnings.push(`${preview.displayPath}: ${(error as Error).message}`);
+    }
+  }
+  if (retained.size > 0) previewOutputs.set(key, retained);
+  else previewOutputs.delete(key);
+  return { removed, warnings, replaced: latest !== undefined && replaced };
 }
 
-async function withSourceExportQueue<T>(input: string, action: () => Promise<T>): Promise<T> {
+async function withSourceExportQueue<T>(input: string, action: (key: string) => Promise<T>): Promise<T> {
   const key = sourceKey(input);
   const previous = exportQueues.get(key) ?? Promise.resolve();
   let release = (): void => {};
@@ -375,7 +360,7 @@ async function withSourceExportQueue<T>(input: string, action: () => Promise<T>)
 
   await previous;
   try {
-    return await action();
+    return await action(key);
   } finally {
     release();
     if (exportQueues.get(key) === tail) exportQueues.delete(key);
@@ -439,12 +424,15 @@ async function invoke(binary: string, fullArgs: string[]): Promise<string> {
 
 /**
  * Export a `.drawio` file to PNG/SVG/PDF/JPG. Resolves the binary, runs the CLI,
- * and (for embedded PNG) repairs the truncated IEND chunk. Throws on missing
- * input, missing CLI, or a failed export.
+ * and verifies the staged artifact before replacing the destination. An internal
+ * SVG finalizer can do further processing and verification before publication.
  */
-export async function exportDiagram(opts: ExportOptions): Promise<ExportResult> {
+export async function exportDiagram(
+  opts: ExportOptions,
+  finishStagedSvg?: (path: string) => Promise<void>,
+): Promise<ExportResult> {
   if (!existsSync(opts.input)) throw new Error(`input file not found: ${opts.input}`);
-  return withSourceExportQueue(opts.input, () => exportDiagramQueued(opts));
+  return withSourceExportQueue(opts.input, (key) => exportDiagramQueued(opts, key, finishStagedSvg));
 }
 
 async function invokeExport(binary: string, args: string[]): Promise<string> {
@@ -458,62 +446,139 @@ async function invokeExport(binary: string, args: string[]): Promise<string> {
   }
 }
 
-async function exportDiagramQueued(opts: ExportOptions): Promise<ExportResult> {
+function rejectSourceAlias(input: string, output: string): void {
+  const source = statSync(input, { bigint: true });
+  const destination = statSync(output, { bigint: true, throwIfNoEntry: false });
+  if (destination && sameFile(source, destination)) {
+    throw new Error(`output aliases the input file: ${output}`);
+  }
+}
+
+function publicationPath(output: string): string {
+  let path = output;
+  const seen = new Set<string>();
+  for (;;) {
+    if (path.endsWith("/") || path.endsWith(sep)) throw new Error(`export destination must name a file: ${output}`);
+    const parent = realpathSync.native(dirname(path));
+    const entry = join(parent, basename(path));
+    if (!fileAt(entry)?.isSymbolicLink()) return entry;
+    if (seen.has(entry)) throw new Error(`export destination has a symlink loop: ${output}`);
+    seen.add(entry);
+    const target = readlinkSync(entry);
+    // The final target can be new. Don't collapse '..' across a symlinked directory.
+    path = isAbsolute(target) ? target : `${parent}${sep}${target}`;
+  }
+}
+
+/** Renaming over a file must not bypass its write protection or broaden access to its contents. */
+function preserveFileAccess(destination: string, existing: BigIntStats, staged: string): void {
+  if (!existing.isFile()) throw new Error(`export destination is not a regular file: ${destination}`);
+  accessSync(destination, constants.W_OK);
+  const rendered = statSync(staged, { bigint: true });
+  if (existing.uid !== rendered.uid || existing.gid !== rendered.gid) {
+    chownSync(staged, Number(existing.uid), Number(existing.gid));
+  }
+  chmodSync(staged, Number(existing.mode & 0o777n));
+}
+
+function publishExport(
+  plan: ExportPlan, key: string, destination: string, staged: string, implicitPreview: boolean,
+): PreviewCleanup {
+  if (publicationPath(plan.output) !== destination) throw new Error(`export destination changed: ${plan.output}`);
+  rejectSourceAlias(plan.input, destination);
+  const existing = fileAt(destination);
+  const linked = fileAt(plan.output)?.isSymbolicLink() === true;
+  const previous = plan.mode === "preview" ? previewOutputs.get(key)?.get(destination) : undefined;
+  const replaced = previous !== undefined && stillOwned(existing, previous);
+  if (implicitPreview && (linked || (existing && !(replaced && previous?.removable)))) {
+    throw new Error(`preview destination is already in use: ${plan.output}; choose an explicit output`);
+  }
+  if (existing) preserveFileAccess(destination, existing, staged);
+  const stagedFile = plan.mode === "preview" ? fileAt(staged) : undefined;
+  // The private staging directory is on the same filesystem. Each export installs a new inode.
+  renameSync(staged, destination);
+  const published = stagedFile && fileAt(destination);
+  const latest = published && sameFile(published, stagedFile)
+    ? { displayPath: plan.output, removable: !linked, file: published }
+    : undefined;
+  const cleanup = retirePreviews(key, destination, latest);
+  return { ...cleanup, replaced: replaced || cleanup.replaced };
+}
+
+async function verifyRenderedFile(plan: ExportPlan, staged: string): Promise<boolean> {
+  const file = fileAt(staged);
+  if (!file) throw new Error(`draw.io reported no error but the output was not created: ${plan.output}`);
+  if (!file.isFile()) throw new Error(`draw.io output is not a regular file: ${plan.output}`);
+  if (plan.format === "png") return repairPng(staged, plan.embed);
+  if (plan.format === "svg") {
+    try {
+      await finishSvgFile(staged, plan.svgMargin);
+    } catch (error) {
+      throw new Error(`SVG post-processing failed: ${(error as Error).message}`, { cause: error });
+    }
+  } else {
+    const data = await readFile(staged);
+    const complete = plan.format === "pdf"
+      ? data.subarray(0, 5).toString("ascii") === "%PDF-" && data.subarray(-32).toString("ascii").trimEnd().endsWith("%%EOF")
+      : data.length > 4 && data.readUInt16BE(0) === 0xffd8 && data.readUInt16BE(data.length - 2) === 0xffd9;
+    if (!complete) throw new Error(`draw.io output is not a complete ${plan.format.toUpperCase()}: ${plan.output}`);
+  }
+  return false;
+}
+
+async function exportDiagramQueued(
+  opts: ExportOptions,
+  key: string,
+  finishStagedSvg?: (path: string) => Promise<void>,
+): Promise<ExportResult> {
+  const content = await pageContentSize(opts.input, opts.pageIndex ?? 1);
+  const plan = planExport(opts, platform(), isRootUser(), content?.width, content?.height);
+  rejectSourceAlias(plan.input, plan.output);
+  const destination = publicationPath(plan.output);
+
   const info = await resolveBinary(opts.binary);
   if (!info.available || !info.binary) {
     throw new Error(
       "draw.io CLI not found. Install draw.io desktop (macOS: `brew install --cask drawio`; " +
-        "others: https://github.com/jgraph/drawio-desktop/releases), or pass an explicit `binary` path.",
+        "others: https://github.com/jgraph/drawio-desktop/releases), or set DRAWME_DRAWIO_BINARY in Pi's launch environment.",
     );
   }
 
-  const content = await pageContentSize(opts.input, opts.pageIndex ?? 1);
-  const plan = planExport(opts, platform(), isRootUser(), content?.width, content?.height);
-  const fullArgs = [...plan.args, plan.input, ...plan.linuxExtra];
-
-  const command = await invokeExport(info.binary, fullArgs);
-  if (!existsSync(plan.output)) {
-    throw new Error(`draw.io reported no error but the output was not created: ${plan.output}`);
-  }
-
-  const repaired = plan.embed && plan.format === "png" ? await repairPng(plan.output) : false;
-  // Every SVG gets an even outer margin and shows its authored colors, matching PNG/PDF output in any viewer.
-  if (plan.format === "svg") {
-    try {
-      await finishSvgFile(plan.output, plan.svgMargin);
-    } catch (error) {
-      await rm(plan.output, { force: true });
-      throw new Error(`SVG post-processing failed: ${(error as Error).message}`, { cause: error });
+  const stageDir = await mkdtemp(join(dirname(destination), ".drawme-export-"));
+  try {
+    // draw.io uses the suffix to select the encoder even when -f is given.
+    const staged = join(stageDir, `artifact.${plan.format}`);
+    const fullArgs = [...plan.args.slice(0, -1), staged, plan.input, ...plan.linuxExtra];
+    const command = await invokeExport(info.binary, fullArgs);
+    const repaired = await verifyRenderedFile(plan, staged);
+    let animation: AnimatedSvgSummary | undefined;
+    if (plan.format === "svg" && (plan.animated || finishStagedSvg)) {
+      try {
+        if (plan.animated) animation = await enhanceAnimatedSvg(plan.input, staged, opts.pageIndex ?? 1);
+        await finishStagedSvg?.(staged);
+      } catch (error) {
+        throw new Error(`animated SVG verification failed: ${(error as Error).message}`, { cause: error });
+      }
     }
+    const cleanup = publishExport(plan, key, destination, staged, plan.mode === "preview" && opts.output === undefined);
+    return {
+      output: plan.output,
+      format: plan.format,
+      mode: plan.mode,
+      embed: plan.embed,
+      animated: plan.animated,
+      animation,
+      binary: info.binary,
+      version: info.version,
+      repaired,
+      replacedPreview: cleanup.replaced,
+      removedPreviews: cleanup.removed,
+      previewCleanupWarnings: cleanup.warnings,
+      command,
+    };
+  } finally {
+    await rm(stageDir, { recursive: true, force: true });
   }
-  let animation: AnimatedSvgSummary | undefined;
-  if (plan.animated) {
-    try {
-      animation = await enhanceAnimatedSvg(plan.input, plan.output, opts.pageIndex ?? 1);
-    } catch (error) {
-      await rm(plan.output, { force: true });
-      throw new Error(`animated SVG verification failed: ${(error as Error).message}`, { cause: error });
-    }
-  }
-  const cleanup =
-    plan.mode === "preview"
-      ? await replaceTrackedPreview(plan.input, plan.output)
-      : await removeTrackedPreviews(plan.input, plan.output);
-  return {
-    output: plan.output,
-    format: plan.format,
-    mode: plan.mode,
-    embed: plan.embed,
-    animated: plan.animated,
-    animation,
-    binary: info.binary,
-    version: info.version,
-    repaired,
-    replacedPreview: cleanup.replaced,
-    removedPreviews: cleanup.removed,
-    previewCleanupWarnings: cleanup.warnings,
-    command,
-  };
 }
 
 // --- Mermaid → .drawio conversion + ELK auto-layout (both need draw.io v30+) ---
@@ -531,7 +596,7 @@ async function requireBinary(minMajor: number, feature: string, override?: strin
   if (!info.available || !info.binary) {
     throw new Error(
       "draw.io CLI not found. Install draw.io desktop (macOS: `brew install --cask drawio`; " +
-        "others: https://github.com/jgraph/drawio-desktop/releases), or pass an explicit `binary` path.",
+        "others: https://github.com/jgraph/drawio-desktop/releases), or set DRAWME_DRAWIO_BINARY in Pi's launch environment.",
     );
   }
   if ((info.major ?? 0) < minMajor) {
@@ -633,18 +698,29 @@ export async function applyLayout(opts: LayoutOptions): Promise<LayoutResult> {
   return { output, preset: opts.preset, binary: info.binary, version: info.version, command };
 }
 
-/** Open a file in the OS default handler (draw.io desktop for `.drawio`). No version gate. */
+const DOCUMENT_EXTENSIONS = new Set([".drawio", ".png", ".svg", ".pdf", ".jpg", ".jpeg"]);
+
+/** Open an existing diagram or export in its OS default application. No version gate. */
 export async function openFile(path: string): Promise<{ opener: string }> {
   if (!existsSync(path)) throw new Error(`file not found: ${path}`);
+  const document = realpathSync.native(path);
+  if (!statSync(document).isFile()) throw new Error(`not a regular file: ${path}`);
+  if (!DOCUMENT_EXTENSIONS.has(extname(document).toLowerCase())) {
+    throw new Error(`not a supported diagram or export: ${path}`);
+  }
+
   const plat = platform();
   if (plat === "darwin") {
-    await run("open", [path], 15_000);
+    await run("open", [document], 15_000);
     return { opener: "open" };
   }
   if (plat === "win32") {
-    await run("cmd", ["/c", "start", "", path], 15_000);
-    return { opener: "start" };
+    const root = process.env.SystemRoot;
+    if (!root || !win32.isAbsolute(root)) throw new Error("Windows SystemRoot is not configured");
+    // Call the system's file-association helper directly, not cmd.exe's start command.
+    await run(win32.join(root, "System32", "rundll32.exe"), ["shell32.dll,ShellExec_RunDLL", document], 15_000);
+    return { opener: "rundll32" };
   }
-  await run("xdg-open", [path], 15_000);
+  await run("xdg-open", [document], 15_000);
   return { opener: "xdg-open" };
 }
