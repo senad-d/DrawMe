@@ -1,4 +1,4 @@
-/** A complete 1×1 PNG for draw.io renderer stand-ins. */
+/** A complete 1×1 PNG (opaque white, grayscale + alpha) without editable metadata. */
 export const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
 
 export type ResultContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
