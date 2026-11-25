@@ -13,40 +13,77 @@ on:
           - next
           - beta
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: publish-npm
   cancel-in-progress: false
 
 jobs:
-  publish:
-    environment: npm
+  validate:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: Verify default branch
-        if: github.ref_name != github.event.repository.default_branch
+      # GitHub expression comparisons ignore case; validation must also verify the exact ref.
+      - name: Verify exact default branch ref
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          CURRENT_REF: ${{ github.ref_name }}
+          CURRENT_REF: ${{ github.ref }}
         run: |
-          echo "Publish workflow must run from default branch '$DEFAULT_BRANCH'."
-          echo "Current ref is '$CURRENT_REF'."
-          exit 1
+          if [ "$CURRENT_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "Publish workflow must run from refs/heads/$DEFAULT_BRANCH, not $CURRENT_REF."
+            exit 1
+          fi
 
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Check out dispatch SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Match the publishing npm version
+        run: npm install --global npm@11.18.0 --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate package
+        run: npm run validate
+
+  publish:
+    needs: validate
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # Required hosted setting (verify before release): restrict the npm environment's
+    # deployment branches and tags to the default branch only, with no tag rules.
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out validated dispatch SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: 22.19.0
           registry-url: "https://registry.npmjs.org"
-          cache: npm
+          package-manager-cache: false
 
       - name: Set up npm with trusted publishing support
         run: npm install --global npm@11.18.0 --ignore-scripts
@@ -99,16 +136,15 @@ jobs:
             exit 1
           fi
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Validate package
-        run: npm run validate
-
       - name: Publish to npm with provenance
         env:
           DIST_TAG: ${{ inputs['dist-tag'] }}
-        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        run: |
+          case "$DIST_TAG" in
+            latest|next|beta) ;;
+            *) echo "Invalid npm dist-tag."; exit 1 ;;
+          esac
+          npm publish --provenance --access public --tag "$DIST_TAG" --ignore-scripts
 
       - name: Create and push Git release tag
         env:
@@ -116,5 +152,5 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$RELEASE_TAG" --message "Release $RELEASE_TAG"
+          git tag --annotate "$RELEASE_TAG" --message "Release $RELEASE_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$RELEASE_TAG"
