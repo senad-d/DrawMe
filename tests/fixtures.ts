@@ -1,3 +1,33 @@
+import childProcess, { type SpawnOptions } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+
+/** Run only the named fake renderers through Node, preserving their argv and spawn options. */
+export function installNodeRendererFixture(scriptPaths: readonly string[]): () => void {
+  const approved = new Set(scriptPaths);
+  const spawn = childProcess.spawn;
+  const { getuid, geteuid } = process;
+  const rootUid = getuid?.() === 0;
+  const rootEuid = geteuid?.() === 0;
+  if (rootUid) process.getuid = () => 1000;
+  if (rootEuid) process.geteuid = () => 1000;
+
+  childProcess.spawn = ((...call: [string, (string[] | SpawnOptions)?, SpawnOptions?]) => {
+    const [bin, args, options] = call;
+    if (!approved.has(bin)) return Reflect.apply(spawn, childProcess, call);
+    const argv = Array.isArray(args) ? args : [];
+    const settings = Array.isArray(args) ? options : args ?? options;
+    return spawn(process.execPath, [bin, ...argv], settings ?? {});
+  }) as typeof spawn;
+  // Keep existing named ESM imports (including those in the renderer module) in sync.
+  syncBuiltinESMExports();
+  return () => {
+    childProcess.spawn = spawn;
+    if (rootUid) process.getuid = getuid;
+    if (rootEuid) process.geteuid = geteuid;
+    syncBuiltinESMExports();
+  };
+}
+
 /** A complete 1×1 PNG for draw.io renderer stand-ins. */
 export const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
 

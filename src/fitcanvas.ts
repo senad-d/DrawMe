@@ -5,10 +5,12 @@
  * oversized ones without touching element sizes or relative positions. No
  * draw.io CLI involved.
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { type DomEl, attr, childrenByTag, directText, firstByTag } from "./dom";
+import { type DomEl, attr, childrenByTag, diagramPages, directText, firstByTag, pageModel } from "./dom";
 import { type ById, collectCellsWithIds, contentBounds, geometryIsRelative, pyFloat } from "./geometry";
+import { withSourceEdits } from "./source-edits";
+import { readDiagramXml } from "./xml-input";
 
 export const DEFAULT_FIT_MARGIN = 40;
 
@@ -131,8 +133,8 @@ function fitModel(name: string, model: DomEl, margin: number): FitPageResult {
 }
 
 function fitPage(diagram: DomEl, margin: number): FitPageResult {
-  const name = attr(diagram, "name") ?? "?";
-  const model = firstByTag(diagram, "mxGraphModel");
+  const name = diagram.tagName === "mxGraphModel" ? "?" : (attr(diagram, "name") ?? "?");
+  const model = pageModel(diagram);
   if (!model) {
     const reason = directText(diagram).trim() ? "compressed page (cannot fit)" : "no <mxGraphModel>";
     return { page: name, status: "skipped", reason };
@@ -144,29 +146,24 @@ function fitPage(diagram: DomEl, margin: number): FitPageResult {
 export async function fitCanvasFile(options: FitCanvasOptions): Promise<FitCanvasResult> {
   const margin = options.margin ?? DEFAULT_FIT_MARGIN;
   if (!Number.isFinite(margin) || margin < 0) throw new Error(`invalid margin ${String(options.margin)}`);
-  const output = options.output ?? options.input;
-  const xml = await readFile(options.input, "utf8");
-  const doc = new DOMParser().parseFromString(xml, "text/xml");
-  const root = doc.documentElement as unknown as DomEl | null;
-  if (!root) throw new Error("no root element (malformed XML)");
+  const input = options.input;
+  const output = options.output ?? input;
+  return withSourceEdits(input === output ? [input] : [input, output], async () => {
+    const xml = await readDiagramXml(input);
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const root = doc.documentElement as unknown as DomEl | null;
+    if (!root) throw new Error("no root element (malformed XML)");
 
-  const diagrams = childrenByTag(root, "diagram");
-  let pages: FitPageResult[];
-  if (diagrams.length > 0) {
-    pages = diagrams.map((diagram) => fitPage(diagram, margin));
-  } else if (root.tagName === "mxGraphModel") {
-    pages = [fitModel("?", root, margin)];
-  } else {
-    pages = [{ page: "?", status: "skipped", reason: "no <diagram> pages and root is not <mxGraphModel>" }];
-  }
-
-  const changed = pages.some((page) => page.status === "fitted");
-  if (changed || output !== options.input) {
-    let serialized = new XMLSerializer().serializeToString(doc as never);
-    const declaration = /^<\?xml[^>]*\?>/.exec(xml)?.[0];
-    if (declaration && !serialized.startsWith("<?xml")) serialized = `${declaration}\n${serialized}`;
-    if (xml.endsWith("\n") && !serialized.endsWith("\n")) serialized += "\n";
-    await writeFile(output, serialized, "utf8");
-  }
-  return { input: options.input, output, margin, changed, pages };
+    const pages = diagramPages(root).map((diagram) => fitPage(diagram, margin));
+    const changed = pages.some((page) => page.status === "fitted");
+    if (changed || output !== input) {
+      let serialized = new XMLSerializer().serializeToString(doc as never);
+      const declaration = /^<\?xml[^>]*\?>/.exec(xml)?.[0];
+      if (declaration && !serialized.startsWith("<?xml")) serialized = `${declaration}\n${serialized}`;
+      if (xml.endsWith("\n") && !serialized.endsWith("\n")) serialized += "\n";
+      // Update the file itself, not its directory entry: symlinks and hard links keep working.
+      await writeFile(output, serialized, "utf8");
+    }
+    return { input, output, margin, changed, pages };
+  });
 }
