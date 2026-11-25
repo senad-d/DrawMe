@@ -6,11 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Final PNG/JPG dimensions, including the border, are limited to 6,000,000 pixels even when a width is requested. PNG and JPG previews fit within 2000 px on each side. The public export tool accepts `width`, not `height`; see [export sizing](docs/reference.md#mode-and-naming-behavior) for format-specific behavior.
+
 ## [0.1.11] - 2026-11-09
 
 ### Fixed
 
-- Final PNG/JPG exports use the selected page's content width and height to lower the raster scale when needed, targeting a six-million-pixel budget to avoid draw.io `UnknownVizError` failures. Explicit width and height requests remain unchanged.
+- Final PNG/JPG exports use the selected page's content width and height to lower the raster scale when needed, targeting a six-million-pixel budget to avoid draw.io `UnknownVizError` failures. That release did not cap explicit dimensions in the internal export API. The registered tool exposed `width` only.
 
 ## [0.1.10] - 2026-10-27
 

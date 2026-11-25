@@ -10,12 +10,13 @@ DrawMe (`@senad-d/drawme`) is a Pi extension (TypeScript, ESM, Node >= 22.19) th
 
 ```bash
 npm ci --ignore-scripts        # install (never plain npm install)
-npm run validate               # required gate: golden check + lint + tests
+npm run validate               # required gate: check:golden → lint → test → check:pack
 npm run typecheck              # tsc --noEmit
 npm run lint                   # typecheck + eslint + format:check
 npm run lint:eslint            # eslint . --max-warnings=0
 npm run format:check           # custom checker (LF endings, no trailing whitespace, final newline, valid JSON)
-npm run check:golden           # SHA-256 check of the immutable golden agent example
+npm run check:golden           # SHA-256 baseline for bundled assets/ paths and contents
+npm run check:pack             # verify the npm package contents without publishing
 npm test                       # vitest run (tests/**/*.test.ts)
 npm run coverage               # vitest run --coverage
 npm run dev                    # load this checkout in Pi: pi --no-extensions -e .
@@ -24,7 +25,7 @@ npm run dev                    # load this checkout in Pi: pi --no-extensions -e
 Run a single test file:
 
 ```bash
-npx vitest run tests/smoke.test.ts
+npx vitest run tests/dom.test.ts
 ```
 
 ## Pi documentation

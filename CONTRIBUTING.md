@@ -12,8 +12,8 @@ Requires Node.js ≥ 22.19 and, for the real-export tests, the draw.io desktop C
 ```bash
 git clone https://github.com/senad-d/DrawMe.git
 cd DrawMe
-npm ci --ignore-scripts   # first time on a fresh clone without a lockfile: npm install
-npm run validate          # golden check + lint + tests
+npm ci --ignore-scripts   # install from the committed lockfile
+npm run validate          # run the full gate below
 pi --no-extensions -e .   # load this checkout in Pi
 ```
 
@@ -21,9 +21,10 @@ pi --no-extensions -e .   # load this checkout in Pi
 
 `npm run validate` must pass before a change is merged. It runs, in order:
 
-1. `npm run check:golden` — SHA-256 integrity of the bundled upstream assets under `assets/`.
+1. `npm run check:golden` — SHA-256 baseline covering the paths and contents of bundled `assets/`, including the shape index and authoring references.
 2. `npm run lint` — `tsc --noEmit`, `eslint . --max-warnings=0`, and the custom `format:check`.
 3. `npm test` — the Vitest suite.
+4. `npm run check:pack` — check the npm dry-run manifest for required package files without publishing.
 
 Individual checks are available as `npm run typecheck`, `npm run lint:eslint`, `npm run format:check`,
 `npm run check:golden`, `npm test`, and `npm run coverage`.
@@ -35,9 +36,8 @@ Individual checks are available as `npm run typecheck`, `npm run lint:eslint`, `
   [`SECURITY.md`](SECURITY.md).
 - **Pure TypeScript / Node.** No Python or other runtime dependencies. Prefer Node built-ins and the
   existing small dependencies (`typebox`, `@xmldom/xmldom`).
-- **Immutable bundled assets.** Files under `assets/` are vendored upstream data (the shape index and the
-  authoring references). Change them only intentionally, then run `npm run check:golden -- --update` and
-  explain why in the PR.
+- **Bundled asset baseline.** Change the vendored shape index and bundled authoring references only
+  intentionally. Run `npm run check:golden -- --update` after those edits and explain why in the PR.
 - **Formatting.** LF line endings, no trailing whitespace, a single final newline, two-space indent.
   `.editorconfig` and `npm run format:check` enforce this.
 - **Match the surrounding code.** Keep the comment density, naming, and idioms already in the file.
