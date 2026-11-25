@@ -1,4 +1,6 @@
-# Visual Review and Fixing Implementation Tasks
+# Visual Review and Fixing Implementation Tasks (Historical)
+
+> **Historical checklist — not current workflow guidance.** The retry counts and human approval gate described below are obsolete. The current `/drawme` workflow allows up to eight correction retries in total and does not require human approval before final export. See the [current workflow](../README.md#the-drawme-workflow) and the [extension reference](reference.md).
 
 ## Goal
 
