@@ -551,7 +551,7 @@ function hasAnimatedPath(root: DomEl): boolean {
   });
 }
 
-function verifyFlowGroups(ids: string[], groups: Map<string, DomEl>): void {
+export function verifyFlowGroups(ids: string[], groups: Map<string, DomEl>): void {
   const missing = ids.filter((id) => !groups.has(id));
   if (missing.length > 0) {
     throw new Error(`SVG is missing animated connector group(s): ${missing.join(", ")}`);
