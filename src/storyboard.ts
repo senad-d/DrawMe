@@ -1,13 +1,13 @@
 /**
  * Storyboard: renders a motion timeline as a grid of static frames on one
- * draw.io page, one tile per sequential step, so motion order and visibility
+ * draw.io page, one tile per sampled visual batch, so motion order and visibility
  * can be reviewed in a single PNG. Each tile is a copy of the page with cell
- * opacity set to its state after that step; highlight and travel steps show
+ * opacity set to its state after that batch; highlight and travel steps show
  * their accent color on the stroke.
  */
-import { XMLSerializer } from "@xmldom/xmldom";
+import { XMLSerializer, type Element } from "@xmldom/xmldom";
 import { type DomEl, attr, elemChildren, firstByTag } from "./dom";
-import { contentBounds, collectCellsWithIds, pyFloat } from "./geometry";
+import { contentBounds, collectCellsWithIds, isVisible, pyFloat } from "./geometry";
 import { shiftCell } from "./fitcanvas";
 import { type MotionFrame, isDarkBackground } from "./motion";
 
@@ -83,18 +83,43 @@ function effectiveOpacity(id: string, frame: MotionFrame, parents: Map<string, s
   return opacity;
 }
 
-function storyboardCell(entry: PageEntry, prefix: string, layers: Set<string>, ox: number, oy: number): DomEl {
+function cloneableEntries(entries: PageEntry[], layers: Set<string>): PageEntry[] {
+  const cells = new Map(entries.map(({ id, cell }) => [id, cell]));
+  const candidates = entries.filter(({ id, cell }) => id !== "0" && !layers.has(id) && isVisible(cell, cells));
+  const retained = new Set(candidates.map(({ id }) => id));
+  const dependents = new Map<string, string[]>();
+  const dropped = new Set<string>();
+  for (const { id, cell } of candidates) {
+    for (const key of ["parent", "source", "target"]) {
+      const ref = attr(cell, key);
+      if (ref === null || (key === "parent" && layers.has(ref))) continue;
+      if (!retained.has(ref)) dropped.add(id);
+      else {
+        const list = dependents.get(ref) ?? [];
+        list.push(id);
+        dependents.set(ref, list);
+      }
+    }
+  }
+  // Dropping an edge to an omitted cell also drops its labels and any other dependents.
+  for (const id of dropped) {
+    for (const dependent of dependents.get(id) ?? []) dropped.add(dependent);
+  }
+  return candidates.filter(({ id }) => !dropped.has(id));
+}
+
+function storyboardCell(entry: PageEntry, cloneIds: Map<string, string>, ox: number, oy: number): DomEl {
   const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
   const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
-  element.setAttribute("id", `${prefix}${entry.id}`);
-  const parent = attr(cell, "parent");
-  const topLevel = parent === null || layers.has(parent);
-  cell.setAttribute("parent", topLevel ? "1" : `${prefix}${parent}`);
+  element.setAttribute("id", cloneIds.get(entry.id)!);
+  if (element !== cell) (cell as unknown as Element).removeAttribute("id");
+  const parent = cloneIds.get(attr(cell, "parent") ?? "");
+  cell.setAttribute("parent", parent ?? "1");
   for (const end of ["source", "target"]) {
     const ref = attr(cell, end);
-    if (ref !== null) cell.setAttribute(end, `${prefix}${ref}`);
+    if (ref !== null) cell.setAttribute(end, cloneIds.get(ref)!);
   }
-  if (topLevel) shiftCell(cell, ox, oy);
+  if (parent === undefined) shiftCell(cell, ox, oy);
   return element;
 }
 
@@ -118,6 +143,8 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
   const entries = pageEntries(model);
   const parents = new Map(entries.map((entry) => [entry.id, attr(entry.cell, "parent")]));
   const layers = new Set(entries.filter((entry) => attr(entry.cell, "parent") === "0").map((entry) => entry.id));
+  const clones = cloneableEntries(entries, layers);
+  const hasChromeCollision = clones.some(({ id }) => id === "frame" || id === "caption");
   const columns = Math.min(frames.length, width >= height ? 2 : 3);
   const rows = Math.ceil(frames.length / columns);
   const tileHeight = CAPTION_HEIGHT + height;
@@ -129,17 +156,19 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
 
   frames.forEach((frame, index) => {
     const prefix = `f${index + 1}-`;
+    // Keep existing frame IDs where possible; a separate namespace cannot collide with any clone.
+    const chromePrefix = hasChromeCollision ? `board-${prefix}` : prefix;
     const ox = GAP + (index % columns) * (width + GAP);
     const oy = GAP + Math.floor(index / columns) * (tileHeight + GAP);
     const seconds = (frame.time / 1000).toFixed(1);
     const caption = `${index + 1} · ${seconds}s · ${frame.label}`;
     parts.push(
-      `<mxCell id="${prefix}frame" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;fillColor=none;strokeColor=${frameColor};dashed=1;" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy + CAPTION_HEIGHT}" width="${width}" height="${height}" as="geometry"/></mxCell>`,
-      `<mxCell id="${prefix}caption" value="${escapeXml(caption)}" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=${captionColor};" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy}" width="${width}" height="${CAPTION_HEIGHT - 8}" as="geometry"/></mxCell>`,
+      `<mxCell id="${chromePrefix}frame" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;fillColor=none;strokeColor=${frameColor};dashed=1;" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy + CAPTION_HEIGHT}" width="${width}" height="${height}" as="geometry"/></mxCell>`,
+      `<mxCell id="${chromePrefix}caption" value="${escapeXml(caption)}" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=${captionColor};" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy}" width="${width}" height="${CAPTION_HEIGHT - 8}" as="geometry"/></mxCell>`,
     );
-    for (const entry of entries) {
-      if (entry.id === "0" || layers.has(entry.id)) continue;
-      const element = storyboardCell(entry, prefix, layers, ox, oy + CAPTION_HEIGHT);
+    const cloneIds = new Map(clones.map(({ id }) => [id, `${prefix}${id}`]));
+    for (const entry of clones) {
+      const element = storyboardCell(entry, cloneIds, ox, oy + CAPTION_HEIGHT);
       applyFrameStyle(element, entry.id, frame, parents);
       parts.push(serializer.serializeToString(element as never));
     }

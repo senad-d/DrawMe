@@ -12,24 +12,27 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { constants } from "node:fs";
+import { open, readFile, realpath } from "node:fs/promises";
 import {
   applyLayout,
   convertMermaid,
   exportDiagram,
   openFile,
   resolveBinary,
+  type DrawioInfo,
   type ExportFormat,
-  type LayoutPreset,
 } from "./drawio";
 import { validateFile } from "./validate";
 import { fitCanvasFile } from "./fitcanvas";
 import { searchShapes } from "./shapesearch";
 import { explainFile } from "./explain";
-import { drawmeWorkflow } from "./workflow";
+import { cliCapabilities, drawmeWorkflow } from "./workflow";
 import { animateDiagram } from "./animate";
 import { MOTION_EFFECTS, SLIDE_DIRECTIONS } from "./motion";
+import { repairPngBuffer } from "./png";
+import { checkRasterSize } from "./export-size";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REF_DIR = resolve(HERE, "..", "assets", "references");
@@ -43,10 +46,10 @@ const exportParams = Type.Object({
   mode: Type.Optional(MODE),
   output: Type.Optional(Type.String({ description: "Output path; defaults next to the input" })),
   scale: Type.Optional(Type.Number({ description: "Raster scale for a final PNG/JPG (default 2)" })),
-  width: Type.Optional(Type.Number({ description: "Target width in px; overrides scale. Preview uses 2000" })),
+  width: Type.Optional(Type.Number({ description: "Target width in px; overrides scale, subject to raster and preview size limits" })),
   transparent: Type.Optional(Type.Boolean({ description: "Transparent background (PNG only)" })),
   border: Type.Optional(Type.Number({ description: "Outer margin in px around the content (default 40, matching drawio_fit_canvas)" })),
-  pageIndex: Type.Optional(Type.Number({ description: "1-based page to export from a multi-page file" })),
+  pageIndex: Type.Optional(Type.Integer({ minimum: 1, description: "1-based page to export from a multi-page file" })),
   embed: Type.Optional(
     Type.Boolean({ description: "Embed diagram XML for an editable output. Default: on for final PNG/SVG/PDF, off for preview" }),
   ),
@@ -82,57 +85,102 @@ const animateParams = Type.Object({
   ),
   loop: Type.Optional(Type.Boolean({ description: "Repeat the sequence (default true)" })),
   hold: Type.Optional(Type.Number({ description: "Pause in ms on the final state before a loop restarts (default 1600)" })),
-  pageIndex: Type.Optional(Type.Number({ description: "1-based page to animate (default 1)" })),
+  pageIndex: Type.Optional(Type.Integer({ minimum: 1, description: "1-based page to animate (default 1)" })),
   output: Type.Optional(Type.String({ description: "Animated SVG path (default <name>.animated.svg next to the input)" })),
   storyboard: Type.Optional(
-    Type.Boolean({ description: "Render <name>.storyboard.png with one frame per step for review (default true)" }),
+    Type.Boolean({ description: "Render a PNG storyboard with up to 12 sampled visual-batch frames next to the SVG (default true)" }),
   ),
 });
 
 const textResult = (text: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text }], details });
 
-/**
- * Whether the active model accepts image blocks. Unknown models fail open
- * (attach the image) like Pi's built-in read tool; the provider layer replaces
- * unsupported images with a text placeholder, so failing open is always safe.
- */
-function modelSupportsImages(ctx: ExtensionContext | undefined): boolean {
-  return ctx?.model?.input.includes("image") ?? true;
+function sessionPath(path: string, ctx: ExtensionContext | undefined): string {
+  const cwd = ctx?.cwd;
+  if (!cwd || !path || isAbsolute(path)) return path;
+  if (process.platform === "win32" && /^[a-z]:/i.test(path)) {
+    if (path.slice(0, 2).toLowerCase() !== cwd.slice(0, 2).toLowerCase()) {
+      throw new Error(`use an absolute path for a drive other than the session drive: ${path}`);
+    }
+    path = path.slice(2) || ".";
+  }
+  // Preserve trailing separators and let the filesystem resolve '..' across symlinked parents.
+  return `${cwd}${cwd.endsWith(sep) || cwd.endsWith("/") ? "" : sep}${path}`;
 }
 
-async function exportResult(text: string, result: Awaited<ReturnType<typeof exportDiagram>>, attachImage: boolean) {
-  const content: (
-    | { type: "text"; text: string }
-    | { type: "image"; data: string; mimeType: "image/png" }
-  )[] = [{ type: "text", text }];
-  const imageAttached = result.mode === "preview" && result.format === "png" && attachImage;
-  if (imageAttached) {
-    const png = await readFile(result.output);
-    content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
-  }
-  return { content, details: { ...result, imageAttached } };
+function sessionPaths<T extends { input?: string; output?: string }>(opts: T, ctx: ExtensionContext | undefined): T {
+  return {
+    ...opts,
+    input: opts.input === undefined ? undefined : sessionPath(opts.input, ctx),
+    output: opts.output === undefined ? undefined : sessionPath(opts.output, ctx),
+  };
 }
+
+function modelSupportsImages(ctx: ExtensionContext | undefined): boolean {
+  return ctx?.model?.input?.includes("image") === true;
+}
+
+function hasComparablePreview(ctx: ExtensionContext | undefined, source: string, pageIndex: number): boolean {
+  const session = ctx?.sessionManager;
+  const messages = session?.buildSessionProjection?.().messages ??
+    session?.getBranch?.().flatMap((entry) => entry.type === "message" ? [entry.message] : []) ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "toolResult" || message.toolName !== "drawio_export" || message.isError) continue;
+    const details = message.details as { mode?: string; format?: string; source?: string; pageIndex?: number; imageAttached?: boolean } | undefined;
+    if (details?.source !== source) continue;
+    if (details.mode === "final") return false;
+    if (details.mode === "preview" && details.pageIndex === pageIndex) {
+      return details.format === "png" && details.imageAttached === true &&
+        message.content.some((block) => block.type === "image" && block.mimeType === "image/png" && !!block.data);
+    }
+  }
+  return false;
+}
+
+async function readImage(path: string, mode: "preview" | "final", width?: number, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  try {
+    if (!(await file.stat()).isFile()) throw new Error(`attachment is not a regular file: ${path}`);
+    const png = await file.readFile({ signal });
+    repairPngBuffer(png, false, { preview: true, size: (w, h) => checkRasterSize({ input: path, width }, mode, w, h) });
+    return { type: "image" as const, data: png.toString("base64"), mimeType: "image/png" as const };
+  } finally {
+    await file.close();
+  }
+}
+
+function receipt(text: string, details: object, image?: Awaited<ReturnType<typeof readImage>>) {
+  const result = textResult(text, { ...details, imageAttached: image !== undefined });
+  return { ...result, content: image ? [...result.content, image] : result.content };
+}
+
+function unavailableCli(info: DrawioInfo): string {
+  return `draw.io CLI unavailable. ${info.reason ?? "Install with `brew install --cask drawio` (macOS) or from https://github.com/jgraph/drawio-desktop/releases."}`;
+}
+
+const COMMAND_ANIMATION_GUIDANCE =
+  "animated-svg only supports native draw.io page sequences or connector flow. For stored DrawMe motion (drawmeMotion), use drawio_animate and omit steps.";
+const EXPORT_COMMAND_USAGE = `Usage: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]. ${COMMAND_ANIMATION_GUIDANCE}`;
 
 export default function drawme(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "drawio_check",
     label: "draw.io: check CLI",
     description:
-      "Detect the draw.io desktop CLI: returns the binary path, version, and whether it supports Mermaid import / the --layout pass (both need v30+). Call before exporting.",
+      "Detect the draw.io desktop CLI: returns its binary path, version, and support for Mermaid import and ELK layout (both need draw.io 30.2.4 or later). Call before exporting.",
     promptSnippet: "Check whether the draw.io CLI is available before exporting a diagram.",
     parameters: Type.Object({}),
     async execute() {
       const info = await resolveBinary();
       if (!info.available) {
         return textResult(
-          "draw.io CLI not found. Install with `brew install --cask drawio` (macOS) or from " +
-            "https://github.com/jgraph/drawio-desktop/releases. You can still author .drawio XML without it.",
+          `${unavailableCli(info)} You can still author .drawio XML without it.`,
           info,
         );
       }
       return textResult(
-        `draw.io available: ${info.binary}\nversion: ${info.version} (major ${info.major})\n` +
-          `Mermaid import / --layout: ${info.supportsMermaid ? "supported (v30+)" : "unsupported (needs v30+)"}`,
+        `draw.io available: ${info.binary}\nversion: ${info.version ?? "unknown"}\n${cliCapabilities(info)}`,
         info,
       );
     },
@@ -142,15 +190,22 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_export",
     label: "draw.io: export",
     description:
-      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is clean, width-capped, and never embedded; when the current model can view images it is attached to the tool result for visual review, and the result text always states whether it was attached. A successful preview or final export can retire superseded files still owned by a preview of the same source. A replacement preview asks for a fixed/not-fixed/regressed verdict against the prior image. mode:'final' creates the deliverable (embedded editable output; truncated PNG IEND is repaired). SVG output is pinned to the authored colors so it matches PNG/PDF in every viewer, including dark-mode ones.",
+      "Export a .drawio file to PNG/SVG/PDF/JPG via the draw.io CLI. Set animated:true for a verified final SVG: persistent flowAnimation connectors are preserved and portable page visibility/opacity/fade/wait sequences are compiled into standalone SVG CSS with a reduced-motion fallback. Animated export rejects static output and unsupported sequence effects. A successful mode:'preview' PNG is size-capped on both axes and never embedded; it is attached for visual review only when the current model supports images. The result states whether an image was attached. Compare only with a prior attached PNG of the same source and page in the current conversation. Successful previews and finals can retire superseded files still tracked and owned by previews of the same source. mode:'final' creates the deliverable (editable embedding by default except for JPG, with repair for a truncated embedded PNG tail). SVG output is pinned to the authored colors, including in dark-mode viewers.",
     promptSnippet:
       "Export a .drawio to PNG/SVG/PDF/JPG; set animated:true for a verified final animated SVG. Preview mode attaches a PNG for visual review when supported.",
     parameters: exportParams,
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      let delivered: object | undefined;
       try {
-        // Tool arguments can contain undeclared properties. Never forward an executable selector.
-        const r = await exportDiagram({ ...params, binary: undefined });
-        const canView = modelSupportsImages(ctx);
+        // Tool arguments can contain undeclared properties. Never forward internal options from them.
+        const options = { ...sessionPaths(params, ctx), binary: undefined, height: undefined, signal };
+        const r = await exportDiagram(options);
+        const source = await realpath(options.input);
+        const pageIndex = options.pageIndex ?? 1;
+        const details = { ...r, source, pageIndex };
+        delivered = { ...details, imageAttached: false };
+        const image = r.mode === "preview" && r.format === "png" && modelSupportsImages(ctx)
+          ? await readImage(r.output, "preview", options.width, signal) : undefined;
         const lines = [`Exported ${r.output}`, `format=${r.format} mode=${r.mode} embed=${r.embed} animated=${r.animated}`];
         if (r.animation) {
           lines.push(
@@ -166,21 +221,21 @@ export default function drawme(pi: ExtensionAPI): void {
         const versionSuffix = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionSuffix}`);
         if (r.mode === "preview" && r.format === "png") {
-          if (!canView) {
+          if (!image) {
             lines.push(
-              "Preview image NOT attached: the current model cannot view images. Do not describe or judge the render; review structurally with drawio_validate and drawio_explain, and share the exported path so the user can view it.",
+              "Preview image NOT attached: the current model cannot view images or image support is unknown. Do not describe or judge the render; review structurally with drawio_validate and drawio_explain. Report the path only if the file still exists when you finish.",
             );
-          } else if (r.replacedPreview) {
+          } else if (hasComparablePreview(ctx, source, pageIndex)) {
             lines.push(
-              "Preview image attached below. It replaces the previous preview, whose image is still visible earlier in this conversation: compare the two at each finding you addressed and record a verdict — fixed, not fixed, or regressed — before editing further.",
+              "Preview image attached below. Compare it with the previous attached preview of this page in this conversation: record a verdict — fixed, not fixed, or regressed — for each finding you addressed before editing further.",
             );
           } else {
             lines.push("Preview image attached below. Critique it against the current review pass's checklist before editing the source.");
           }
         }
-        return exportResult(lines.join("\n"), r, canView);
+        return receipt(lines.join("\n"), details, image);
       } catch (e) {
-        return textResult(`Export failed: ${(e as Error).message}`, { error: (e as Error).message });
+        return textResult(`Export failed: ${(e as Error).message}`, { ...delivered, error: (e as Error).message });
       }
     },
   });
@@ -189,13 +244,15 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_animate",
     label: "draw.io: animate",
     description:
-      "Animate an existing .drawio page and export a verified standalone animated SVG. Pass ordered motion steps (fadeIn, fadeOut, dim, popIn, slideIn, drawIn, highlight, travel, wait) with cell ids, optional duration, stagger, parallel, direction, and color. Cells whose first effect is an entrance start hidden. The steps are validated against the page, stored on the page root cell (a source edit), compiled to CSS keyframes and SMIL connector dots with a reduced-motion fallback, and injected into a draw.io SVG export. Omit steps to re-export the stored motion after layout edits. By default a storyboard PNG shows the end state of each step as a captioned frame grid; when the current model can view images it is attached. The storyboard is static: it proves order and visibility, not easing. Effects play in browsers and SVG image embeds; draw.io itself does not play them. Persistent flowAnimation connectors are kept. highlight and travel default to the page theme's accent, and the SVG keeps the authored theme colors in every viewer.",
+      "Animate an existing .drawio page and export a verified standalone animated SVG. Pass ordered motion steps (fadeIn, fadeOut, dim, popIn, slideIn, drawIn, highlight, travel, wait) with cell ids, optional duration, stagger, parallel, direction, and color. Cells whose first effect is an entrance start hidden. The steps are validated against the page, stored on the page root cell (a source edit), compiled to CSS keyframes and SMIL connector dots with a reduced-motion fallback, and injected into a draw.io SVG export. Omit steps to re-export the stored motion after layout edits. By default a storyboard PNG shows up to 12 sampled visual-batch end states as captioned frames; parallel steps share a batch and standalone waits have no tile. It is attached when the model supports images. The storyboard is static: it proves order and visibility, not easing. Effects play in browsers and SVG image embeds; draw.io itself does not play them. Persistent flowAnimation connectors are kept. highlight and travel default to the page theme's accent, and the SVG keeps the authored theme colors in every viewer.",
     promptSnippet:
       "Add motion to a .drawio page (draw-in connectors, pop/slide entrances, highlights, travelling dots, cascades) and export a verified animated SVG with a storyboard.",
     parameters: animateParams,
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, params, signal, _onUpdate, ctx) {
       try {
-        const r = await animateDiagram({ ...params, binary: undefined });
+        const r = await animateDiagram({ ...sessionPaths(params, ctx), binary: undefined, signal });
+        const image = r.storyboard && modelSupportsImages(ctx)
+          ? await readImage(r.storyboard, "final", 2000, signal) : undefined;
         const playback = r.loop ? `loop every ${r.durationMs}ms` : "plays once";
         const lines = [
           `Animated ${r.output} (page '${r.page}')`,
@@ -204,29 +261,21 @@ export default function drawme(pi: ExtensionAPI): void {
             ? `Stored the motion on the page root cell of ${r.source}. This is a source edit: run drawio_validate.`
             : `Re-used the motion stored in ${r.source}.`,
         ];
-        const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" })[] = [];
-        let imageAttached = false;
         if (r.storyboard) {
           const sampled =
-            r.storyboardFramesTotal !== r.storyboardFrames ? ` (sampled from ${r.storyboardFramesTotal} steps)` : "";
+            r.storyboardFramesTotal !== r.storyboardFrames ? ` (sampled from ${r.storyboardFramesTotal} visual batches)` : "";
           lines.push(`Storyboard: ${r.storyboard}, ${r.storyboardFrames} frame(s)${sampled}`);
-          if (modelSupportsImages(ctx)) {
-            imageAttached = true;
+          if (image) {
             lines.push(
               "Storyboard attached below. Check each frame's caption against the intended order: the right cells visible, hidden, dimmed, or accented at each step, and nothing appearing before what it depends on.",
             );
           } else {
-            lines.push("Storyboard NOT attached: the current model cannot view images. Check the step order structurally instead.");
+            lines.push("Storyboard NOT attached: the current model cannot view images or image support is unknown. Check the step order structurally instead.");
           }
         }
         const versionLabel = r.version ? ` (${r.version})` : "";
         lines.push(`binary=${r.binary}${versionLabel}`);
-        content.push({ type: "text", text: lines.join("\n") });
-        if (imageAttached && r.storyboard) {
-          const png = await readFile(r.storyboard);
-          content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
-        }
-        return { content, details: { ...r, imageAttached } };
+        return receipt(lines.join("\n"), r, image);
       } catch (e) {
         return textResult(`Animate failed: ${(e as Error).message}`, { error: (e as Error).message });
       }
@@ -240,16 +289,17 @@ export default function drawme(pi: ExtensionAPI): void {
       "Structurally lint a .drawio file: errors for dangling endpoints, duplicate/reserved ids, broken parents, and missing/malformed vertex or edge geometry; actionable warnings for overlap, page/containment bounds, conservative readability defects, explicit routes through shapes or across edges, pinned anchors facing away from the next route direction, edge labels likely overlapping shapes, labels sitting on their own line, labels landing on a bend of their own connector or on another routed connector, and auto-routed edges (no waypoints) whose routing cannot be checked. Auto-routed edges whose direct path pierces a shape are called out as preview-review observations. Give every edge facing-side anchors and explicit waypoints so deterministic route checks engage. Reports observations and a readability score. Deterministic and does not launch draw.io. Compressed pages cannot be linted and are reported as skipped. Fix boundary/margin/empty-space warnings (and make room for overlapping elements) by spreading elements and running drawio_fit_canvas — never by shrinking content. Run after every source edit and before exporting.",
     promptSnippet: "Lint a .drawio after every source edit and before exporting.",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
-    async execute(_id, params) {
-      const r = await validateFile(params.input);
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const r = await validateFile(sessionPath(params.input, ctx));
       const lines = [
+        ...(r.incomplete ? ["Validation incomplete: partial results only; do not treat this diagram as clean."] : []),
         `Errors (${r.errors.length}):`,
         ...(r.errors.length > 0 ? r.errors.map((error) => `- ${error}`) : ["- none"]),
         `Actionable warnings (${r.warnings.length}):`,
         ...(r.warnings.length > 0 ? r.warnings.map((warning) => `- ${warning}`) : ["- none"]),
         `Informational observations (${r.observations.length}):`,
         ...(r.observations.length > 0 ? r.observations.map((observation) => `- ${observation}`) : ["- none"]),
-        `Readability score: ${r.score.total} (route-through=${r.score.through}, crossings=${r.score.crossings}, overlaps=${r.score.overlaps}, anchors=${r.score.anchors}; lower is better for variants of this graph)`,
+        `${r.incomplete ? "Partial readability score" : "Readability score"}: ${r.score.total} (route-through=${r.score.through}, crossings=${r.score.crossings}, overlaps=${r.score.overlaps}, anchors=${r.score.anchors}${r.incomplete ? "" : "; lower is better for variants of this graph"})`,
         `${r.errors.length} error(s), ${r.warnings.length} unresolved warning(s)`,
       ];
       return textResult(lines.join("\n"), r);
@@ -268,9 +318,9 @@ export default function drawme(pi: ExtensionAPI): void {
       margin: Type.Optional(Type.Number({ description: "Outer margin in px between content and page edge (default 40)" })),
       output: Type.Optional(Type.String({ description: "Output path (default: overwrite the input)" })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await fitCanvasFile(params);
+        const r = await fitCanvasFile(sessionPaths(params, ctx));
         const lines = r.pages.map((page) => {
           if (page.status === "skipped") return `page '${page.page}': skipped (${page.reason ?? "unknown"})`;
           const beforeText =
@@ -301,16 +351,18 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_from_mermaid",
     label: "draw.io: from Mermaid",
     description:
-      "Convert Mermaid text to a native .drawio (structure + automatic layout) via the CLI. Best for standard diagram types (flowchart, sequence, class, state, ER, gantt, mindmap) with no custom styling. Requires draw.io v30+ (check with drawio_check). Provide `mermaid` (inline text) or `input` (a .mmd path).",
-    promptSnippet: "Convert Mermaid text into a native .drawio with automatic layout (needs draw.io v30+).",
+      "Convert Mermaid text to a native .drawio (structure + automatic layout) via the CLI. Best for standard diagram types (flowchart, sequence, class, state, ER, gantt, mindmap) with no custom styling. Requires draw.io 30.2.4 or later (check with drawio_check). Provide exactly one of `mermaid` (inline text) or `input` (a .mmd path).",
+    promptSnippet: "Convert Mermaid text into a native .drawio with automatic layout (needs draw.io 30.2.4 or later).",
     parameters: Type.Object({
       mermaid: Type.Optional(Type.String({ description: "Inline Mermaid diagram text" })),
       input: Type.Optional(Type.String({ description: "Path to a .mmd file (alternative to `mermaid`)" })),
       output: Type.Optional(Type.String({ description: "Output .drawio path" })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await convertMermaid({ ...params, binary: undefined });
+        const options = sessionPaths(params, ctx);
+        const output = options.output ?? (options.input === undefined && ctx?.cwd ? sessionPath("diagram.drawio", ctx) : undefined);
+        const r = await convertMermaid({ ...options, output, binary: undefined });
         const versionSuffix = r.version ? ` (${r.version})` : "";
         return textResult(`Converted Mermaid → ${r.output}\nbinary=${r.binary}${versionSuffix}`, r);
       } catch (e) {
@@ -323,8 +375,8 @@ export default function drawme(pi: ExtensionAPI): void {
     name: "drawio_layout",
     label: "draw.io: auto-layout",
     description:
-      "Re-place nodes and route edges in a .drawio using an ELK layout preset via the CLI — for large or graph-heavy diagrams you don't want to hand-place. Requires draw.io v30+. Writes a sibling <name>.layout.drawio by default (pass `output` to overwrite the input).",
-    promptSnippet: "Auto-lay-out a large .drawio with an ELK preset (needs draw.io v30+).",
+      "Re-place nodes and route edges in a .drawio using an ELK layout preset via the CLI — for large or graph-heavy diagrams you don't want to hand-place. Requires draw.io 30.2.4 or later. Writes a sibling <name>.layout.drawio by default (pass `output` to overwrite the input).",
+    promptSnippet: "Auto-lay-out a large .drawio with an ELK preset (needs draw.io 30.2.4 or later).",
     parameters: Type.Object({
       input: Type.String({ description: "Path to the .drawio file" }),
       preset: Type.Union([
@@ -337,13 +389,9 @@ export default function drawme(pi: ExtensionAPI): void {
       ]),
       output: Type.Optional(Type.String({ description: "Output path (default: sibling .layout.drawio)" })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await applyLayout({
-          input: params.input,
-          preset: params.preset as LayoutPreset,
-          output: params.output,
-        });
+        const r = await applyLayout({ ...sessionPaths(params, ctx), binary: undefined });
         return textResult(`Laid out (${r.preset}) → ${r.output}`, r);
       } catch (e) {
         return textResult(`Layout failed: ${(e as Error).message}`, { error: (e as Error).message });
@@ -359,7 +407,7 @@ export default function drawme(pi: ExtensionAPI): void {
     promptSnippet: "Look up the exact official style= string for a draw.io shape by keyword.",
     parameters: Type.Object({
       query: Type.String({ description: "Keywords, e.g. 'aws lambda' or 'uml actor'" }),
-      limit: Type.Optional(Type.Number({ description: "Max results (default 10)" })),
+      limit: Type.Optional(Type.Integer({ minimum: 0, description: "Max results (default 10)" })),
     }),
     execute(_id, params) {
       const matches = searchShapes(params.query, params.limit ?? 10);
@@ -376,9 +424,9 @@ export default function drawme(pi: ExtensionAPI): void {
       "Describe an existing .drawio as structured Markdown (components grouped by container, relations with edge-label verbs, per page). Useful for a README/PR summary or to read a diagram back before editing. No draw.io CLI needed. Compressed pages cannot be described.",
     promptSnippet: "Describe an existing .drawio as Markdown (components + relations).",
     parameters: Type.Object({ input: Type.String({ description: "Path to the .drawio file" }) }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const md = await explainFile(params.input);
+        const md = await explainFile(sessionPath(params.input, ctx));
         return textResult(md, { markdown: md });
       } catch (e) {
         return textResult(`Explain failed: ${(e as Error).message}`, { error: (e as Error).message });
@@ -393,10 +441,11 @@ export default function drawme(pi: ExtensionAPI): void {
       "Open a .drawio source or a PNG, SVG, PDF, or JPEG export in the OS default application so the user can review it or fine-tune the source.",
     promptSnippet: "Open a .drawio or supported export in the desktop app.",
     parameters: Type.Object({ path: Type.String({ description: "Path to an existing diagram or supported export" }) }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const r = await openFile(params.path);
-        return textResult(`Opened ${params.path} (${r.opener})`, r);
+        const path = sessionPath(params.path, ctx);
+        const r = await openFile(path);
+        return textResult(`Opened ${path} (${r.opener})`, r);
       } catch (e) {
         return textResult(`Open failed: ${(e as Error).message}`, { error: (e as Error).message });
       }
@@ -426,44 +475,45 @@ export default function drawme(pi: ExtensionAPI): void {
           stylePresets: await readReference("style-presets.md"),
           mermaidAuthoring: cli.supportsMermaid ? await readReference("mermaid-authoring.md") : null,
         }),
+        { deliverAs: "followUp" },
       );
     },
   });
 
   pi.registerCommand("drawme-check", {
-    description: "Check whether the draw.io CLI is available",
+    description: "Check the draw.io CLI version and whether it supports Mermaid import and ELK layout",
     handler: async (_args, ctx) => {
       const info = await resolveBinary();
       ctx.ui.notify(
-        info.available ? `draw.io ${info.version} — ${info.binary}` : "draw.io CLI not found (macOS: brew install --cask drawio)",
+        info.available ? `draw.io ${info.version ?? "unknown"} — ${info.binary}\n${cliCapabilities(info)}` : unavailableCli(info),
         info.available ? "info" : "error",
       );
     },
   });
 
   pi.registerCommand("drawme-export", {
-    description: "Export a .drawio file: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]",
+    description: `Export a .drawio file. ${EXPORT_COMMAND_USAGE}`,
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts.length === 0) {
-        ctx.ui.notify("Usage: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]", "info");
+        ctx.ui.notify(EXPORT_COMMAND_USAGE, "info");
         return;
       }
       const [input, requestedFormat = "png"] = parts;
       const animated = requestedFormat === "animated-svg";
       const format = animated ? "svg" : requestedFormat;
       if (!["png", "svg", "pdf", "jpg"].includes(format)) {
-        ctx.ui.notify("Usage: /drawme-export <file> [png|svg|animated-svg|pdf|jpg]", "info");
+        ctx.ui.notify(EXPORT_COMMAND_USAGE, "info");
         return;
       }
       try {
-        const r = await exportDiagram({ input, format: format as ExportFormat, mode: "final", animated });
+        const r = await exportDiagram({ input: sessionPath(input, ctx), format: format as ExportFormat, mode: "final", animated });
         let status = "";
         if (r.animation) status = " (animation verified)";
         else if (r.repaired) status = " (repaired PNG)";
         ctx.ui.notify(`Exported ${r.output}${status}`, "info");
       } catch (e) {
-        ctx.ui.notify(`Export failed: ${(e as Error).message}`, "error");
+        ctx.ui.notify(`Export failed: ${(e as Error).message}${animated ? `\n${COMMAND_ANIMATION_GUIDANCE}` : ""}`, "error");
       }
     },
   });
