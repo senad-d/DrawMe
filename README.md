@@ -89,7 +89,7 @@ This checkout implements the DrawMe core loop as a Pi extension:
 brew install --cask drawio            # macOS
 ```
 
-On other platforms, get [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases). On Linux and WSL, use a native Linux build and run Pi as an unprivileged user. On headless Linux, install Xvfb with `xvfb-run` on PATH.
+On other platforms, get [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases). On Linux and WSL, use a native Linux build (prefer the `.deb` or `.rpm` to Snap) and run Pi as an unprivileged user. On headless Linux, install Xvfb with `xvfb-run` on PATH.
 
 ### 2) Install the extension
 

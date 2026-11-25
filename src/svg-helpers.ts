@@ -39,6 +39,20 @@ function verifyImageReference(reference: string | null): void {
   }
 }
 
+/** srcset URL tokens can themselves contain commas (notably in data: URLs). */
+function verifyImageCandidates(srcset: string): void {
+  const tokens = /[^\t\n\f\r ,][^\t\n\f\r ]*/g;
+  for (let token = tokens.exec(srcset); token; token = tokens.exec(srcset)) {
+    verifyImageReference(token[0]);
+    if (!token[0].endsWith(",")) {
+      // Skip this candidate's descriptor, e.g. "2x", up to the next candidate.
+      const next = srcset.indexOf(",", tokens.lastIndex);
+      if (next < 0) break;
+      tokens.lastIndex = next + 1;
+    }
+  }
+}
+
 /** Check renderer-emitted image elements, including images in HTML labels. Never resolve or fetch URLs. */
 export function verifyStandaloneImages(elements: readonly DomEl[]): void {
   for (const node of elements) {
@@ -48,8 +62,9 @@ export function verifyStandaloneImages(elements: readonly DomEl[]): void {
       verifyImageReference(attr(node, "href"));
       // Older SVG viewers may read the XLink fallback even if href is present.
       verifyImageReference(element.getAttributeNS(XLINK_NS, "href"));
-    } else if (namespaceURI === HTML_NS && localName === "img") {
-      verifyImageReference(attr(node, "src"));
+    } else if (namespaceURI === HTML_NS && (localName === "img" || localName === "source")) {
+      if (localName === "img") verifyImageReference(attr(node, "src"));
+      verifyImageCandidates(attr(node, "srcset") ?? "");
     }
   }
 }

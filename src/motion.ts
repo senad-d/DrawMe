@@ -584,8 +584,8 @@ export function compileMotion(
   cells: Map<string, MotionCell>,
   accent: string = DEFAULT_ACCENT,
   budget?: ValidationBudget,
+  errors: string[] = [],
 ): MotionAnalysis {
-  const errors: string[] = [];
   const steps = resolveSteps(spec, cells, errors, accent, budget);
   if (errors.length > 0) return { spec, compiled: null, errors };
 
@@ -836,20 +836,20 @@ export function selectPage(root: DomEl, pageIndex = 1): { diagram: DomEl; model:
 }
 
 /** Parse and compile the motion stored on a page; null when none is stored. */
-export function analyzeStoredMotion(model: DomEl, budget?: ValidationBudget): MotionAnalysis | null {
+export function analyzeStoredMotion(model: DomEl, budget?: ValidationBudget, errors: string[] = []): MotionAnalysis | null {
   const raw = readStoredMotion(model, budget);
   if (raw === null || raw.trim() === "") return null;
-  const errors: string[] = [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
     budget?.diagnostic();
-    return { spec: null, compiled: null, errors: [`stored motion contains malformed JSON: ${(error as Error).message}`] };
+    errors.push(`stored motion contains malformed JSON: ${(error as Error).message}`);
+    return { spec: null, compiled: null, errors };
   }
   const spec = parseMotionSpec(parsed, errors, budget);
   if (!spec || errors.length > 0) return { spec, compiled: null, errors };
-  return compileMotion(spec, motionCells(model, budget), themeAccent(model), budget);
+  return compileMotion(spec, motionCells(model, budget), themeAccent(model), budget, errors);
 }
 
 /** Default motion accent for a page: the Dark preset accent on a dark background, else the Light one. */

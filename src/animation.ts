@@ -354,11 +354,11 @@ function validateSequenceAction(
   return true;
 }
 
-export function analyzeAnimationPage(diagram: DomEl, budget?: ValidationBudget): PageAnimationAnalysis {
+export function analyzeAnimationPage(
+  diagram: DomEl, budget?: ValidationBudget,
+  { errors, warnings, observations }: Pick<PageAnimationAnalysis, "errors" | "warnings" | "observations"> = { errors: [], warnings: [], observations: [] },
+): PageAnimationAnalysis {
   const pageName = attr(diagram, "name") ?? "?";
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const observations: string[] = [];
   if (diagram.tagName !== "mxGraphModel") budget?.work(diagram.childNodes.length);
   const model = pageModel(diagram);
   if (!model) {

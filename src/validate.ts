@@ -967,11 +967,6 @@ function checkPage(diagram: DomEl, budget: ValidationBudget, maxCells: number, r
       result.score.total += SCORE_WEIGHTS[kind];
     }
   };
-  // These diagnostics were charged at emission by the analyzers.
-  const forward = (severity: Severity, messages: string[]): void => {
-    for (const message of messages) result[severity].push(prefix + message);
-  };
-
   if (diagram.tagName !== "mxGraphModel") budget.work(diagram.childNodes.length);
   const model = pageModel(diagram);
   if (!model) {
@@ -991,13 +986,21 @@ function checkPage(diagram: DomEl, budget: ValidationBudget, maxCells: number, r
 
   const ids = buildIds(cells, budget, report);
   checkParentCycles(cells, ids, budget, report);
-  const animation = analyzeAnimationPage(diagram, budget);
-  forward("errors", animation.errors);
-  forward("warnings", animation.warnings);
-  forward("observations", animation.observations);
-  const motion = analyzeStoredMotion(model, budget);
+  const findings: Record<Severity, string[]> = { errors: [], warnings: [], observations: [] };
+  // Keep each analyzer's error list separate: earlier errors must not affect the other analysis.
+  const motionErrors: string[] = [];
+  let animation, motion;
+  try {
+    animation = analyzeAnimationPage(diagram, budget, findings);
+    motion = analyzeStoredMotion(model, budget, motionErrors);
+  } finally {
+    // Findings were charged at emission. Keep them even if the next charge interrupted a helper.
+    for (const severity of ["errors", "warnings", "observations"] as const) {
+      for (const message of findings[severity]) result[severity].push(prefix + message);
+    }
+    for (const message of motionErrors) result.errors.push(prefix + message);
+  }
   if (motion) {
-    forward("errors", motion.errors);
     if (motion.compiled) {
       report("observations", `stored motion has ${motion.spec!.steps.length} step(s) lasting ${Math.round(motion.compiled.sequenceMs)}ms; export it with drawio_animate`);
     }

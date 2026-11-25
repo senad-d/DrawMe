@@ -55,14 +55,14 @@ export interface LayoutResult {
   command: string;
 }
 
-function absoluteFile(path: string): string {
+export function absoluteFile(path: string): string {
   if (isAbsolute(path)) return path;
   if (process.platform === "win32" && /^[a-z]:/i.test(path)) return resolve(path);
   // Let the filesystem resolve '..' after symlinked directories, not before.
   return `${process.cwd()}${sep}${path}`;
 }
 
-function siblingOutput(input: string, suffix: string): string {
+export function siblingOutput(input: string, suffix: string): string {
   const directory = dirname(input);
   const name = `${basename(input, extname(input))}${suffix}`;
   if (directory === ".") return name;
@@ -98,15 +98,16 @@ async function checkOutputFile(path: string): Promise<void> {
   if (info && !info.isFile()) throw new Error(`output must name a regular file: ${path}`);
 }
 
-function parseDiagram(xml: string, kind: string): { doc: Document; pages: DomEl[] } {
+export function parseDiagram(xml: string, kind: string): { doc: Document; root: Element; pages: DomEl[] } {
   let doc: Document;
   try {
     doc = new DOMParser({ onError: onErrorStopParsing }).parseFromString(xml, "text/xml");
   } catch (error) {
     throw new Error(`${kind} is not well-formed draw.io XML`, { cause: error });
   }
-  const root = doc.documentElement as unknown as DomEl;
-  return { doc, pages: diagramPages(root) };
+  const root = doc.documentElement;
+  if (!root) throw new Error(`${kind} is missing a draw.io XML root`);
+  return { doc, root, pages: diagramPages(root as unknown as DomEl) };
 }
 
 async function readRendererOutput(path: string, operation: string): Promise<string> {

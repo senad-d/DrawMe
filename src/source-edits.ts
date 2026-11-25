@@ -6,21 +6,22 @@ type Release = () => void;
 /** Each entry represents one held key and its FIFO waiters. */
 const locks = new Map<string, Set<() => void>>();
 
-function acquire(key: string, signal?: AbortSignal): Promise<Release> {
+// Supply a separate registry for each coordination domain; rendering inside an edit must not reacquire its edit lock.
+export function acquireKey(registry: Map<string, Set<() => void>>, key: string, signal?: AbortSignal): Promise<Release> {
   signal?.throwIfAborted();
-  const waiting = locks.get(key);
+  const waiting = registry.get(key);
   const queue = waiting ?? new Set<() => void>();
   const release = () => {
     const next = queue.values().next().value;
     if (next === undefined) {
-      locks.delete(key);
+      registry.delete(key);
     } else {
       queue.delete(next);
       next();
     }
   };
   if (!waiting) {
-    locks.set(key, queue);
+    registry.set(key, queue);
     return Promise.resolve(release);
   }
   return new Promise((resolve, reject) => {
@@ -88,7 +89,7 @@ export async function withSourceEdits<T>(
     const held: Release[] = [];
     try {
       // The whole set uses the same order, including when two edits swap input and output.
-      for (const key of [...keys].sort()) held.push(await acquire(key, signal));
+      for (const key of [...keys].sort()) held.push(await acquireKey(locks, key, signal));
       signal?.throwIfAborted();
       const current = await Promise.all(paths.map(identify));
       signal?.throwIfAborted();

@@ -689,7 +689,7 @@ These claims influence whether people share a diagram or install the package at 
 
 #### How
 
-Depends on: Tasks 13, 17. Use Renderer, Motion, Session and Package gate contracts. Put privacy qualification before install, fix Git source, replace repository-only links without enlarging package manifest, and update existing installation diagram/linked render. Align example text with actual capability, WSL and preview policies; correct the README `drawio_animate` row's per-step promise to the actual sampled visual batches. Correct developer command/path/golden scope/full-gate descriptions; label the obsolete checklist historical and link current guidance. Add focused offline documentation checks, including real Pi parser `repo` and relative link targets against a pack dry-run (including links to the unshipped example index). No remote clone.
+Depends on: Tasks 13, 17. Use Renderer, Motion, Session and Package gate contracts. Put privacy qualification before install, fix Git source, replace repository-only links without enlarging package manifest, and update existing installation diagram/linked render. Align example text with actual capability, WSL and preview policies; correct the README `drawio_animate` row's per-step promise to the actual sampled visual batches. Correct developer command/path/golden scope/full-gate descriptions; label the obsolete checklist historical and link current guidance. Add focused offline documentation checks, including real Pi parser `repo` and relative link targets against a pack dry-run. Use a canonical repository link for the example index rather than depending on npm's inclusion of a nested README. No remote clone.
 
 #### Where
 

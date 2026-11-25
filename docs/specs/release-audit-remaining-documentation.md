@@ -52,7 +52,7 @@ Issue #34: fix documented contracts, not the product's presentation or release v
 | --- | --- | --- |
 | Introduction (before installation) | Rendering is local; Pi's configured model/provider can receive requests, tool results and attached preview/storyboard images. Do not guarantee an entirely local workflow. | `src/index.ts`, `exportResult`, animate handler, `sendUserMessage` |
 | Features / prerequisites / commands | Explicit capability threshold, Linux renderer required on WSL; `/drawme-check` names path/version and both capabilities. Unknown/text-only models do not receive images. In the `drawio_animate` tool row, say the board samples at most 12 visual batches (parallel steps share a tile, a wait alone has none), not a picture per input step. | Renderer, Session and Motion contracts |
-| Installation and examples | `git:github.com/senad-d/DrawMe`, shipped source links local, repository links for rendered assets and example index absent from pack. | `docs/research/release-audit-remaining.md`, `package.json:files` |
+| Installation and examples | `git:github.com/senad-d/DrawMe`, shipped source links local, repository links for unshipped renders and a canonical example-index link independent of whether npm includes the nested README. | `docs/research/release-audit-remaining.md`, npm pack dry-run |
 | Development | Actual four-step gate; no invented smoke test. | `package.json:scripts.validate` |
 
 ### example/README.md

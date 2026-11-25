@@ -26,7 +26,7 @@ const CANDIDATES = [
 const PROBE_TIMEOUT = 15_000;
 const TERMINATION_GRACE = 5_000;
 const STREAM_LIMIT = 8192;
-const ROOT_REASON = "draw.io cannot run as root on Linux. Run Pi and native draw.io as an unprivileged user.";
+export const ROOT_REASON = "draw.io cannot run as root on Linux. Run Pi and native draw.io as an unprivileged user.";
 const WINDOWS_ON_LINUX_REASON = "The Windows draw.io renderer is unsupported on Linux/WSL. Install native Linux draw.io instead.";
 const HEADLESS_ADVICE = "For headless Linux, install Xvfb and ensure xvfb-run is on PATH.";
 

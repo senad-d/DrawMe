@@ -1,20 +1,21 @@
 /** Native draw.io facade and staged diagram export. */
-import { addAbortListener } from "node:events";
 import {
   type BigIntStats, accessSync, chmodSync, chownSync, constants, existsSync, lstatSync, readlinkSync,
   realpathSync, renameSync, statSync, unlinkSync,
 } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
-import { DOMParser, XMLSerializer, onErrorStopParsing, type Element } from "@xmldom/xmldom";
+import { basename, dirname, extname, isAbsolute, join, sep } from "node:path";
+import { XMLSerializer, type Element } from "@xmldom/xmldom";
 import { enhanceAnimatedSvg, type AnimatedSvgSummary } from "./animation";
-import { type DomEl, diagramPages, firstByTag, pageModel } from "./dom";
+import { type DomEl, firstByTag, pageModel } from "./dom";
 import { checkRasterSize, jpegSize, planExportSize } from "./export-size";
 import { DEFAULT_FIT_MARGIN } from "./fitcanvas";
 import { collectCellsWithIds, contentBounds } from "./geometry";
+import { absoluteFile, parseDiagram, siblingOutput } from "./import-layout";
 import { repairPng } from "./png";
-import { invokeRenderer, isRootUser, resolveBinary } from "./renderer";
+import { ROOT_REASON, invokeRenderer, isRootUser, resolveBinary } from "./renderer";
+import { acquireKey } from "./source-edits";
 import { finishSvgFile } from "./svgexport";
 import { readDiagramXml } from "./xml-input";
 
@@ -64,13 +65,8 @@ export interface ExportPlan {
 
 /** Derive a sibling without resolving `..` across symlinked parents. */
 export function deriveOutput(input: string, format: ExportFormat, embed: boolean, mode: ExportMode = "final"): string {
-  const dir = dirname(input);
-  const base = basename(input, extname(input));
   const suffix = mode === "preview" ? `.preview.${format}` : format === "png" && embed ? ".drawio.png" : `.${format}`;
-  if (dir === ".") return base + suffix;
-  const hasSeparator = dir.endsWith(sep) || dir.endsWith("/");
-  const driveRelative = process.platform === "win32" && /^[a-z]:$/i.test(dir);
-  return `${dir}${hasSeparator || driveRelative ? "" : sep}${base}${suffix}`;
+  return siblingOutput(input, suffix);
 }
 
 function exportSettings(opts: ExportOptions) {
@@ -99,7 +95,7 @@ export function planExport(
   contentWidth?: number,
   contentHeight?: number,
 ): ExportPlan {
-  if (plat === "linux" && isRoot) throw new Error("draw.io cannot run as root on Linux. Run Pi and native draw.io as an unprivileged user.");
+  if (plat === "linux" && isRoot) throw new Error(ROOT_REASON);
   const settings = exportSettings(opts);
   const { format, mode, embed, output } = settings;
   if (opts.output !== undefined) {
@@ -158,33 +154,12 @@ const exportQueues = new Map<string, Set<() => void>>();
 async function withSourceExportQueue<T>(input: string, action: (key: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted();
   const key = realpathSync.native(input);
-  const waiting = exportQueues.get(key);
-  const queue = waiting ?? new Set<() => void>();
-  if (waiting) {
-    await new Promise<void>((resolveTurn, reject) => {
-      function advance() {
-        abort?.[Symbol.dispose]();
-        resolveTurn();
-      }
-      const abort = signal && addAbortListener(signal, () => {
-        queue.delete(advance);
-        reject(signal.reason);
-      });
-      queue.add(advance);
-    });
-  } else {
-    exportQueues.set(key, queue);
-  }
+  const release = await acquireKey(exportQueues, key, signal);
   try {
     signal?.throwIfAborted();
     return await action(key);
   } finally {
-    const next = queue.values().next().value;
-    if (next === undefined) exportQueues.delete(key);
-    else {
-      queue.delete(next);
-      next();
-    }
+    release();
   }
 }
 
@@ -241,14 +216,7 @@ function retirePreviews(key: string, destination: string, latest: TrackedPreview
 async function readDiagram(input: string, signal?: AbortSignal): Promise<{ root: Element; pages: DomEl[] }> {
   const xml = await readDiagramXml(input);
   signal?.throwIfAborted();
-  let root: Element | null;
-  try {
-    root = new DOMParser({ onError: onErrorStopParsing }).parseFromString(xml, "text/xml").documentElement;
-  } catch (error) {
-    throw new Error("input is not well-formed draw.io XML", { cause: error });
-  }
-  if (!root) throw new Error("input is missing a draw.io XML root");
-  return { root, pages: diagramPages(root as unknown as DomEl) };
+  return parseDiagram(xml, "input");
 }
 
 function measurePage(page?: DomEl): { width: number; height: number } | undefined {
@@ -395,9 +363,7 @@ async function exportDiagramQueued(
   }
   const raster = format === "png" || format === "jpg";
   const content = raster ? measurePage(pages[(pageIndex ?? 1) - 1]) : undefined;
-  // Leave absolute spellings and '..' across symlinked parents intact.
-  const input = isAbsolute(opts.input) ? opts.input : process.platform === "win32" && /^[a-z]:/i.test(opts.input)
-    ? resolve(opts.input) : `${process.cwd()}${sep}${opts.input}`;
+  const input = absoluteFile(opts.input);
   const plan = planExport({ ...opts, input, output }, platform(), isRootUser(), content?.width, content?.height);
   const explicitRasterSize = opts.width != null || opts.height != null || (mode === "final" && opts.scale != null);
   if (raster && explicitRasterSize && (!content || !Number.isFinite(content.width) || !Number.isFinite(content.height) ||

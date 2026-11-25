@@ -87,7 +87,8 @@ function buildTagMap(shapes: Shape[]): Map<string, Set<number>> {
 
 function normalizeWords(text: string): string {
   return text
-    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    // Split AWSLambda, but keep alphanumeric terms such as IPv6 intact.
+    .replace(/([A-Z])([A-Z][a-z])(?![0-9])/g, "$1 $2")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
     .trim()
@@ -97,10 +98,11 @@ function normalizeWords(text: string): string {
 function buildTitleMap(shapes: Shape[]): Map<string, number[]> {
   const titles = new Map<string, number[]>();
   for (const [i, shape] of shapes.entries()) {
-    const title = normalizeWords(shape.title);
-    const matches = titles.get(title);
-    if (matches) matches.push(i);
-    else titles.set(title, [i]);
+    for (const title of new Set([shape.title.toLowerCase(), normalizeWords(shape.title)])) {
+      const matches = titles.get(title);
+      if (matches) matches.push(i);
+      else titles.set(title, [i]);
+    }
   }
   return titles;
 }
@@ -151,6 +153,7 @@ function scoreMatches(termMatches: TermMatch[], pool: Set<number> | null): Map<n
 function rankMatches(
   scores: Map<number, number>,
   exactTitles: Set<number>,
+  verbatim: string,
   shapes: Shape[],
   terms: string[],
   limit: number,
@@ -164,6 +167,8 @@ function rankMatches(
   };
 
   const ranked = [...new Set([...exactTitles, ...scores.keys()])].sort((a, b) => {
+    const aVerbatim = shapes[a].title.toLowerCase() === verbatim, bVerbatim = shapes[b].title.toLowerCase() === verbatim;
+    if (aVerbatim !== bVerbatim) return aVerbatim ? -1 : 1;
     if (exactTitles.has(a) !== exactTitles.has(b)) return exactTitles.has(a) ? -1 : 1;
     const ds = (scores.get(b) ?? 0) - (scores.get(a) ?? 0);
     if (ds !== 0) return ds;
@@ -208,5 +213,7 @@ export function searchShapes(query: string, limit = 10): ShapeMatch[] {
   const andSet = intersectAll(termMatches);
   const pool = andSet?.size ? andSet : null; // AND results if any, else OR across all terms
   const scores = scoreMatches(termMatches, pool);
-  return rankMatches(scores, new Set(titleMap.get(normalized)), shapes, terms, limit);
+  const verbatim = query.trim().toLowerCase();
+  const exactTitles = new Set([...(titleMap.get(verbatim) ?? []), ...(titleMap.get(normalized) ?? [])]);
+  return rankMatches(scores, exactTitles, verbatim, shapes, terms, limit);
 }

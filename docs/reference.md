@@ -364,7 +364,7 @@ The converted file is a normal `.drawio` source: it can be validated, previewed,
 
 ### `drawio_layout`
 
-Repositions nodes and routes edges on the first uncompressed page of an XML-authored `.drawio` using an allowlisted ELK preset. It changes geometry, preserving the authored page settings and leaving other pages unchanged. Requires draw.io 30.2.4 or later (`supportsLayout` from `drawio_check`).
+Repositions nodes and routes edges on the first page of an XML-authored `.drawio` using an allowlisted ELK preset. That page must be uncompressed; the tool does not skip ahead to another page. It changes geometry, preserving the authored page settings and leaving other pages unchanged. Requires draw.io 30.2.4 or later (`supportsLayout` from `drawio_check`).
 
 #### Options
 
