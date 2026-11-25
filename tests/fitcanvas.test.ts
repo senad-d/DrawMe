@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
 import { fitCanvasFile } from "../src/fitcanvas";
 import { validateXml } from "../src/validate";
 
@@ -72,6 +73,59 @@ describe("fitCanvasFile", () => {
       expect(fitted).toContain('x="20" y="30" width="80"'); // child keeps container-relative coords
       expect(fitted).toContain('x="140" y="130" as="sourcePoint"');
       expect(fitted).toContain('x="290" y="130" as="targetPoint"');
+    }));
+
+  it("fits an edge-only page around both floating terminals", () =>
+    inTmp(async (dir) => {
+      const file = join(dir, "edge-only.drawio");
+      await writeFile(file, wrap(`<mxGraphModel page="1" pageWidth="500" pageHeight="400"><root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="e" edge="1" parent="1"><mxGeometry relative="1" as="geometry">
+          <mxPoint x="-80" y="10" as="sourcePoint"/><mxPoint x="120" y="70" as="targetPoint"/>
+        </mxGeometry></mxCell>
+      </root></mxGraphModel>`));
+
+      const result = await fitCanvasFile({ input: file, margin: 20 });
+      expect(result.pages[0].status).toBe("fitted");
+      const fitted = new DOMParser().parseFromString(await readFile(file, "utf8"), "text/xml");
+      const model = fitted.getElementsByTagName("mxGraphModel").item(0)!;
+      const ends = Array.from(fitted.getElementsByTagName("mxPoint"));
+      expect([model.getAttribute("pageWidth"), model.getAttribute("pageHeight")]).toEqual(["240", "100"]);
+      expect(ends.map((end) => [end.getAttribute("x"), end.getAttribute("y")])).toEqual([["20", "20"], ["220", "80"]]);
+    }));
+
+  it("fits a parent-relative free end without counting hidden or stale attached points", () =>
+    inTmp(async (dir) => {
+      const file = join(dir, "nested-edge.drawio");
+      await writeFile(file, wrap(`<mxGraphModel page="1"><root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="hidden" parent="0" visible="0"/>
+        <object id="c" label="Group"><mxCell vertex="1" parent="1">
+          <mxGeometry x="100" y="80" width="80" height="60" as="geometry"/>
+        </mxCell></object>
+        <mxCell id="a" vertex="1" parent="c"><mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>
+        <mxCell id="e" edge="1" parent="c" source="a"><mxGeometry relative="1" as="geometry">
+          <mxPoint x="1000" y="1000" as="sourcePoint"/><mxPoint x="400" y="-30" as="targetPoint"/>
+        </mxGeometry></mxCell>
+        <mxCell id="draft" edge="1" parent="hidden"><mxGeometry relative="1" as="geometry">
+          <mxPoint x="-900" y="900" as="sourcePoint"/><mxPoint x="-800" y="900" as="targetPoint"/>
+        </mxGeometry></mxCell>
+      </root></mxGraphModel>`));
+
+      await fitCanvasFile({ input: file, margin: 20 });
+      const fitted = new DOMParser().parseFromString(await readFile(file, "utf8"), "text/xml");
+      const model = fitted.getElementsByTagName("mxGraphModel").item(0)!;
+      const container = fitted.getElementById("c")!.getElementsByTagName("mxCell").item(0)!;
+      const origin = container.getElementsByTagName("mxGeometry").item(0)!;
+      const end = fitted.getElementById("e")!.getElementsByTagName("mxPoint").item(1)!;
+      const coords = ["x", "y"].map((key) => Number(origin.getAttribute(key)) + Number(end.getAttribute(key)));
+      expect(coords, "absolute free end should be at the right and top margin").toEqual([
+        Number(model.getAttribute("pageWidth")) - 20,
+        20,
+      ]);
+      expect([model.getAttribute("pageWidth"), model.getAttribute("pageHeight")]).toEqual(["440", "130"]);
+      expect([end.getAttribute("x"), end.getAttribute("y")]).toEqual(["400", "-30"]);
+      expect(container.hasAttribute("id")).toBe(false);
+      expect(container.hasAttribute("value")).toBe(false);
     }));
 
   it("honours pageScale when computing page dimensions", () =>
