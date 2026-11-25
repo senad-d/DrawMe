@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { analyzeDrawioAnimation, enhanceAnimatedSvg } from "../src/animation";
+import { DOMParser } from "@xmldom/xmldom";
+import { analyzeAnimationPage, analyzeDrawioAnimation, enhanceAnimatedSvg } from "../src/animation";
+import type { DomEl } from "../src/dom";
+import { createValidationBudget, ValidationBudgetExceeded } from "../src/validation-budget";
 
 function source(animation: string | null, edgeStyle = ""): string {
   const root = animation === null
@@ -75,6 +78,33 @@ describe("animated SVG analysis", () => {
     );
   });
 
+  it("analyzes equivalent bare and wrapped graphs without treating compressed content as a model", () => {
+    const wrapped = source(JSON.stringify({ steps: [{ fadeIn: { cells: ["a"] } }] }), "flowAnimation=1;");
+    const bare = wrapped.replace('<mxfile><diagram name="Animated">', "").replace("</diagram></mxfile>", "");
+    const summarize = (xml: string) => {
+      const { pageName: _pageName, cells, ...rest } = analyzeDrawioAnimation(xml);
+      return { ...rest, cellIds: [...cells.keys()] };
+    };
+    expect(summarize(bare)).toEqual(summarize(wrapped));
+    expect(analyzeDrawioAnimation(bare).animatableCellIds).toEqual(["a", "b", "edge"]);
+    expect(analyzeDrawioAnimation('<mxfile><diagram name="Compressed">eJw=</diagram></mxfile>').errors)
+      .toEqual([expect.stringContaining("compressed")]);
+    expect(() => analyzeDrawioAnimation("<mxfile/>")).toThrow("diagram has 0 page(s)");
+  });
+
+  it("uses the caller's budget for native steps, selectors, and diagnostic emission", () => {
+    const xml = source(JSON.stringify({ steps: [
+      { fadeTo: { cells: ["*", "missing"], value: 2, delay: -1 } },
+      { highlight: { cells: ["a"] } },
+    ] }));
+    const diagram = new DOMParser().parseFromString(xml, "text/xml").getElementsByTagName("diagram")[0] as unknown as DomEl;
+    const normal = analyzeAnimationPage(diagram);
+    expect([normal.errors.length, normal.warnings.length, normal.observations.length]).toEqual([3, 1, 1]);
+    expect(analyzeAnimationPage(diagram, createValidationBudget(1_000, 5))).toEqual(normal);
+    expect(() => analyzeAnimationPage(diagram, createValidationBudget(1_000, 2))).toThrow(new ValidationBudgetExceeded("diagnostics"));
+    expect(() => analyzeAnimationPage(diagram, createValidationBudget(1, 100))).toThrow(new ValidationBudgetExceeded("work"));
+  });
+
   it("rejects invalid page indexes and legacy text sequences", () => {
     expect(() => analyzeDrawioAnimation(source(null), 2)).toThrow("pageIndex 2 is out of range");
     expect(analyzeDrawioAnimation(source("show a fade")).warnings).toContain(
@@ -120,6 +150,46 @@ describe("enhanceAnimatedSvg", () => {
       expect(result).toContain("1000ms ease-in-out 0ms infinite");
       expect(result).toContain("prefers-reduced-motion: reduce");
       expect(result).toContain('g[data-cell-id="a"] { animation: none !important; opacity: 0.8 !important; }');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a time-zero hide hidden in playback and restores base opacity for reduced motion", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-initial-hide-"));
+    try {
+      const input = join(dir, "sequence.drawio");
+      const output = join(dir, "sequence.svg");
+      const id = 'cell"\\\t';
+      await writeFile(input, source(JSON.stringify({ steps: [
+        { hide: { cells: [id] } },
+        { fadeIn: { cells: ["b"], delay: 200 } },
+      ] })).replace('id="a"', 'id="cell&quot;&#92;&#9;"'));
+      await writeFile(output, SVG.replace('data-cell-id="a"', 'data-cell-id="cell&quot;&#92;&#9;" style="opacity: 0.8"'));
+
+      await expect(enhanceAnimatedSvg(input, output)).resolves.toMatchObject({ verified: true, sequenceDurationMs: 200 });
+      const result = await readFile(output, "utf8");
+      expect(result).toContain(String.raw`g[data-cell-id="cell\"\\\9 "] { opacity: 0 !important; }`);
+      expect(result).toContain(String.raw`g[data-cell-id="cell\"\\\9 "] { animation: none !important; opacity: 0.8 !important; }`);
+      expect(result).toContain('g[data-cell-id="b"] { animation: drawme-opacity-1');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a linked image in native animated SVG before writing but permits embedded images", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-linked-animation-"));
+    try {
+      const input = join(dir, "sequence.drawio");
+      const output = join(dir, "sequence.svg");
+      await writeFile(input, source(JSON.stringify({ steps: [{ fadeIn: { cells: ["a"] } }] })));
+      const image = (href: string) => SVG.replace("<defs></defs>", `<defs/><image xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="${href}"/>`);
+      const linked = image("file:///local-logo.png");
+      await writeFile(output, linked);
+      await expect(enhanceAnimatedSvg(input, output)).rejects.toThrow(/embed.*image/i);
+      expect(await readFile(output, "utf8")).toBe(linked);
+      await writeFile(output, image("data:image/png;base64,aW1hZ2U="));
+      await expect(enhanceAnimatedSvg(input, output)).resolves.toMatchObject({ verified: true });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -5,8 +5,11 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { type DomEl, attr, childrenByTag, elemChildren, firstByTag } from "./dom";
+import { type DomEl, ELEMENT_NODE, attr, diagramPages, directText, firstByTag, pageModel } from "./dom";
 import { collectCells } from "./geometry";
+import { SVG_NS, cssString, verifyStandaloneImages, walkElements } from "./svg-helpers";
+import type { ValidationBudget } from "./validation-budget";
+import { readDiagramXml } from "./xml-input";
 
 const PORTABLE_ACTIONS = new Set(["opacity", "show", "hide", "toggle", "fadeIn", "fadeOut", "fadeTo"]);
 const DRAWIO_ONLY_ACTIONS = new Set([
@@ -26,7 +29,6 @@ const DRAWIO_ONLY_ACTIONS = new Set([
 ]);
 const FLOW_DIRECTIONS = new Set(["normal", "reverse", "alternate", "alternate-reverse"]);
 const FLOW_TIMINGS = new Set(["linear", "ease", "ease-in", "ease-out", "ease-in-out"]);
-const SVG_NS = "http://www.w3.org/2000/svg";
 const DEFAULT_FADE_DURATION_MS = 1000;
 const INSTANT_EPSILON_MS = 0.01;
 
@@ -66,18 +68,24 @@ interface OpacityPoint {
 interface CompiledTimeline {
   css: string;
   durationMs: number;
-  animatedCellIds: string[];
+  targetCellIds: string[];
 }
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function styleMap(style: string | null): Map<string, string> {
+function styleMap(style: string | null, budget?: ValidationBudget): Map<string, string> {
   const values = new Map<string, string>();
-  for (const item of (style ?? "").split(";")) {
+  if (style === null) return values;
+  for (let start = 0; start < style.length; ) {
+    budget?.work();
+    const next = style.indexOf(";", start);
+    const end = next === -1 ? style.length : next;
+    const item = style.slice(start, end);
     const separator = item.indexOf("=");
     if (separator > 0) values.set(item.slice(0, separator), item.slice(separator + 1));
+    start = end + 1;
   }
   return values;
 }
@@ -86,29 +94,15 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** Quote an arbitrary draw.io cell id as a CSS attribute-selector string. */
-function cssString(value: string): string {
-  let escaped = '"';
-  for (const char of value) {
-    const code = char.codePointAt(0)!;
-    if (char === '"' || char === "\\") escaped += `\\${char}`;
-    else if (code <= 0x1f || code === 0x7f) escaped += `\\${code.toString(16)} `;
-    else escaped += char;
-  }
-  return `${escaped}"`;
-}
-
-function pageModel(diagram: DomEl): DomEl | null {
-  return firstByTag(diagram, "mxGraphModel");
-}
-
-function animationAttribute(model: DomEl): string | null {
-  const root = firstByTag(model, "root");
+function animationAttribute(root: DomEl | null, budget?: ValidationBudget): string | null {
   if (!root) return null;
-  for (const child of elemChildren(root)) {
-    if (attr(child, "id") !== "0") continue;
+  for (let i = 0; i < root.childNodes.length; i++) {
+    budget?.work();
+    const child = root.childNodes[i];
+    if (child.nodeType !== ELEMENT_NODE || attr(child, "id") !== "0") continue;
     const direct = attr(child, "animation");
     if (direct !== null) return direct;
+    budget?.work(child.childNodes.length);
     const inner = firstByTag(child, "mxCell");
     const nested = inner ? attr(inner, "animation") : null;
     if (nested !== null) return nested;
@@ -116,9 +110,10 @@ function animationAttribute(model: DomEl): string | null {
   return null;
 }
 
-function parseSequence(raw: string | null, errors: string[], warnings: string[]): NativeAnimationSequence | null {
+function parseSequence(raw: string | null, errors: string[], warnings: string[], budget?: ValidationBudget): NativeAnimationSequence | null {
   if (raw === null || raw.trim() === "") return null;
   if (!raw.trimStart().startsWith("{")) {
+    budget?.diagnostic();
     warnings.push("legacy text page animations cannot be compiled to standalone animated SVG; save the animation as JSON");
     return null;
   }
@@ -127,27 +122,32 @@ function parseSequence(raw: string | null, errors: string[], warnings: string[])
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
+    budget?.diagnostic();
     errors.push(`page animation contains malformed JSON: ${(error as Error).message}`);
     return null;
   }
 
   if (!isObject(parsed)) {
+    budget?.diagnostic();
     errors.push("page animation JSON must be an object");
     return null;
   }
   const value = isObject(parsed.animation) ? parsed.animation : parsed;
   if (!Array.isArray(value.steps)) {
+    budget?.diagnostic();
     errors.push("page animation JSON must contain a steps array");
     return null;
   }
   if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    budget?.diagnostic();
     errors.push("page animation enabled must be a boolean");
   }
   if (value.loop !== undefined && typeof value.loop !== "boolean") {
+    budget?.diagnostic();
     errors.push("page animation loop must be a boolean");
   }
 
-  const steps = parseSequenceSteps(value.steps, errors);
+  const steps = parseSequenceSteps(value.steps, errors, budget);
   return {
     enabled: value.enabled === undefined ? true : value.enabled === true,
     loop: value.loop === undefined ? true : value.loop === true,
@@ -155,125 +155,132 @@ function parseSequence(raw: string | null, errors: string[], warnings: string[])
   };
 }
 
-function parseSequenceSteps(raw: unknown[], errors: string[]): JsonObject[] {
+function parseSequenceSteps(raw: unknown[], errors: string[], budget?: ValidationBudget): JsonObject[] {
   const steps: JsonObject[] = [];
   raw.forEach((step, index) => {
-    if (!isObject(step)) errors.push(`page animation step ${index + 1} must be an object`);
-    else steps.push(step);
+    budget?.work();
+    if (!isObject(step)) {
+      budget?.diagnostic();
+      errors.push(`page animation step ${index + 1} must be an object`);
+    } else steps.push(step);
   });
   return steps;
 }
 
-function collectCellData(cells: DomEl[]): { byId: Map<string, DomEl>; animatable: string[] } {
+function collectCellData(cells: DomEl[], budget?: ValidationBudget): { byId: Map<string, DomEl>; animatable: Set<string> } {
   const byId = new Map<string, DomEl>();
-  const animatable: string[] = [];
+  const animatable = new Set<string>();
   for (const cell of cells) {
+    budget?.work();
     const id = attr(cell, "id");
     if (id === null) continue;
     byId.set(id, cell);
-    if (cell.getAttribute("vertex") === "1" || cell.getAttribute("edge") === "1") animatable.push(id);
+    if (cell.getAttribute("vertex") === "1" || cell.getAttribute("edge") === "1") animatable.add(id);
   }
   return { byId, animatable };
 }
 
-function validateFlowAnimations(cells: DomEl[], errors: string[], flowEdgeIds: string[]): void {
+function validateFlowAnimations(cells: DomEl[], errors: string[], flowEdgeIds: string[], budget?: ValidationBudget): void {
   for (const cell of cells) {
-    const style = styleMap(attr(cell, "style"));
+    budget?.work();
+    const style = styleMap(attr(cell, "style"), budget);
     const flow = style.get("flowAnimation");
     const id = attr(cell, "id") ?? "?";
     if (flow !== undefined && flow !== "0" && flow !== "1") {
+      budget?.diagnostic();
       errors.push(`cell '${id}' has invalid flowAnimation '${flow}' (expected 0 or 1)`);
       continue;
     }
     if (flow !== "1") continue;
     if (cell.getAttribute("edge") !== "1") {
+      budget?.diagnostic();
       errors.push(`cell '${id}' uses flowAnimation=1 but is not an edge`);
       continue;
     }
     flowEdgeIds.push(id);
 
-    validateFlowStyle(style, id, errors);
+    validateFlowStyle(style, id, errors, budget);
   }
 }
 
-function validateFlowStyle(style: Map<string, string>, id: string, errors: string[]): void {
+function validateFlowStyle(style: Map<string, string>, id: string, errors: string[], budget?: ValidationBudget): void {
   const duration = style.get("flowAnimationDuration");
   if (duration !== undefined && (Number(duration) <= 0 || !Number.isFinite(Number(duration)))) {
+    budget?.diagnostic();
     errors.push(`edge '${id}' has invalid flowAnimationDuration '${duration}' (expected a positive millisecond value)`);
   }
   const direction = style.get("flowAnimationDirection");
   if (direction !== undefined && !FLOW_DIRECTIONS.has(direction)) {
+    budget?.diagnostic();
     errors.push(`edge '${id}' has invalid flowAnimationDirection '${direction}'`);
   }
   const timing = style.get("flowAnimationTimingFunction");
   if (timing !== undefined && !FLOW_TIMINGS.has(timing)) {
+    budget?.diagnostic();
     errors.push(`edge '${id}' has invalid flowAnimationTimingFunction '${timing}'`);
   }
 }
 
-function selectorIds(
+function validateSelectors(
   params: JsonObject,
   stepNumber: number,
   action: string,
   cells: Map<string, DomEl>,
-  animatable: string[],
+  animatable: Set<string>,
   errors: string[],
   warnings: string[],
-): string[] {
+  budget?: ValidationBudget,
+): void {
   if (params.layers !== undefined || params.tags !== undefined) {
+    budget?.diagnostic();
     warnings.push(
       `page animation step ${stepNumber} action '${action}' uses layer/tag selectors, which standalone animated SVG does not support`,
     );
   }
   if (!Array.isArray(params.cells)) {
+    budget?.diagnostic();
     errors.push(`page animation step ${stepNumber} action '${action}' must provide a cells array`);
-    return [];
-  }
-
-  const requested = new Set<string>();
-  const animatableIds = new Set(animatable);
-  for (const cellId of params.cells) {
-    if (typeof cellId !== "string") {
-      errors.push(`page animation step ${stepNumber} action '${action}' has a non-string cell id`);
-      continue;
-    }
-    if (cellId === "*") {
-      for (const id of animatable) requested.add(id);
-    } else if (!cells.has(cellId)) {
-      errors.push(`page animation step ${stepNumber} action '${action}' references missing cell '${cellId}'`);
-    } else if (!animatableIds.has(cellId)) {
-      errors.push(`page animation step ${stepNumber} action '${action}' references non-animatable cell '${cellId}'`);
-    } else {
-      requested.add(cellId);
-    }
-  }
-
-  excludeSelectorIds(params.excludeCells, requested, stepNumber, action, errors);
-  return [...requested];
-}
-
-function excludeSelectorIds(raw: unknown, requested: Set<string>, stepNumber: number, action: string, errors: string[]): void {
-  if (raw === undefined) return;
-  if (!Array.isArray(raw) || raw.some((id) => typeof id !== "string")) {
-    errors.push(`page animation step ${stepNumber} action '${action}' has an invalid excludeCells array`);
     return;
   }
-  for (const id of raw as string[]) {
-    if (id === "*") requested.clear();
-    else requested.delete(id);
+
+  for (const cellId of params.cells) {
+    budget?.work();
+    // The wildcard refers only to known animatable cells; there is no need to expand it during validation.
+    if (cellId === "*") continue;
+    if (typeof cellId !== "string") {
+      budget?.diagnostic();
+      errors.push(`page animation step ${stepNumber} action '${action}' has a non-string cell id`);
+    } else if (!cells.has(cellId)) {
+      budget?.diagnostic();
+      errors.push(`page animation step ${stepNumber} action '${action}' references missing cell '${cellId}'`);
+    } else if (!animatable.has(cellId)) {
+      budget?.diagnostic();
+      errors.push(`page animation step ${stepNumber} action '${action}' references non-animatable cell '${cellId}'`);
+    }
+  }
+
+  const excluded = params.excludeCells;
+  if (excluded !== undefined && (!Array.isArray(excluded) || excluded.some((id) => {
+    budget?.work();
+    return typeof id !== "string";
+  }))) {
+    budget?.diagnostic();
+    errors.push(`page animation step ${stepNumber} action '${action}' has an invalid excludeCells array`);
   }
 }
 
-function validateActionParameters(action: string, params: JsonObject, stepNumber: number, errors: string[]): void {
+function validateActionParameters(action: string, params: JsonObject, stepNumber: number, errors: string[], budget?: ValidationBudget): void {
   if (action === "opacity" || action === "fadeTo") {
     const value = finiteNumber(params.value);
     if (value === null || value < 0 || value > 1) {
+      budget?.diagnostic();
       errors.push(`page animation step ${stepNumber} action '${action}' needs value between 0 and 1`);
     }
   }
   if (action.startsWith("fade") && params.delay !== undefined) {
     const delay = finiteNumber(params.delay);
     if (delay === null || delay < 0) {
+      budget?.diagnostic();
       errors.push(`page animation step ${stepNumber} action '${action}' has an invalid delay`);
     }
   }
@@ -282,61 +289,83 @@ function validateActionParameters(action: string, params: JsonObject, stepNumber
 function validateSequence(
   sequence: NativeAnimationSequence,
   cells: Map<string, DomEl>,
-  animatable: string[],
+  animatable: Set<string>,
   errors: string[],
   warnings: string[],
+  budget?: ValidationBudget,
 ): void {
-  if (sequence.enabled && sequence.steps.length === 0) errors.push("enabled page animation must contain at least one step");
+  if (sequence.enabled && sequence.steps.length === 0) {
+    budget?.diagnostic();
+    errors.push("enabled page animation must contain at least one step");
+  }
   let hasPortableVisualAction = false;
   for (let index = 0; index < sequence.steps.length; index++) {
+    budget?.work();
     const step = sequence.steps[index];
     const stepNumber = index + 1;
     if (step.immediate !== undefined && typeof step.immediate !== "boolean") {
+      budget?.diagnostic();
       errors.push(`page animation step ${stepNumber} immediate must be a boolean`);
     }
 
-    const actions = Object.keys(step).filter((key) => key !== "immediate");
-    if (actions.length === 0) errors.push(`page animation step ${stepNumber} has no action`);
-    for (const action of actions) {
-      const portable = validateSequenceAction(action, step[action], stepNumber, cells, animatable, errors, warnings);
+    let hasAction = false;
+    for (const action in step) {
+      budget?.work();
+      if (!Object.hasOwn(step, action) || action === "immediate") continue;
+      hasAction = true;
+      const portable = validateSequenceAction(action, step[action], stepNumber, cells, animatable, errors, warnings, budget);
       hasPortableVisualAction ||= portable;
+    }
+    if (!hasAction) {
+      budget?.diagnostic();
+      errors.push(`page animation step ${stepNumber} has no action`);
     }
   }
   if (sequence.enabled && sequence.steps.length > 0 && !hasPortableVisualAction) {
+    budget?.diagnostic();
     errors.push("enabled page animation must contain at least one portable visual action");
   }
 }
 
 function validateSequenceAction(
   action: string, raw: unknown, stepNumber: number, cells: Map<string, DomEl>,
-  animatable: string[], errors: string[], warnings: string[],
+  animatable: Set<string>, errors: string[], warnings: string[], budget?: ValidationBudget,
 ): boolean {
   if (action === "wait") {
     const delay = finiteNumber(raw);
-    if (delay === null || delay < 0) errors.push(`page animation step ${stepNumber} wait must be a non-negative number`);
+    if (delay === null || delay < 0) {
+      budget?.diagnostic();
+      errors.push(`page animation step ${stepNumber} wait must be a non-negative number`);
+    }
     return false;
   }
   if (DRAWIO_ONLY_ACTIONS.has(action) || !PORTABLE_ACTIONS.has(action)) {
+    budget?.diagnostic();
     warnings.push(`page animation step ${stepNumber} action '${action}' is not supported in standalone animated SVG`);
     return false;
   }
   if (!isObject(raw)) {
+    budget?.diagnostic();
     errors.push(`page animation step ${stepNumber} action '${action}' must be an object`);
     return true;
   }
-  selectorIds(raw, stepNumber, action, cells, animatable, errors, warnings);
-  validateActionParameters(action, raw, stepNumber, errors);
+  validateSelectors(raw, stepNumber, action, cells, animatable, errors, warnings, budget);
+  validateActionParameters(action, raw, stepNumber, errors, budget);
   return true;
 }
 
-export function analyzeAnimationPage(diagram: DomEl): PageAnimationAnalysis {
+export function analyzeAnimationPage(diagram: DomEl, budget?: ValidationBudget): PageAnimationAnalysis {
   const pageName = attr(diagram, "name") ?? "?";
   const errors: string[] = [];
   const warnings: string[] = [];
   const observations: string[] = [];
+  if (diagram.tagName !== "mxGraphModel") budget?.work(diagram.childNodes.length);
   const model = pageModel(diagram);
   if (!model) {
-    errors.push("compressed or missing page model cannot be inspected for animation");
+    budget?.diagnostic();
+    budget?.work(diagram.childNodes.length);
+    const kind = directText(diagram).trim() ? "compressed" : "missing";
+    errors.push(`${kind} page model cannot be inspected for animation`);
     return {
       pageName,
       flowEdgeIds: [],
@@ -349,20 +378,25 @@ export function analyzeAnimationPage(diagram: DomEl): PageAnimationAnalysis {
     };
   }
 
-  const cells = collectCells(firstByTag(model, "root"));
-  const { byId, animatable } = collectCellData(cells);
+  budget?.work(model.childNodes.length);
+  const root = firstByTag(model, "root");
+  const cells = collectCells(root, budget);
+  const { byId, animatable } = collectCellData(cells, budget);
   const flowEdgeIds: string[] = [];
-  validateFlowAnimations(cells, errors, flowEdgeIds);
-  const sequence = parseSequence(animationAttribute(model), errors, warnings);
-  if (sequence) validateSequence(sequence, byId, animatable, errors, warnings);
+  validateFlowAnimations(cells, errors, flowEdgeIds, budget);
+  const sequence = parseSequence(animationAttribute(root, budget), errors, warnings, budget);
+  if (sequence) validateSequence(sequence, byId, animatable, errors, warnings, budget);
 
   if (flowEdgeIds.length > 0) {
+    budget?.diagnostic();
+    budget?.work(flowEdgeIds.length);
     const connectorIds = flowEdgeIds.map((id) => "'" + id + "'").join(", ");
     observations.push(
       `${flowEdgeIds.length} connector(s) use persistent flow animation; SVG preserves it, static formats do not: ${connectorIds}`,
     );
   }
   if (sequence) {
+    budget?.diagnostic();
     observations.push(
       sequence.enabled
         ? `page animation contains ${sequence.steps.length} step(s); standalone animated SVG supports visibility, opacity, fade, and wait actions`
@@ -370,12 +404,13 @@ export function analyzeAnimationPage(diagram: DomEl): PageAnimationAnalysis {
     );
   }
 
+  budget?.work(animatable.size);
   return {
     pageName,
     flowEdgeIds,
     sequence,
     cells: byId,
-    animatableCellIds: animatable,
+    animatableCellIds: [...animatable],
     errors,
     warnings,
     observations,
@@ -387,8 +422,7 @@ export function analyzeDrawioAnimation(xml: string, pageIndex = 1): PageAnimatio
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   const root = doc.documentElement as unknown as DomEl | null;
   if (!root) throw new Error("no root element (malformed XML)");
-  const pageList = childrenByTag(root, "diagram");
-  const pages = pageList.length > 0 ? pageList : [root];
+  const pages = diagramPages(root);
   const page = pages[pageIndex - 1];
   if (!page) throw new Error(`pageIndex ${pageIndex} is out of range (diagram has ${pages.length} page(s))`);
   return analyzeAnimationPage(page);
@@ -434,10 +468,12 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
   const sequence = analysis.sequence;
   if (!sequence?.enabled || sequence.steps.length === 0) return null;
 
+  const bases = new Map<string, number>();
   const states = new Map<string, number>();
   const tracks = new Map<string, OpacityPoint[]>();
   for (const id of analysis.animatableCellIds) {
     const value = baseOpacity(analysis.cells.get(id)!);
+    bases.set(id, value);
     states.set(id, value);
     tracks.set(id, [{ time: 0, value }]);
   }
@@ -451,23 +487,26 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
   }
 
   const durationMs = Math.max(1, time);
-  const animated = [...tracks.entries()].filter(([, points]) => {
-    const values = new Set(points.map((point) => point.value));
-    return values.size > 1;
-  });
-  if (animated.length === 0) throw new Error("page animation has no visible opacity change to compile");
-
   const reducedMotionRules: string[] = [];
   const rules: string[] = [];
-  for (let index = 0; index < animated.length; index++) {
-    const [id, points] = animated[index];
+  const targetCellIds: string[] = [];
+  let animatedCount = 0;
+  for (const [id, points] of tracks) {
+    const value = points[0].value;
+    const base = bases.get(id)!;
+    const changes = points.some((point) => point.value !== value);
+    if (!changes && value === base) continue;
+    const selector = `g[data-cell-id=${cssString(id)}]`;
+    targetCellIds.push(id);
+    reducedMotionRules.push(`  ${selector} { animation: none !important; opacity: ${base} !important; }`);
+    if (!changes) {
+      // A time-zero action can replace the base state without creating an animated track.
+      rules.push(`${selector} { opacity: ${value} !important; }`);
+      continue;
+    }
     putPoint(points, durationMs, states.get(id) ?? 1);
     points.sort((a, b) => a.time - b.time);
-    const name = `drawme-opacity-${index + 1}`;
-    const selector = `g[data-cell-id=${cssString(id)}]`;
-    reducedMotionRules.push(
-      `  ${selector} { animation: none !important; opacity: ${baseOpacity(analysis.cells.get(id)!)} !important; }`,
-    );
+    const name = `drawme-opacity-${++animatedCount}`;
     const keyframes = points
       .map((point) => `  ${((point.time / durationMs) * 100).toFixed(9)}% { opacity: ${point.value}; }`)
       .join("\n");
@@ -476,10 +515,11 @@ function compileOpacityTimeline(analysis: PageAnimationAnalysis): CompiledTimeli
       `${selector} { animation: ${name} ${durationMs}ms ease-in-out 0ms ${sequence.loop ? "infinite" : "1"} normal forwards; }`,
     );
   }
+  if (animatedCount === 0) throw new Error("page animation has no visible opacity change to compile");
   rules.push(
     `@media (prefers-reduced-motion: reduce) {\n${reducedMotionRules.join("\n")}\n  g[data-cell-id] * { animation: none !important; }\n}`,
   );
-  return { css: rules.join("\n"), durationMs, animatedCellIds: animated.map(([id]) => id) };
+  return { css: rules.join("\n"), durationMs, targetCellIds };
 }
 
 function opacityEndpoints(action: string, params: JsonObject, current: number): [number, number] {
@@ -537,12 +577,6 @@ function compileOpacityBatch(
   return duration;
 }
 
-function walkElements(root: DomEl): DomEl[] {
-  const elements: DomEl[] = [root];
-  for (const child of elemChildren(root)) elements.push(...walkElements(child));
-  return elements;
-}
-
 function hasAnimatedPath(root: DomEl): boolean {
   return walkElements(root).some((element) => {
     if (element.tagName !== "path") return false;
@@ -564,7 +598,7 @@ export function verifyFlowGroups(ids: string[], groups: Map<string, DomEl>): voi
 
 function verifyTimelineGroups(timeline: CompiledTimeline | null, groups: Map<string, DomEl>): void {
   if (!timeline) return;
-  const missing = timeline.animatedCellIds.filter((id) => !groups.has(id));
+  const missing = timeline.targetCellIds.filter((id) => !groups.has(id));
   if (missing.length > 0) {
     throw new Error(
       `SVG is missing page-animation cell group(s): ${missing.join(", ")}; do not use visible=0 for cells revealed by an animation`,
@@ -577,7 +611,7 @@ export async function enhanceAnimatedSvg(
   output: string,
   pageIndex = 1,
 ): Promise<AnimatedSvgSummary> {
-  const source = await readFile(input, "utf8");
+  const source = await readDiagramXml(input);
   const analysis = analyzeDrawioAnimation(source, pageIndex);
   const blockers = [
     ...analysis.errors,
@@ -594,8 +628,10 @@ export async function enhanceAnimatedSvg(
   const svgRoot = doc.documentElement as unknown as DomEl | null;
   if (svgRoot?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
 
+  const elements = walkElements(svgRoot);
+  verifyStandaloneImages(elements);
   const groupElements = new Map(
-    walkElements(svgRoot)
+    elements
       .map((element) => [attr(element, "data-cell-id"), element] as const)
       .filter((entry): entry is readonly [string, DomEl] => entry[0] !== null),
   );
@@ -612,7 +648,7 @@ export async function enhanceAnimatedSvg(
   const injectedCss = [timeline?.css, flowReducedMotion].filter(Boolean).join("\n");
   if (injectedCss) {
     const documentNode = doc;
-    let defs = walkElements(svgRoot).find((element) => element.tagName === "defs");
+    let defs = elements.find((element) => element.tagName === "defs");
     if (!defs) {
       defs = documentNode.createElementNS(SVG_NS, "defs") as unknown as DomEl;
       const rootNode = svgRoot as unknown as { firstChild: unknown; insertBefore(node: unknown, before: unknown): void };
