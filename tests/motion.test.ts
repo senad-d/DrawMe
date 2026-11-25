@@ -33,7 +33,7 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><d
     <g data-cell-id="a"><g><rect x="40" y="40" width="80" height="40"/></g></g>
     <g data-cell-id="b"><g><rect x="240" y="40" width="80" height="40"/></g></g>
     <g data-cell-id="e"><g><path d="M 120 60 L 232 60" fill="none" stroke="#000"/><path d="M 240 60 L 232 64 L 232 56 Z" fill="#000"/></g><g><text>calls</text></g></g>
-    <g data-cell-id="d"><g><path d="M 240 70 L 120 70" fill="none" stroke-dasharray="3 3"/></g></g>
+    <g data-cell-id="d"><g><path d="M 240 70 L 120 70" fill="none" stroke-dasharray="3 3" style="animation: flow 500ms linear infinite;"/></g></g>
   </g></g>
 </svg>`;
 
