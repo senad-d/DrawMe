@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import manifest from "../package.json";
 import type { DomEl } from "../src/dom";
+import drawme from "../src/index";
 import { DEFAULT_DARK_ACCENT, analyzeStoredMotion, selectPage } from "../src/motion";
 import { AUTOMATIC_CORRECTION_LIMIT } from "../src/workflow";
+import { installNodeRendererFixture, makeMockPi } from "./fixtures";
 
 function example(name: string) {
   const xml = readFileSync(resolve("example", `${name}.drawio`), "utf8");
@@ -20,7 +25,7 @@ function example(name: string) {
 describe("documentation examples", () => {
   it("keeps installation scopes and first-use commands accurate", () => {
     const { label } = example("drawme-installation-guide");
-    expect(label("runtime")).toContain("22.19");
+    expect(label("runtime")).toContain(manifest.engines.node.slice(2).replace(/\.0$/, ""));
     expect(label("runtime")).toContain("/login, then /model");
     expect(label("desktop")).toContain("brew install --cask drawio");
     expect(label("personal")).toContain("pi install npm:@senad-d/drawme");
@@ -33,6 +38,40 @@ describe("documentation examples", () => {
     expect(label("verify")).toContain("Reports the detected path + version");
     expect(label("describe")).toContain("/drawme a login flow with retry");
     expect(label("compatibility")).toContain("older versions still render and export");
+  });
+
+  it("documents what /drawme-check reports at the renderer capability cutoff", async () => {
+    const { label } = example("drawme-installation-guide");
+    const verify = label("verify").replace(/<[^>]*>/g, " ");
+    const compatibility = label("compatibility").replace(/<[^>]*>/g, " ");
+    const minimum = compatibility.match(/Mermaid import and ELK layout require draw\.io (\d+\.\d+\.\d+) or later/i)?.[1];
+    expect(minimum, "the diagram should show the precise minimum for both features").toBe("30.2.4");
+    expect(verify).toMatch(/\/drawme-check.*path.*version.*Mermaid import and ELK layout:.*supported or unsupported/i);
+    expect(compatibility).toMatch(/older versions still render and export.*\/drawme-check reports it as unavailable.*author and validate XML/i);
+
+    const workspace = await mkdtemp(join(tmpdir(), "drawme installation check "));
+    onTestFinished(() => rm(workspace, { recursive: true, force: true }));
+    const binary = join(await realpath(workspace), "drawio.mjs");
+    const restore = installNodeRendererFixture([binary]);
+    onTestFinished(() => {
+      restore();
+      vi.unstubAllEnvs();
+    });
+    vi.stubEnv("DISPLAY", ":99");
+    vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
+    const { pi, commands } = makeMockPi();
+    const notify = vi.fn();
+    drawme(pi as never);
+    const check = commands.get("drawme-check")!;
+    for (const [version, capability] of [["30.2.3", "unsupported"], [minimum!, "supported"]]) {
+      await writeFile(binary, `if (process.argv[2] === "--version") console.log(${JSON.stringify(version)});\n`);
+      await check.handler("", { ui: { notify } });
+      expect(notify).toHaveBeenLastCalledWith(
+        expect.stringContaining(`draw.io ${version} — ${binary}\nMermaid import: ${capability}; ELK layout: ${capability}`),
+        "info",
+      );
+      expect(notify.mock.lastCall?.[0]).toContain(`both require draw.io ${minimum} or later`);
+    }
   });
 
   it("keeps the user flow, fallbacks, correction cap and cleanup in sync", () => {
