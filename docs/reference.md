@@ -4,11 +4,11 @@
 
 DrawMe turns diagram requirements into editable `.drawio` sources and local PNG, SVG, PDF, or JPG exports, including verified standalone animated SVG. The extension provides commands that start guided workflows and tools for CLI detection, Mermaid conversion, XML layout, structural and animation validation, shape lookup, export, explanation, and file opening.
 
-This document lists the extension's public surface: commands, tools, options, defaults, output behavior, and limitations. It is not a workflow guide — the `/drawme` command injects the full authoring workflow itself, and the registered tool descriptions carry the operational rules. Two conventions apply everywhere: the `.drawio` file is the source of truth (exports are derived artifacts), and several tools report failures as a text result (`Export failed`, `Layout failed`, `Mermaid conversion failed`, `Fit canvas failed`, `Explain failed`, `Open failed`) rather than a tool-call error, so results must always be read.
+This document lists the extension's public surface: commands, tools, options, defaults, output behavior, and limitations. It is not a workflow guide — the `/drawme` command injects the full authoring workflow itself, and the registered tool descriptions carry the operational rules. The `.drawio` file is the source of truth (exports are derived artifacts). Always read the result text: several tools [report failures there](#failure-results) rather than raising a tool-call error.
 
 ## Functional availability
 
-| Functionality | draw.io CLI required | draw.io 30+ required |
+| Functionality | draw.io CLI required | draw.io 30.2.4+ required |
 | --- | --- | --- |
 | Write or edit uncompressed `.drawio` XML with normal file tools | No | No |
 | `drawio_validate` | No | No |
@@ -23,17 +23,17 @@ This document lists the extension's public surface: commands, tools, options, de
 
 When the CLI is unavailable, you can still author, edit, validate, explain, and search for shapes. Skip conversion, layout, preview, and final export.
 
-When the CLI is older than version 30, export remains available. Mermaid conversion and ELK layout do not.
+Mermaid conversion and ELK layout require draw.io 30.2.4 or later. A detected older CLI can still export without those features; explicit page selection requires 27.0.2 or later.
 
 ## Commands
 
-Commands are user-facing shortcuts. Use the model-callable tools when you need explicit options or structured results.
+Commands are user-facing shortcuts. Use the model-callable tools when you need explicit options or structured results. Relative input and output paths resolve from the calling Pi session's working directory, not Pi's process working directory. Absolute paths are used as given. Defaults described as siblings are derived beside the resolved input.
 
 | Command | Functionality |
 | --- | --- |
-| `/drawme <description>` | Starts the full autonomous workflow: check, plan, author, validate, gated multi-pass visual review (fit/sizing → element placement → connections → holistic confirmation), and final export — no human intervention once started. The command pre-resolves the draw.io CLI and embeds the diagram-types, XML-authoring, style-presets, and (on v30+) Mermaid references into the injected message, so the run starts without tool calls or file reads; only the troubleshooting reference is read on demand. |
-| `/drawme-check` | Displays the detected draw.io path and version, or reports that the CLI is unavailable. |
-| `/drawme-export <file> [png\|svg\|animated-svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. `animated-svg` requires motion and verifies the result. |
+| `/drawme <description>` | Starts the autonomous workflow: check, plan, author, validate, review, and export, without a human approval gate. Visual review (fit/sizing → placement → connections → holistic confirmation) requires an attached image; otherwise review is structural. The command detects the CLI and loads the authoring references (including Mermaid when supported) before submitting the workflow. If Pi is busy, it queues the message as a follow-up. |
+| `/drawme-check` | Displays the detected draw.io path, version, and whether Mermaid import and ELK layout are supported, or reports why the CLI is unavailable. |
+| `/drawme-export <file> [png\|svg\|animated-svg\|pdf\|jpg]` | Performs a final export of an existing `.drawio`; format defaults to PNG. `animated-svg` verifies native draw.io page sequences or connector flow only. For stored DrawMe motion (`drawmeMotion`), use `drawio_animate` with `input` and omit `steps`. |
 
 `/drawme-export` intentionally exposes only the source path and format. Use `drawio_export` for output naming, dimensions, border, transparency, embedding, page selection, or animation mode. The command uses whitespace-separated arguments and is unsuitable for paths containing spaces.
 
@@ -47,6 +47,8 @@ Detects the draw.io desktop CLI, its version, and version-gated features.
 
 This tool takes no arguments. All tools and commands share the same CLI discovery. To use a custom installation, set `DRAWME_DRAWIO_BINARY` to its absolute executable path in Pi's launch environment. DrawMe tries that path before the usual PATH and installation locations. Tool calls cannot choose an executable.
 
+On Linux, run Pi and native Linux draw.io as an unprivileged user, with the renderer sandbox enabled. The same applies under WSL: a Windows draw.io executable is not a supported renderer there. On headless Linux, install Xvfb and make `xvfb-run` available on PATH; discovery and rendering use it automatically when no display is set.
+
 #### Result behavior
 
 A successful result includes:
@@ -56,7 +58,7 @@ A successful result includes:
 - `version` and numeric `major` version;
 - `supportsMermaid` and `supportsLayout` flags.
 
-An unavailable result includes `available: false` and guidance that XML authoring can continue without export.
+An unavailable result includes `available: false`, a discovery diagnostic, and guidance that XML authoring can continue without export.
 
 #### Use
 
@@ -79,44 +81,52 @@ Exports an existing `.drawio` through the local draw.io desktop CLI.
 | `input` | string | Yes | — | Existing `.drawio` source path. |
 | `format` | `png` \| `svg` \| `pdf` \| `jpg` | No | `png` | Output format. |
 | `mode` | `preview` \| `final` | No | `final` | Selects inspection or deliverable defaults. |
-| `output` | string | No | Derived beside input | Explicit output path. |
-| `scale` | number | No | `2` | Scale for final PNG/JPG when `width` is absent. |
-| `width` | number | No | Preview: `2000` | Target width in pixels. Overrides `scale`. |
+| `output` | string | No | Derived beside input | Output file, not a directory. Its suffix must match `format` (`.jpg` or `.jpeg` for JPG). |
+| `scale` | number | No | `2` | Requested positive scale for final PNG/JPG when `width` is absent, subject to the raster budget. |
+| `width` | number | No | See sizing below | Target width in pixels. Overrides `scale`; `height` is not a public tool option. |
 | `transparent` | boolean | No | `false` | Enables transparency for PNG only. |
-| `border` | number | No | `40` | Outer margin around the content in diagram units (so 80px in a scale-2 PNG). draw.io crops exports to the content, so this is the image's only margin; the default matches `drawio_fit_canvas`. Use `0` for no border. |
-| `pageIndex` | number | No | draw.io default | Positive, 1-based page number for multi-page files. |
+| `border` | number | No | `40` | Nonnegative outer margin; how it contributes to the export size depends on the format and sizing mode. |
+| `pageIndex` | integer | No | draw.io default | Positive, 1-based page number. Must exist in the source; explicit selection requires draw.io 27.0.2 or later. |
 | `embed` | boolean | No | Mode/format dependent | Controls embedding of editable diagram XML. |
 | `animated` | boolean | No | `false` | Requires and verifies standalone animation. Valid only for final SVG; when format is omitted, animated mode defaults it to SVG. |
 
 #### Mode and naming behavior
 
+See also [size and margins](#size-and-margins) and [preview review and cleanup](#preview-review-and-cleanup).
+
 For an input named `name.drawio`:
 
-| Export | Default output | Raster sizing | Embedded XML |
+| Export | Default output | Default sizing | Embedded XML by default |
 | --- | --- | --- | --- |
-| Preview PNG | `name.preview.png` | Width 2000 | No |
-| Final PNG | `name.drawio.png` | Scale 2 | Yes |
-| Final SVG | `name.svg` | Vector | Yes |
-| Verified animated SVG (`animated:true`) | `name.svg` | Vector | Yes |
-| Final PDF | `name.pdf` | Vector | Yes |
-| Final JPG | `name.jpg` | Scale 2 | No |
+| Preview PNG | `name.preview.png` | Long side at most 2000 px | No |
+| Final PNG | `name.drawio.png` | Scale 2, capped | Yes |
+| Final SVG | `name.svg` | Content bounds plus padding | Yes |
+| Verified animated SVG (`animated:true`) | `name.svg` | Content bounds plus padding | Yes |
+| Final PDF | `name.pdf` | PDF page bounds | Yes |
+| Final JPG | `name.jpg` | Scale 2, capped | No |
 
 Additional behavior:
 
-- Other preview formats use the same `.preview` suffix before the format extension. If the default preview path is already in use by a file the current preview does not own, choose an explicit `output`. An explicit `output` replaces the derived name, but it must not refer to the editable input, even through a link. DrawMe publishes new bytes only after rendering and verification succeed; a failed export leaves the existing destination intact.
+- Other preview formats use the same `.preview` suffix before the format extension. If the default preview path is already occupied by a file the current preview does not own, choose an explicit `output`. The destination must not alias the editable input, even through a link. A successful export receipt names a regular file with bytes matching the requested format. DrawMe publishes only after rendering and verification succeed; failed or canceled renders do not replace an existing destination or retire previews.
 - `animated:true` is valid only with `mode:"final"` and SVG. It rejects a static result instead of silently returning an ordinary SVG. Persistent `flowAnimation=1` connector motion is verified after draw.io renders it. Portable page-root visibility/opacity/fade/wait sequences are compiled into CSS inside the SVG and include a `prefers-reduced-motion` fallback that stops motion and reveals sequenced cells.
 - Standalone page sequences support `opacity`, `show`, `hide`, `toggle`, `fadeIn`, `fadeOut`, `fadeTo`, `wait`, explicit cell/wildcard/exclusion selectors, loop control, and `immediate:true` parallel batches. Viewer-dependent wipe/pop, highlight, dynamic-flow, style, navigation, tag/layer, and link actions are rejected in animated SVG mode.
-- The outer margin is even on all sides. draw.io applies its border unevenly for scaled rasters and for SVG, so a final PNG/JPG is sized with `--width` from the page's content width (keeping the requested scale) and an SVG is exported borderless and padded by DrawMe.
-- Every SVG (static or animated) is pinned to its authored colors: draw.io's `light-dark()` adaptive colors are resolved to the authored value and the color scheme is fixed to `light`, so the SVG looks the same as the PNG/PDF in every viewer, including dark-mode ones.
-- An explicit `width` replaces raster scaling.
-- `scale` is ignored in preview mode and for vector formats.
-- `transparent` has no effect outside PNG.
-- Preview mode never embeds editable XML, even if `embed: true` is supplied. When the current model can view images, a successful PNG preview tool result contains its normal text/metadata block followed by an `image/png` base64 image block; otherwise the image is omitted. The result text always states which case applies, and the output path in the text stays usable either way. A first preview asks for a critique against the current review pass's checklist; a preview that replaces an earlier one instead asks for a before/after comparison with a fixed / not fixed / regressed verdict per addressed finding.
-- Final exports stay text-only; final PNG, SVG, and PDF default to embedded/editable output.
-- JPG cannot carry editable XML; never set `embed: true` for JPG.
-- Embedded PNG exports are checked for draw.io's known truncated IEND chunk and repaired automatically when necessary.
-- After a successful replacement preview or final export, DrawMe cleans up older previews for the same source, including explicit preview paths, only if the file still belongs to that preview. A file that has since been edited or replaced is left in place. If an explicit preview path is a symlink, DrawMe updates the target but does not remove the link or its target during cleanup. Cleanup failures are returned as warnings without invalidating the new export.
-- Headless Linux handling is automatic, including `xvfb-run`, GPU disabling, and the root sandbox flag.
+- Every SVG (static or animated) uses its authored colors: DrawMe resolves draw.io's `light-dark()` adaptive colors to the authored value and sets the SVG color scheme to `light`.
+- `transparent` has no effect outside PNG. Preview mode never embeds editable XML, even with `embed: true`. Final PNG, SVG, and PDF default to embedding; final JPG rejects `embed: true` and is never editable. PNGs are checked before publication; only an otherwise valid embedded PNG with a missing or truncated IEND tail is repairable.
+
+#### Size and margins
+
+- **PNG/JPG:** The pixel budget is 6,000,000 pixels (width × height), including both margins on both axes. For measurable content, DrawMe lowers the final raster scale when necessary. For an explicit `width`, the target includes both margins, and DrawMe may reduce it to meet the applicable limits, preserving content aspect ratio. With scale sizing, the border is scaled too (40 units becomes about 80 px per side at scale 2 if the budget allows); with width or preview sizing, the border is in output pixels. DrawMe checks the rendered dimensions before publishing, including when it cannot measure the input bounds in advance.
+- **Raster previews:** The long side is capped at 2000 px by default, or 2576 px with an explicit `width`. The area budget still applies to both portrait and landscape output. `scale` does not apply to previews.
+- **SVG:** `width` targets the borderless native export, before padding. DrawMe adds `border` on both sides, so `width: 500` with `border: 40` yields about 580 px (for example 581 px with native rounding). Raster `scale` does not apply.
+- **PDF:** The PDF retains the native page bounds (its media box) for a finite source page. Do not use `width`, `border`, or raster `scale` to request a tight crop or set the PDF page size; fit the source canvas first if a tighter page is needed.
+
+#### Preview review and cleanup
+
+A PNG preview result reports whether it attached an image. Attachment requires both a model known to accept image input and a successful read of the rendered file. A failed attachment read returns `Export failed:` with no image; a file may already have been published. Text-only or unknown models get no attachment. Final `drawio_export` results are text-only.
+
+Compare only when the result identifies an actually attached prior preview of the same source and page on the current conversation branch. Record **fixed**, **not fixed**, or **regressed** for each addressed finding. Otherwise, critique the new attachment on its own. Without an attachment, use structural validation and explanation and report that visual inspection was skipped.
+
+Earlier images can remain in Pi's transcript independently of the files on disk. Successful previews and final exports can retire older preview files (including explicit destinations) still owned and tracked by the current process, per source, not per page. Tracking does not survive a restart. Files edited or replaced since tracking are left alone; cleanup does not remove an explicit preview symlink or its target. Read the result for actual removals and warnings; do not assume any review file remains available.
 
 #### Use
 
@@ -148,13 +158,13 @@ drawio_export({
 })
 ```
 
-Use a distinct `output` for each format or page. Never present a preview artifact as the final deliverable when a final export was requested. Do not manually delete superseded or final-review previews; the tool replaces and cleans them automatically.
+Use a distinct `output` for each format or page. Never present a preview artifact as the final deliverable when a final export was requested. Do not manually delete review previews as part of the workflow; rely on the tool's cleanup receipts.
 
 ---
 
 ### `drawio_animate`
 
-Adds motion to an existing `.drawio` page and exports a verified standalone animated SVG plus a storyboard PNG.
+Adds motion to an existing `.drawio` page and exports a verified standalone animated SVG, plus an optional storyboard PNG. Requires draw.io 27.0.2 or later because it exports an explicit page.
 
 #### Options
 
@@ -164,9 +174,9 @@ Adds motion to an existing `.drawio` page and exports a verified standalone anim
 | `steps` | array | No | Stored motion | Ordered motion steps (below). Omit to re-export the motion already stored on the page. |
 | `loop` | boolean | No | `true` | Repeat the sequence. |
 | `hold` | number | No | `1600` | Pause in ms on the final state before a loop restarts. |
-| `pageIndex` | number | No | `1` | Positive, 1-based page to animate. |
-| `output` | string | No | `name.animated.svg` | Animated SVG path. |
-| `storyboard` | boolean | No | `true` | Render `name.storyboard.png`. |
+| `pageIndex` | integer | No | `1` | Positive, 1-based page to animate. |
+| `output` | string | No | `name.animated.svg` | Animated SVG file path. |
+| `storyboard` | boolean | No | `true` | Render a PNG storyboard; see naming below. |
 
 Each step has an `effect` and, except for `wait`, a `cells` array of vertex or edge ids. Optional fields: `duration` (ms; required for `wait`), `stagger` (ms between consecutive cells), `parallel` (start with the previous step), `direction` (`slideIn`: `up`, `down`, `left`, `right`), `color` (hex, for `highlight` and `travel`), and `value` (`dim` opacity, default 0.25).
 
@@ -183,12 +193,14 @@ Each step has an `effect` and, except for `wait`, a `cells` array of vertex or e
 
 #### Behavior
 
-- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden; all other cells start visible. Entrances on visible cells, emphasis on hidden cells, a cell targeted twice in one parallel group, `drawIn` on dashed or `flowAnimation=1` connectors, and missing or wrong-kind ids are rejected before anything is written.
-- Valid steps are stored as JSON in the `drawmeMotion` attribute of the page root cell (wrapping `<mxCell id="0"/>` in a `UserObject` when needed). This is a source edit; `drawio_validate` checks stored motion and reports a page that also has an enabled native page animation.
-- The page is exported to an embedded SVG, then group opacity, transform, and glow become CSS keyframes, connector draw-in uses `pathLength` and `stroke-dashoffset`, and travelling dots use SMIL `animateMotion` along the rendered connector path. A `prefers-reduced-motion` rule shows the final state and hides dots. Persistent connector flow is preserved. A missing cell group or connector path fails before publication, leaving any previous SVG and preview intact.
+- A sequence has 1–200 steps. `hold` and `stagger` can be 0–60,000 ms. Visual durations must be positive and at most 60,000 ms; `wait` requires a duration and may be zero. The sequence, including waits and stagger but before the loop hold, may last at most 300,000 ms. The same limits apply when overriding stored motion. Wait-only and other sequences with no effective visual motion are rejected before any source or output write.
+- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden in the animation. Do not set `visible="0"` to stage an entrance: the renderer can omit the cell. `fadeIn` can restore a dimmed cell to full opacity; a repeated entrance on a fully visible cell is an error. Reveal an animated ancestor before animating its children. Emphasis on hidden cells, duplicate targets in a parallel batch, `drawIn` on dashed or `flowAnimation=1` connectors, and missing or wrong-kind IDs are also rejected.
+- Valid steps are stored as JSON in the `drawmeMotion` attribute of the page root cell (wrapping `<mxCell id="0"/>` in a `UserObject` when needed). This is a source edit. Use `drawio_validate` afterwards; do not combine stored motion with an enabled native page animation. Omitting `steps` reuses the stored sequence, with any supplied `loop` or `hold` override validated before saving.
+- The embedded SVG uses CSS keyframes for opacity, transform, glow, and connector draw-in, and SMIL `animateMotion` for travelling dots. A `prefers-reduced-motion` rule shows the final state and hides dots. Persistent connector flow is preserved. Missing animated cell groups or connector paths fail verification. Both animated export routes refuse to publish an SVG with unresolved linked images; embed the images in the diagram and try again. An SVG verification failure leaves the previous SVG and previews intact but does not roll back any already-saved motion edit.
 - `highlight` and `travel` default to the theme accent: `#60a5fa` on a dark page `background`, `#2563eb` otherwise.
-- The storyboard is one PNG with a captioned frame per sequential step (at most 12, sampled evenly) showing the end state of that step; highlight and travel steps show their accent on the stroke. It proves order and visibility, not easing. When the current model can view images, the storyboard is attached to the result.
-- The motion plays in browsers and in SVGs embedded as images. draw.io itself does not play it.
+- The storyboard shows a captioned end state for each sampled visual batch. Steps marked `parallel: true` share the previous batch (and tile); standalone waits affect timing but have no tile. If there are more than 12 visual batches, DrawMe samples evenly up to 12 frames, keeping the first and last. Use the board to check sampled order and visibility, not easing or playback. It is attached only for a model known to accept images and after a successful read.
+- For page 1 at the default SVG path the storyboard is `<source-stem>.storyboard.png`; otherwise it is `<output>.page-<pageIndex>.board.png` alongside the SVG, including its full filename (for example `review.svg.page-2.board.png`). Use the returned storyboard path.
+- Browsers can play the SVG motion, including when shown as an image. draw.io itself does not play DrawMe motion.
 
 #### Use
 
@@ -212,7 +224,7 @@ drawio_animate({ "input": "checkout.drawio" })
 
 ### `drawio_validate`
 
-Structurally lints uncompressed `.drawio` XML without launching draw.io.
+Structurally lints uncompressed `.drawio` XML without launching draw.io. It accepts an `<mxfile>` page envelope, a single `<diagram>`, or a bare `<mxGraphModel>`. Input must be a regular file; the XML intake limit is 16 MiB.
 
 #### Options
 
@@ -226,7 +238,7 @@ Errors include:
 
 - duplicate cell IDs;
 - vertices or edges reusing reserved root IDs `0` or `1`;
-- references to missing parents;
+- malformed XML, a missing graph root, references to missing parents, self-parenting, or longer containment cycles;
 - edge references to missing sources or targets;
 - missing or invalid vertex geometry;
 - missing edge geometry, or edge geometry without both `relative="1"` and `as="geometry"`;
@@ -243,11 +255,11 @@ Actionable warnings include:
 - explicitly waypointed edges routed through unrelated vertices or crossing one another;
 - pinned source exits or target entries that face away from their adjacent waypoint, or their peer on an auto-route;
 - edge labels likely overlapping shapes or sitting directly on their own connector;
-- auto-routed edges whose missing waypoints prevent deterministic route checks;
+- unchecked auto-routes: missing waypoints prevent deterministic route-through and crossing checks, so this warning does not mean a crossing was detected;
 - compressed pages that cannot be inspected;
 - legacy animation text, page effects, or selector types that cannot be represented in standalone animated SVG.
 
-Informational observations identify checks intentionally skipped for infinite canvases or omitted/invalid page dimensions. They also identify auto-routed edges whose direct connection line pierces an unrelated shape so the rendered route can receive focused preview review. All normal-page diagnostics are page-specific. Content bounds account for nested container offsets, visible nodes/containers, explicit waypoints, and separately sized edge labels on resolvable explicit routes where practical.
+Informational observations identify checks intentionally skipped for infinite canvases or omitted/invalid page dimensions. They also flag an auto-routed edge when its predicted straight-line connection pierces an unrelated shape. This is a hint for preview review, not proof of the rendered route. Measured crossings and route-through findings use explicit routes. Content bounds account for visible nodes and containers, nested parent offsets, floating edge terminals, explicit waypoints, and separately sized edge labels on resolvable explicit routes where practical.
 
 The result text and details also include a readability score:
 
@@ -256,7 +268,9 @@ The result text and details also include a readability score:
 - overlap: 5 points;
 - anchor facing away from its next route direction: 8 points.
 
-Lower is better, but scores are meaningful only when comparing layout variants of the same graph. Canvas, containment, typography, and predicted auto-route observations do not affect the score. The text result separately reports error, unresolved-warning, and observation counts.
+Lower is better, but compare only complete results from layout variants of the same graph. The score uses finding categories, not text: canvas, containment, typography, and predicted auto-route observations do not affect it. The result includes separate `errors`, `warnings`, and `observations` arrays and corresponding counts.
+
+Validation checks up to 5,000 cells per page, with a work budget of 100,000 units and a diagnostic budget of 500 across the document. If the XML intake, cell, work, or diagnostic limit is exceeded, the result reports `incomplete: true`, retains any findings collected so far, and adds a blocking `Validation incomplete:` error. Do not treat a partial score as clean. Fix known errors and reduce or split the input into smaller diagrams, then validate again.
 
 #### Use
 
@@ -286,7 +300,7 @@ Resizes each page's canvas to its visible content plus an outer margin, without 
 
 Per page:
 
-- computes the visible content bounding box (nested containers, explicit edge waypoints, and separately sized edge labels included);
+- computes the visible content bounding box (nested containers, floating edge terminals, explicit edge waypoints, and separately sized edge labels included);
 - sets `pageWidth`/`pageHeight` to the content size plus twice the margin, honoring `pageScale`;
 - shifts top-level content (absolute vertices, edge waypoints, floating edge endpoints) so the content origin lands exactly at the margin — children of containers and relative geometry move with their parents and are untouched;
 - grows cramped pages and tightens oversized ones; element sizes and relative positions never change;
@@ -304,7 +318,7 @@ drawio_fit_canvas({ "input": "architecture.drawio", "margin": 60 })
 
 ### `drawio_from_mermaid`
 
-Converts Mermaid into an automatically laid-out, editable native `.drawio`. Requires draw.io 30 or newer.
+Converts Mermaid into an automatically laid-out, editable native `.drawio`. Requires draw.io 30.2.4 or later (`supportsMermaid` from `drawio_check`).
 
 #### Options
 
@@ -312,14 +326,14 @@ Converts Mermaid into an automatically laid-out, editable native `.drawio`. Requ
 | --- | --- | --- | --- | --- |
 | `mermaid` | string | One of `mermaid`/`input` | — | Inline Mermaid text. A temporary `.mmd` is removed after conversion. |
 | `input` | string | One of `mermaid`/`input` | — | Existing `.mmd` source path. |
-| `output` | string | No | See below | Destination `.drawio` path. |
+| `output` | string | No | See below | Destination `.drawio` file, not a directory. |
 
 Output defaults:
 
 - file input: same directory and stem with `.drawio`;
-- inline Mermaid: `diagram.drawio` in the current working directory.
+- inline Mermaid: `diagram.drawio` in the Pi session's working directory.
 
-Provide exactly one of `mermaid` or `input`. Normally provide `output` explicitly to avoid ambiguous names or accidental replacement.
+Provide exactly one of `mermaid` (nonblank inline text) or `input` (an existing `.mmd` file). Providing both or neither fails before conversion. Normally provide `output` explicitly to avoid ambiguous names or accidental replacement.
 
 #### Best use
 
@@ -335,7 +349,7 @@ Use for standard structure-first diagrams without precise draw.io styling requir
 
 Do not choose Mermaid conversion when the requested artifact needs official vendor icons, exact UML/BPMN styles, custom containers or swimlanes, precise coordinates, explicit edge waypoints, or multi-page drill-down behavior.
 
-The conversion already lays out the graph. Never run `drawio_layout` afterward.
+Conversion already lays out the graph and makes the imported pages finite. Run `drawio_fit_canvas` to size them to their content and margins; no `drawio_layout` pass is needed.
 
 ```text
 drawio_from_mermaid({
@@ -350,7 +364,7 @@ The converted file is a normal `.drawio` source: it can be validated, previewed,
 
 ### `drawio_layout`
 
-Repositions nodes and routes edges in an XML-authored `.drawio` using a safe ELK preset. Requires draw.io 30 or newer.
+Repositions nodes and routes edges on the first uncompressed page of an XML-authored `.drawio` using an allowlisted ELK preset. It changes geometry, preserving the authored page settings and leaving other pages unchanged. Requires draw.io 30.2.4 or later (`supportsLayout` from `drawio_check`).
 
 #### Options
 
@@ -358,7 +372,7 @@ Repositions nodes and routes edges in an XML-authored `.drawio` using a safe ELK
 | --- | --- | --- | --- | --- |
 | `input` | string | Yes | — | Existing `.drawio` source. |
 | `preset` | layout preset | Yes | — | One of the six allowlisted values below. |
-| `output` | string | No | `<name>.layout.drawio` | Destination path beside the input. May equal `input` for intentional in-place layout. |
+| `output` | string | No | `<name>.layout.drawio` | Destination file, not a directory. May equal `input` for intentional in-place layout. |
 
 #### Presets
 
@@ -394,7 +408,7 @@ Searches a bundled local index of more than 10,000 official draw.io shapes.
 | Option | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `query` | string | Yes | — | Shape keywords such as `aws lambda`, `uml actor`, `bpmn timer event`, or `k8s pod`. |
-| `limit` | number | No | `10` | Maximum number of ranked results. |
+| `limit` | integer | No | `10` | Nonnegative maximum number of ranked results; `0` returns no matches. |
 
 Each result contains:
 
@@ -425,11 +439,11 @@ The result:
 
 - lists leaf components;
 - groups components by named container;
-- lists relations between labeled endpoints;
+- lists relations between existing endpoints, using a cell ID as a fallback for an unlabeled endpoint;
 - uses edge labels as relation verbs;
 - produces a separate section for each page.
 
-Use it to understand an existing diagram before editing, verify high-level structure, or create documentation text. It returns Markdown in the tool result but does not create a Markdown file.
+Use it to understand an existing diagram before editing, verify high-level structure, or create documentation text. Diagram labels and page names are rendered as literal text in the Markdown result; the tool does not write a Markdown file.
 
 Compressed pages cannot be explained.
 
@@ -467,14 +481,15 @@ drawio_open({ "path": "architecture.drawio" })
 
 | Requirement | Recommended path |
 | --- | --- |
-| Standard diagram with no custom styling and CLI 30+ | Mermaid → `drawio_from_mermaid`. |
+| Standard diagram with no custom styling and Mermaid support | Mermaid → `drawio_from_mermaid`. |
 | Vendor icons, exact UML/BPMN notation, custom styling, swimlanes, containers, precise routing, or multi-page output | Hand-authored uncompressed XML plus `drawio_shapesearch`. |
-| Large hand-authored graph and CLI 30+ | Rough XML → `drawio_layout`. |
-| CLI unavailable or older than 30 | Hand-authored XML; validation and shape search remain available. |
+| Large hand-authored graph and ELK layout support | Rough XML → `drawio_layout`. |
+| Mermaid/layout unavailable | Hand-authored XML; validation and shape search remain available. |
 | Existing diagram must be understood | `drawio_explain`, then inspect the source XML. |
 | Existing diagram only needs validation | `drawio_validate`; no CLI check is necessary. |
 | Existing diagram only needs export | `drawio_check` → `drawio_export`; do not rebuild it. |
-| Diagram needs continuous or timed motion | Hand-authored XML with connector flow/page animation metadata → validate → static PNG review → `drawio_export` with `animated:true`. |
+| Diagram needs continuous connector flow or a native draw.io page sequence | Author and validate the native animation → static PNG review → `drawio_export` with `animated:true`. |
+| Diagram needs new or stored DrawMe motion | Author and review the static diagram → `drawio_animate`; omit `steps` to reuse stored motion. |
 
 DrawMe does not expose a single natural-language-to-file tool. Author or edit Mermaid/XML with normal file tools, then use DrawMe for conversion, layout, validation, rendering, explanation, or opening.
 
@@ -484,20 +499,19 @@ DrawMe does not expose a single natural-language-to-file tool. Author or edit Me
 - Final PNG, SVG, and PDF embed XML by default and can be reopened in draw.io where supported.
 - Verified animated SVG is standalone: it uses SVG/CSS motion rather than draw.io's network-loaded HTML viewer. Connector flow is rendered by draw.io; portable page sequences are compiled after export. A static PNG fallback is recommended for reduced-motion users and consumers that sanitize SVG animation.
 - JPG cannot embed XML.
-- Preview PNG is intentionally clean and unembedded for visual inspection. Its successful tool result includes the image when the current model can view images, and the text always states whether it was attached and reports the output path. Each successful replacement removes the prior same-source preview file, and final export removes the latest remaining preview.
+- Preview PNG is an inspection artifact, not a deliverable. See [preview review and cleanup](#preview-review-and-cleanup) for attachment and file lifetime rules.
 - A final embedded PNG normally uses the `.drawio.png` double extension.
 - Multi-page exports should use `pageIndex` and explicit unique output names.
 - `drawio_explain` returns Markdown as text; it does not write a documentation file.
 - `drawio_layout` creates a sibling `.layout.drawio` unless `output` is supplied.
-- Inline Mermaid conversion creates `diagram.drawio` in the working directory unless `output` is supplied.
+- Inline Mermaid conversion creates `diagram.drawio` in the Pi session's working directory unless `output` is supplied.
 
 ## Functional limitations
 
 - Validation cannot inspect compressed pages.
 - Explanation cannot describe compressed pages.
 - Deterministic validation cannot replace visual inspection; rendered clipping, wrapping, contrast, and automatic routes can only be judged from the preview image. When the current model cannot view images, these remain unverified and must be reported as such.
-- Removing a superseded preview file does not rewrite Pi session history: image blocks already stored in earlier tool-result messages can remain visible in the transcript even though only the latest preview file remains on disk.
-- Route-through and crossing analysis is limited to edges with explicit waypoints; dense auto-routed graphs can validate without connector-route warnings.
+- [Validation](#drawio_validate) reports unchecked auto-routes separately from measured crossings; it does not inspect draw.io's rendered automatic routes.
 - Shape search covers bundled official draw.io shapes, not arbitrary third-party logos.
 - Mermaid conversion cannot express all draw.io styles, containers, routing, or multi-page behavior.
 - ELK layout accepts only the six registered presets; arbitrary JSON layouts are not exposed.
@@ -505,7 +519,10 @@ DrawMe does not expose a single natural-language-to-file tool. Author or edit Me
 - SVG hosts may sanitize styles or display only a static frame; retain the `.drawio` source and provide a PNG fallback when compatibility matters.
 - Animation preview is structural: the attached review PNG is static. Final animated export verifies generated animation markup but does not attach temporal playback to the model for visual review.
 - The extension does not expose GIF/video rendering, HTML viewers, XML compression/decompression, Python generators, or arbitrary draw.io CLI arguments.
-- A failed operation may be returned as text beginning with `Export failed`, `Layout failed`, `Mermaid conversion failed`, `Explain failed`, or `Open failed`. Treat that result as failure.
+
+## Failure results
+
+Treat a text result starting with `Export failed:`, `Animate failed:`, `Fit canvas failed:`, `Layout failed:`, `Mermaid conversion failed:`, `Explain failed:`, or `Open failed:` as a failure, even if the call itself returned normally. Validation instead reports diagnostics and explicitly marks incomplete results. Check the result before claiming a file was delivered, an image was reviewed, or animation was verified.
 
 ## Authoring references
 
