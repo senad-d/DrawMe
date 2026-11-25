@@ -10,6 +10,11 @@ rules:
     merge_when:
       semver: ["patch", "minor"]
     retest: "retest-pr"
+schedules:
+  - name: "maintenance"
+    at: "06:00"
+    days: ["wed"]
+    request: "Audit this project and fix what you find.\n\nReview the whole codebase as a senior code reviewer would before a release. Report only confirmed findings, each with where it is, the scenario that fails and how severe it is. Then fix them, smallest fix first, and leave a test that fails without the fix.\n\nReview these areas:\n\n1. Correctness: logic errors, unhandled edge cases, wrong defaults, error paths that hide failures or lose data, and race conditions or leaked processes and files.\n2. Security: input that reaches the shell or the file system without checks, path traversal, unsafe parsing of untrusted content, secrets in code or logs, and vulnerable dependencies.\n3. Compatibility: use of the host platform, external tools and dependencies that their current versions have changed or deprecated.\n4. Tests: behaviour without a test, tests that pass without checking anything, tests that are skipped, and flaky tests.\n5. Maintainability: duplicated code, dead code, functions or files that are too large, and abstractions with no use.\n6. Documentation: anything that no longer matches the code, such as commands, options, defaults, limits or examples.\n7. Pipeline: failing or skipped CI checks, and quality-gate and scanner findings.\n\nRules:\n- Group fixes so that one change covers one area of the code. At most 3 pull requests per run. File the remaining findings as issues.\n- Change no behaviour that the audit did not find wrong.\n- Leave bot dependency pull requests alone. Do not publish a release.\n- If nothing is wrong, change nothing.\n\nReport: one line per area (clean, a pull request or issue number, or a finding left for later) and the cost of the run."
 notifications:
   - name: "slack"
     type: "slack"
