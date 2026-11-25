@@ -47,7 +47,7 @@
         <mxCell id="prepare-rule-1" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="prepare">
           <mxGeometry x="25" y="195" width="410" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="desktop" value="&lt;b&gt;draw.io Desktop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;brew install --cask drawio&lt;/font&gt;&lt;br&gt;macOS command above&lt;br&gt;Linux: .deb / .rpm · Windows: installer&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="prepare">
+        <mxCell id="desktop" value="&lt;b&gt;draw.io Desktop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;brew install --cask drawio&lt;/font&gt;&lt;br&gt;macOS command above&lt;br&gt;Linux: .deb / .rpm · Windows: installer&lt;br&gt;WSL: use the native Linux CLI&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="prepare">
           <mxGeometry x="25" y="220" width="410" height="150" as="geometry"/>
         </mxCell>
         <mxCell id="prepare-rule-2" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="prepare">
@@ -74,8 +74,8 @@
         <mxCell id="start" value="&lt;b&gt;In your terminal&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:18px&quot;&gt;cd /path/to/project&lt;br&gt;pi&lt;/font&gt;&lt;br&gt;Grant project trust after review&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=21;fontStyle=0;" vertex="1" parent="use">
           <mxGeometry x="25" y="35" width="410" height="125" as="geometry"/>
         </mxCell>
-        <mxCell id="verify" value="&lt;b&gt;Inside Pi · verify&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:19px&quot;&gt;/drawme-check&lt;/font&gt;&lt;br&gt;Reports the detected path + version&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#FFFFFF;strokeColor=#E2E8F0;strokeWidth=1.5;" vertex="1" parent="use">
-          <mxGeometry x="25" y="245" width="410" height="115" as="geometry"/>
+        <mxCell id="verify" value="&lt;b&gt;Inside Pi · verify&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:19px&quot;&gt;/drawme-check&lt;/font&gt;&lt;br&gt;Reports the detected path + version&lt;br&gt;Mermaid import + ELK layout support&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#FFFFFF;strokeColor=#E2E8F0;strokeWidth=1.5;" vertex="1" parent="use">
+          <mxGeometry x="25" y="245" width="410" height="140" as="geometry"/>
         </mxCell>
         <mxCell id="describe" value="&lt;b&gt;Inside Pi · describe&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:17px&quot;&gt;&lt;font face=&quot;monospace&quot; style=&quot;font-size:17px&quot;&gt;/drawme a login flow with retry&lt;/font&gt;&lt;br&gt;Add “animated SVG” for motion&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=21;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=1.5;" vertex="1" parent="use">
           <mxGeometry x="25" y="460" width="410" height="145" as="geometry"/>
@@ -92,7 +92,7 @@
         <mxCell id="footer-rule" value="" style="fillColor=#E2E8F0;strokeColor=none;html=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="1090" width="1540" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="compatibility" value="v30+ adds Mermaid conversion + ELK layout; older versions still render and export.&lt;br&gt;No CLI? Author + validate XML only — no preview or export." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=17;fontStyle=0;" vertex="1" parent="1">
+        <mxCell id="compatibility" value="Mermaid conversion + ELK layout require draw.io v30.2.4 or later; older versions still render and export.&lt;br&gt;No CLI? Author + validate XML only — no preview or export." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=17;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="1120" width="1540" height="55" as="geometry"/>
         </mxCell>
       </root>
