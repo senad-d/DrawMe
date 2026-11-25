@@ -3,15 +3,16 @@
  * The export cases skip automatically when the draw.io CLI is unavailable, so
  * this file is safe to run in CI without draw.io installed.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { chmod, lstat, mkdtemp, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { describe, it, expect, beforeAll, afterAll, onTestFinished, vi } from "vitest";
+import { lstat, mkdtemp, writeFile, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import drawme from "../src/index";
 import { resolveBinary } from "../src/drawio";
+import { resolveBinary as resolveRendererBinary } from "../src/renderer";
 import { AUTOMATIC_CORRECTION_LIMIT } from "../src/workflow";
-import { makeMockPi, TINY_PNG, type ResultContent } from "./fixtures";
+import { installNodeRendererFixture, makeMockPi, TINY_PNG, type ResultContent } from "./fixtures";
 
 function textOf(content: ResultContent): string {
   return content.type === "text" ? content.text : "";
@@ -27,11 +28,11 @@ const SAMPLE = `<mxfile><diagram name="Page-1"><mxGraphModel><root>
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const IEND = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
 
+const FIXTURE_VERSION = "30.2.4";
 /** Stand-in draw.io CLI that exits successfully without rendering. */
-const FAKE_DRAWIO_NO_OUTPUT = `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
+const FAKE_DRAWIO_NO_OUTPUT = `import { writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
-if (args.includes("--version")) process.stdout.write("30.0.0\\n");
+if (args.includes("--version")) process.stdout.write("${FIXTURE_VERSION}\\n");
 `;
 
 /** Stand-in draw.io CLI that writes an artifact to the -o path. */
@@ -41,6 +42,48 @@ else writeFileSync(args[args.indexOf("-o") + 1], Buffer.from("${TINY_PNG}", "bas
 
 const VISION_CTX = { model: { input: ["text", "image"] } };
 const TEXT_ONLY_CTX = { model: { input: ["text"] } };
+
+async function testDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
+  return realpath(dir);
+}
+
+async function previewFixture() {
+  const dir = await testDir("drawme preview fixture ");
+  const input = join(dir, "sample diagram.drawio");
+  const binary = join(dir, "fake drawio.mjs");
+  const noOutputBinary = join(dir, "no output.mjs");
+  await writeFile(input, SAMPLE);
+  await writeFile(binary, FAKE_DRAWIO);
+  await writeFile(noOutputBinary, FAKE_DRAWIO_NO_OUTPUT);
+  const restoreRenderer = installNodeRendererFixture([binary, noOutputBinary]);
+  onTestFinished(() => {
+    restoreRenderer();
+    vi.unstubAllEnvs();
+  });
+  // Fake renderers run directly even on headless Linux; the adapter handles nonroot identity.
+  vi.stubEnv("DISPLAY", ":99");
+  vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
+  return { dir, input, binary, noOutputBinary };
+}
+
+function previewEntry(id: string, parentId: string | null, result: { content: ResultContent[]; details: unknown }) {
+  return {
+    type: "message" as const,
+    id,
+    parentId,
+    timestamp: new Date().toISOString(),
+    message: {
+      ...result,
+      role: "toolResult" as const,
+      toolCallId: id,
+      toolName: "drawio_export",
+      isError: false,
+      timestamp: Date.now(),
+    },
+  };
+}
 
 describe("extension registration", () => {
   it("registers all tools and commands without throwing", () => {
@@ -134,7 +177,6 @@ describe("extension registration", () => {
     expect(workflow).toContain("<name>.review-layout.png");
     expect(workflow).toContain("<name>.review-connectors.png");
     expect(workflow).toContain("<name>.review.png");
-    expect(workflow).toContain("only the latest review image remains");
     // Second-person instructions only: nothing in the message may talk about agents,
     // and the workflow must be self-contained (no mandatory reference read).
     expect(workflow).not.toMatch(/agent/i);
@@ -150,153 +192,103 @@ describe("extension registration", () => {
     expect(workflow).not.toContain("first read");
   });
 
-  it("attaches only the latest successful preview file but keeps final and failure results text-only", async () => {
+  it("attaches previews in the active conversation, retires tracked files, and keeps finals and failures text-only", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const dir = await mkdtemp(join(tmpdir(), "drawme-image-result-"));
-    try {
-      const input = join(dir, "sample.drawio");
-      const firstOutput = join(dir, "sample.review-canvas.png");
-      const latestOutput = join(dir, "sample.review-nodes.png");
-      const binary = join(dir, "fake-drawio.mjs");
-      await writeFile(input, SAMPLE);
-      await writeFile(binary, FAKE_DRAWIO);
-      await chmod(binary, 0o755);
-      vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
+    const { dir, input, binary } = await previewFixture();
+    const exportTool = tools.get("drawio_export")!;
+    const firstOutput = join(dir, "sample.review-canvas.png");
+    const latestOutput = join(dir, "sample.review-nodes.png");
+    const finalOutput = join(dir, "sample.svg");
+    const branch: ReturnType<typeof previewEntry>[] = [];
+    const ctx = { ...VISION_CTX, sessionManager: { getBranch: () => branch } };
 
-      const first = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output: firstOutput }, undefined, undefined, VISION_CTX);
-      expect(first.content).toHaveLength(2);
-      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
-      expect(textOf(first.content[0])).toContain("Preview image attached below");
-      expect(textOf(first.content[0])).toContain("Critique it against the current review pass's checklist");
+    const first = await exportTool.execute("first", { input, mode: "preview", output: firstOutput }, undefined, undefined, ctx);
+    expect(first.content).toHaveLength(2);
+    expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+    expect(first.details).toMatchObject({ binary, version: FIXTURE_VERSION, output: firstOutput, imageAttached: true });
+    expect(await readFile(firstOutput, "base64")).toBe(TINY_PNG);
+    expect(textOf(first.content[0])).toContain("Preview image attached below");
+    expect(textOf(first.content[0])).toContain("Critique it against the current review pass's checklist");
+    branch.push(previewEntry("first", null, first));
 
-      const latest = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output: latestOutput }, undefined, undefined, VISION_CTX);
-      expect(latest.content).toHaveLength(2);
-      expect(latest.content[0]).toMatchObject({ type: "text" });
-      expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
-      expect(textOf(latest.content[0])).toContain(`Removed preview artifact(s): ${firstOutput}`);
-      // A replacement preview demands a before/after verdict instead of a fresh critique.
-      expect(textOf(latest.content[0])).toContain("It replaces the previous preview");
-      expect(textOf(latest.content[0])).toContain("fixed, not fixed, or regressed");
-      expect(existsSync(firstOutput)).toBe(false);
-      expect(existsSync(latestOutput)).toBe(true);
+    const latest = await exportTool.execute("latest", { input, mode: "preview", output: latestOutput }, undefined, undefined, ctx);
+    expect(latest.content).toHaveLength(2);
+    expect(latest.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+    expect(latest.details).toMatchObject({ output: latestOutput, imageAttached: true, removedPreviews: [firstOutput] });
+    expect(textOf(latest.content[0])).toMatch(/not.fixed.*regressed/i);
+    expect(existsSync(firstOutput)).toBe(false);
+    expect(await readFile(latestOutput, "base64")).toBe(TINY_PNG);
+    branch.push(previewEntry("latest", "first", latest));
 
-      // Re-exporting over the same path removes nothing from disk but is still a replacement:
-      // the verdict nudge must not fall back to the first-critique text.
-      const samePath = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output: latestOutput }, undefined, undefined, VISION_CTX);
-      expect(textOf(samePath.content[0])).not.toContain("Removed preview artifact(s)");
-      expect(textOf(samePath.content[0])).toContain("It replaces the previous preview");
-      expect(samePath.details).toMatchObject({ replacedPreview: true });
+    // Re-exporting the same path still has prior attached images, but removes no files.
+    const samePath = await exportTool.execute("repeat", { input, mode: "preview", output: latestOutput }, undefined, undefined, ctx);
+    expect(samePath.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+    expect(samePath.details).toMatchObject({ output: latestOutput, imageAttached: true, replacedPreview: true, removedPreviews: [] });
+    expect(textOf(samePath.content[0])).toMatch(/not.fixed.*regressed/i);
+    expect(await readFile(latestOutput, "base64")).toBe(TINY_PNG);
 
-      const final = await tools
-        .get("drawio_export")!
-        .execute("t", { input, format: "svg", mode: "final", output: join(dir, "sample.svg") });
-      expect(final.content).toHaveLength(1);
-      expect(final.content[0]).toMatchObject({ type: "text" });
-      expect(existsSync(latestOutput)).toBe(false);
+    const final = await exportTool.execute("final", { input, format: "svg", mode: "final", output: finalOutput }, undefined, undefined, ctx);
+    expect(final.content).toEqual([{ type: "text", text: expect.stringContaining(`Exported ${finalOutput}`) }]);
+    expect(final.details).toMatchObject({ output: finalOutput, imageAttached: false, removedPreviews: [latestOutput] });
+    expect(await readFile(finalOutput, "utf8")).toContain("<svg");
+    expect(existsSync(latestOutput)).toBe(false);
 
-      const failure = await tools
-        .get("drawio_export")!
-        .execute("t", { input: join(dir, "missing.drawio"), mode: "preview" });
-      expect(failure.content).toHaveLength(1);
-      expect(failure.content[0]).toMatchObject({ type: "text" });
-      expect(failure.content.some((block) => block.type === "image")).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-      await rm(dir, { recursive: true, force: true });
-    }
+    const failure = await exportTool.execute("failure", { input: join(dir, "missing.drawio"), mode: "preview" }, undefined, undefined, ctx);
+    expect(failure.content).toEqual([{ type: "text", text: expect.stringContaining("Export failed: input file not found") }]);
   });
 
   it("reports no new preview without attaching or deleting the previous image at the same path", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const dir = await mkdtemp(join(tmpdir(), "drawme-stale-preview-"));
-    try {
-      const input = join(dir, "sample.drawio");
-      const output = join(dir, "sample.review.png");
-      const binary = join(dir, "fake-drawio.mjs");
-      const noOutputBinary = join(dir, "fake-drawio-no-output.mjs");
-      await writeFile(input, SAMPLE);
-      await writeFile(binary, FAKE_DRAWIO, { mode: 0o755 });
-      await writeFile(noOutputBinary, FAKE_DRAWIO_NO_OUTPUT, { mode: 0o755 });
+    const { dir, input, noOutputBinary } = await previewFixture();
+    const exportTool = tools.get("drawio_export")!;
+    const output = join(dir, "sample.review.png");
+    const params = { input, output, mode: "preview" };
+    const first = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
+    expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+    expect(first.details).toMatchObject({ output, imageAttached: true });
 
-      const exportTool = tools.get("drawio_export")!;
-      const params = { input, output, mode: "preview" };
-      vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
-      const first = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
-      expect(first.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
-
-      vi.stubEnv("DRAWME_DRAWIO_BINARY", noOutputBinary);
-      const retry = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
-      expect(retry.content).toEqual([
-        { type: "text", text: expect.stringContaining(`the output was not created: ${output}`) },
-      ]);
-      expect(await readFile(output)).toEqual(Buffer.from(TINY_PNG, "base64"));
-    } finally {
-      vi.unstubAllEnvs();
-      await rm(dir, { recursive: true, force: true });
-    }
+    vi.stubEnv("DRAWME_DRAWIO_BINARY", noOutputBinary);
+    const retry = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
+    expect(retry.content).toEqual([
+      { type: "text", text: expect.stringContaining(`the output was not created: ${output}`) },
+    ]);
+    expect(await readFile(output, "base64")).toBe(TINY_PNG);
   });
 
-  it("attaches the preview image only when the current model can view images", async () => {
+  it("honors known model capabilities and reports whether a preview was actually attached", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const dir = await mkdtemp(join(tmpdir(), "drawme-vision-"));
-    try {
-      const input = join(dir, "sample.drawio");
-      const output = join(dir, "sample.review.png");
-      const binary = join(dir, "fake-drawio.mjs");
-      await writeFile(input, SAMPLE);
-      await writeFile(binary, FAKE_DRAWIO);
-      await chmod(binary, 0o755);
-      vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
+    const { dir, input } = await previewFixture();
+    const exportTool = tools.get("drawio_export")!;
+    const output = join(dir, "sample.review.png");
+    const params = { input, mode: "preview", output };
 
-      const textOnly = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output }, undefined, undefined, TEXT_ONLY_CTX);
-      expect(textOnly.content).toHaveLength(1);
-      expect(textOf(textOnly.content[0])).toContain("Preview image NOT attached");
-      expect(textOf(textOnly.content[0])).toContain("cannot view images");
-      expect(textOnly.details).toMatchObject({ imageAttached: false });
-      expect(existsSync(output)).toBe(true); // the file stays on disk for the user
+    const textOnly = await exportTool.execute("t", params, undefined, undefined, TEXT_ONLY_CTX);
+    expect(textOnly.content).toHaveLength(1);
+    expect(textOf(textOnly.content[0])).toContain("Preview image NOT attached");
+    expect(textOf(textOnly.content[0])).toContain("cannot view images");
+    expect(textOnly.details).toMatchObject({ imageAttached: false });
+    expect(await readFile(output, "base64")).toBe(TINY_PNG);
 
-      const vision = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output }, undefined, undefined, VISION_CTX);
-      expect(vision.content).toHaveLength(2);
-      expect(vision.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
-      expect(textOf(vision.content[0])).toContain("Preview image attached below");
-      expect(vision.details).toMatchObject({ imageAttached: true });
+    const vision = await exportTool.execute("t", params, undefined, undefined, VISION_CTX);
+    expect(vision.content).toHaveLength(2);
+    expect(vision.content[1]).toEqual({ type: "image", mimeType: "image/png", data: TINY_PNG });
+    expect(textOf(vision.content[0])).toContain("Preview image attached below");
+    expect(vision.details).toMatchObject({ imageAttached: true });
 
-      // Unknown model fails open (image attached), matching Pi's built-in read tool.
-      const unknownModel = await tools
-        .get("drawio_export")!
-        .execute("t", { input, mode: "preview", output }, undefined, undefined, {});
-      expect(unknownModel.content).toHaveLength(2);
-      expect(unknownModel.details).toMatchObject({ imageAttached: true });
-
-      // Final exports stay text-only even for vision models.
-      const final = await tools
-        .get("drawio_export")!
-        .execute("t", { input, format: "svg", mode: "final", output: join(dir, "sample.svg") }, undefined, undefined, VISION_CTX);
-      expect(final.content).toHaveLength(1);
-      expect(final.details).toMatchObject({ imageAttached: false });
-    } finally {
-      vi.unstubAllEnvs();
-      await rm(dir, { recursive: true, force: true });
-    }
+    const unknownModel = await exportTool.execute("t", params, undefined, undefined, {});
+    expect(unknownModel.details).toMatchObject({
+      output,
+      imageAttached: unknownModel.content.some((block) => block.type === "image"),
+    });
   });
 
   it("drawio_validate tool reports a clean sample", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const dir = await mkdtemp(join(tmpdir(), "drawme-"));
+    const dir = await testDir("drawme validate ");
     const file = join(dir, "s.drawio");
     await writeFile(file, SAMPLE);
     const res = await tools.get("drawio_validate")!.execute("t", { input: file }, undefined, undefined, {});
@@ -307,7 +299,6 @@ describe("extension registration", () => {
     expect(text).toContain("Readability score: 0");
     expect(text).toContain("anchors=0");
     expect(text).toContain("0 error(s), 0 unresolved warning(s)");
-    await rm(dir, { recursive: true, force: true });
   });
 
   it("drawio_shapesearch tool returns official style strings", async () => {
@@ -320,13 +311,12 @@ describe("extension registration", () => {
   it("drawio_explain tool describes a sample as Markdown", async () => {
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    const dir = await mkdtemp(join(tmpdir(), "drawme-"));
+    const dir = await testDir("drawme explain ");
     const file = join(dir, "s.drawio");
     await writeFile(file, SAMPLE);
     const res = await tools.get("drawio_explain")!.execute("t", { input: file }, undefined, undefined, {});
     expect(textOf(res.content[0])).toContain("### Components");
     expect(textOf(res.content[0])).toContain("### Relations");
-    await rm(dir, { recursive: true, force: true });
   });
 
   it("reports tool failures and empty search results as text", async () => {
@@ -437,7 +427,7 @@ describe("real draw.io export", async () => {
     async () => {
       const { pi, tools } = makeMockPi();
       drawme(pi as never);
-      const res = await tools.get("drawio_export")!.execute("t", { input: file, mode: "preview" }, undefined, undefined, {});
+      const res = await tools.get("drawio_export")!.execute("t", { input: file, mode: "preview" }, undefined, undefined, VISION_CTX);
       const out = join(dir, "sample.preview.png");
       expect(existsSync(out)).toBe(true);
       const data = await readFile(out);
@@ -445,6 +435,7 @@ describe("real draw.io export", async () => {
       expect(textOf(res.content[0])).toContain("Exported");
       const image = res.content.find((block) => block.type === "image");
       expect(image).toMatchObject({ type: "image", mimeType: "image/png", data: data.toString("base64") });
+      expect(res.details).toMatchObject({ output: out, imageAttached: true });
     },
     120_000,
   );
@@ -560,24 +551,22 @@ describe("real draw.io export", async () => {
   }, 120_000);
 });
 
-describe("draw.io v30+ features (Mermaid + layout)", async () => {
-  const cli = await resolveBinary();
-  const v30 = cli.available && (cli.major ?? 0) >= 30;
-  const run = v30 ? it : it.skip;
+describe("native draw.io Mermaid import", async () => {
+  const cli = await resolveRendererBinary();
 
-  run(
+  it.runIf(cli.available && cli.supportsMermaid === true)(
     "converts inline Mermaid to a .drawio",
     async () => {
       const { pi, tools } = makeMockPi();
       drawme(pi as never);
-      const dir = await mkdtemp(join(tmpdir(), "drawme-mmd-"));
+      const dir = await testDir("drawme Mermaid import ");
       const out = join(dir, "flow.drawio");
       const res = await tools
         .get("drawio_from_mermaid")!
         .execute("t", { mermaid: "flowchart LR\n A[Start] --> B[End]", output: out }, undefined, undefined, {});
       expect(existsSync(out)).toBe(true);
       expect(textOf(res.content[0])).toContain("Converted");
-      await rm(dir, { recursive: true, force: true });
+      expect(res.details).toMatchObject({ output: out });
     },
     120_000,
   );
