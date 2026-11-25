@@ -10,11 +10,14 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const entry = "src/pack-fixture.ts";
 const runtimeModule = "src/pack-fixture-runtime.ts";
 const typeModule = "src/pack-fixture-types.ts";
+const npmTimeoutMs = 10_000;
+// The longest case runs three npm commands sequentially; leave time for fixture writes and assertions.
+const packTestTimeoutMs = 3 * npmTimeoutMs + 5_000;
 
 function runNpm(dir: string, command: "run check:pack" | "pack --dry-run --json") {
   // A fixed command works with npm.cmd on Windows, without interpolating any paths or fixture data.
   const result = spawnSync(`npm --offline --ignore-scripts ${command}`, {
-    cwd: dir, shell: true, encoding: "utf8", timeout: 10_000,
+    cwd: dir, shell: true, encoding: "utf8", timeout: npmTimeoutMs,
   });
   if (result.error) throw result.error;
   return { status: result.status, stdout: result.stdout, output: `${result.stdout}\n${result.stderr}` };
@@ -38,7 +41,7 @@ function expectMissing(result: ReturnType<typeof checkPack>, file: string) {
   expect(result.output).toContain(`required package file is missing: ${file}`);
 }
 
-describe("packed extension runtime closure", () => {
+describe("packed extension runtime closure", { timeout: packTestTimeoutMs }, () => {
   let dir: string | undefined;
 
   beforeAll(() => {
