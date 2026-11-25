@@ -1,5 +1,56 @@
+import { readFileSync } from "node:fs";
+import { DOMParser } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
+import type { DomEl } from "../src/dom";
+import { verifyStandaloneImages, walkElements } from "../src/svg-helpers";
 import { padSvg, pinAuthoredColors, resolveLightDark } from "../src/svgexport";
+
+function parseSvg(content: string): DomEl {
+  return new DOMParser().parseFromString(content, "image/svg+xml").documentElement as unknown as DomEl;
+}
+
+const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">';
+
+describe("shared SVG helpers", () => {
+  it("walks the root and descendants in document order, ignoring text and comments", () => {
+    const root = parseSvg(`${SVG_OPEN}text<defs><marker/><pattern><rect/></pattern></defs><!-- gap --><g><path/></g></svg>`);
+    expect(walkElements(root).map(({ tagName }) => tagName)).toEqual(["svg", "defs", "marker", "pattern", "rect", "g", "path"]);
+  });
+
+  it.each([
+    '<image href="./logo.png"/>',
+    '<image href="/assets/logo.png"/>',
+    '<image href="https://example.invalid/logo.png"/>',
+    '<image xmlns:link="http://www.w3.org/1999/xlink" link:href="file:///logo.png"/>',
+    '<image href="#logo" xlink:href="logo.png"/>',
+    '<filter><feImage href="logo.png"/></filter>',
+    '<foreignObject><img xmlns="http://www.w3.org/1999/xhtml" src="logo.png"/></foreignObject>',
+  ])("refuses non-self-contained rendered image references (%s)", (image) => {
+    expect(() => verifyStandaloneImages(walkElements(parseSvg(`${SVG_OPEN}${image}</svg>`)))).toThrow(/embed the image/i);
+  });
+
+  it("allows embedded images and local fragment references without inspecting diagram metadata", () => {
+    const svg = `${SVG_OPEN}<desc>file:///logo.png</desc><defs><g id="logo"><rect/></g></defs>
+      <image href="#logo"/><image xlink:href="data:image/svg+xml,%3Csvg%2F%3E"/></svg>`;
+    expect(() => verifyStandaloneImages(walkElements(parseSvg(svg)))).not.toThrow();
+  });
+
+  it("keeps one shared definition of each SVG primitive and no per-target wait arm", () => {
+    const source = (file: string) => readFileSync(new URL(`../src/${file}.ts`, import.meta.url), "utf8");
+    const declarations = /function (cssString|walkElements|walk)\(/g;
+    expect(source("svg-helpers").match(declarations)).toEqual(["function cssString(", "function walkElements("]);
+    for (const file of ["animation", "motion", "svgexport"]) {
+      const text = source(file);
+      expect(text).toMatch(/import \{[^}]*\bwalkElements\b[^}]*\} from "\.\/svg-helpers";/);
+      if (file !== "svgexport") expect(text).toMatch(/import \{[^}]*\bcssString\b[^}]*\} from "\.\/svg-helpers";/);
+      expect(text).not.toMatch(declarations);
+    }
+    const motion = source("motion");
+    const compiler = motion.slice(motion.indexOf("export function compileMotion("), motion.indexOf("function compileTrackCss("));
+    expect(compiler).toContain("switch (effect)");
+    expect(compiler).not.toMatch(/case ["']wait["']:/);
+  });
+});
 
 describe("SVG color pinning", () => {
   it("resolves light-dark() to the authored color, including nested functions", () => {
