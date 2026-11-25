@@ -1,20 +1,33 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { access, chmod, link, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { MAX_FINAL_RASTER_PIXELS, cappedScale, planExport, deriveOutput, exportDiagram, run, xvfbScreen } from "../src/drawio";
-import { TINY_PNG } from "./fixtures";
+import { installNodeRendererFixture, TINY_PNG } from "./fixtures";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>';
 const renderImage = `writeFileSync(output, svg ? ${JSON.stringify(SVG)} : Buffer.from("${TINY_PNG}", "base64"));`;
+
+let restoreRenderer: (() => void) | undefined;
+
+afterEach(() => {
+  restoreRenderer?.();
+  restoreRenderer = undefined;
+  vi.unstubAllEnvs();
+});
+
+function useFakeDrawio(binary: string): void {
+  restoreRenderer?.();
+  restoreRenderer = installNodeRendererFixture([binary]);
+  vi.stubEnv("DISPLAY", ":99");
+}
 
 async function makeFakeDrawio(dir: string, render = renderImage): Promise<string> {
   const binary = join(dir, "fake-drawio.mjs");
   await writeFile(
     binary,
-    `#!/usr/bin/env node
-import { chmodSync, linkSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+    `import { chmodSync, linkSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) {
   process.stdout.write("30.0.0\\n");
@@ -25,7 +38,7 @@ if (args.includes("--version")) {
 }
 `,
   );
-  await chmod(binary, 0o755);
+  useFakeDrawio(binary);
   return binary;
 }
 
@@ -35,7 +48,7 @@ describe("deriveOutput", () => {
   });
   it("uses a single extension when not embedding", () => {
     expect(deriveOutput("diagram.drawio", "png", false)).toBe("diagram.png");
-    expect(deriveOutput("dir/diagram.drawio", "svg", true)).toBe("dir/diagram.svg");
+    expect(deriveOutput(join("dir", "diagram.drawio"), "svg", true)).toBe(join("dir", "diagram.svg"));
     expect(deriveOutput("diagram", "pdf", true)).toBe("diagram.pdf");
   });
 });
@@ -45,7 +58,7 @@ describe("xvfbScreen", () => {
     const final = planExport({ input: "a.drawio" }, "linux", false, 1600).args;
     expect(final).toContain("3360");
     expect(xvfbScreen(final)).toBe("3616x3616x24");
-    expect(xvfbScreen(planExport({ input: "a.drawio", mode: "preview" }, "linux").args)).toBe("2256x2256x24");
+    expect(xvfbScreen(planExport({ input: "a.drawio", mode: "preview" }, "linux", false).args)).toBe("2256x2256x24");
     expect(xvfbScreen(["-x", "-f", "svg", "-b", "0"])).toBe("1280x1024x24");
     expect(xvfbScreen(["--height", "900"])).toBe("1280x1156x24");
     expect(xvfbScreen(["--width", "20000"])).toBe("8192x8192x24");
@@ -54,13 +67,14 @@ describe("xvfbScreen", () => {
 
 describe.skipIf(process.platform === "win32")("run", () => {
   it("kills the whole process group on timeout, leaving no orphans", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawme-run-"));
+    const dir = await mkdtemp(join(tmpdir(), "drawme run with spaces "));
     const pidFile = join(dir, "pid");
     try {
-      await expect(run("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], 300)).rejects.toThrow("timed out");
+      const script = `sleep 30 & pid=$!; trap 'wait "$pid"; exit 0' TERM; printf '%s' "$pid" > "$1"; wait "$pid"`;
+      await expect(run("sh", ["-c", script, "fixture", pidFile], 300)).rejects.toThrow("timed out");
       const pid = Number(await readFile(pidFile, "utf8"));
-      await new Promise((r) => setTimeout(r, 200));
-      expect(() => process.kill(pid, 0)).toThrow();
+      expect(pid).toBeGreaterThan(0);
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -150,10 +164,13 @@ describe("planExport", () => {
     expect(one.args).toContain("--width");
     expect(one.args).not.toContain("-s");
 
-    // Small diagrams, unknown heights, and explicit sizes keep the requested scale.
+    // Small diagrams and unknown heights retain the requested scale. Explicit widths are budgeted, too.
     expect(cappedScale(2, 40, 1000, 800)).toBe(2);
     expect(cappedScale(2, 40, 3000)).toBe(2);
-    expect(planExport({ input: "a.drawio", width: 5000 }, "darwin", false, 3000, 2000).args).toContain("5000");
+    const fixed = planExport({ input: "a.drawio", width: 5000 }, "darwin", false, 3000, 2000).args;
+    const explicitWidth = Number(fixed[fixed.indexOf("--width") + 1]);
+    expect(explicitWidth).toBeLessThan(5000);
+    expect(explicitWidth * (Math.ceil((explicitWidth - 80) * 2 / 3) + 80)).toBeLessThanOrEqual(MAX_FINAL_RASTER_PIXELS);
   });
 
   it("supports explicit height, scale, border, and embed options", () => {
@@ -179,9 +196,9 @@ describe("planExport", () => {
     expect(p.args[i + 1]).toBe("2");
   });
 
-  it("on Linux the headless flags trail the input; --no-sandbox only as root", () => {
+  it("on Linux keeps the sandbox and refuses root with actionable advice", () => {
     expect(planExport({ input: "a.drawio" }, "linux", false).linuxExtra).toEqual(["--disable-gpu"]);
-    expect(planExport({ input: "a.drawio" }, "linux", true).linuxExtra).toEqual(["--disable-gpu", "--no-sandbox"]);
+    expect(() => planExport({ input: "a.drawio" }, "linux", true)).toThrow("unprivileged user");
   });
 });
 
@@ -196,8 +213,8 @@ describe("exportDiagram source protection", () => {
         const binary = join(dir, "fake-drawio.mjs");
         const source = "<mxfile/>";
         await writeFile(input, source);
-        await writeFile(binary, `#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "started");\nconsole.log("30.0.0");\n`);
-        await chmod(binary, 0o755);
+        await writeFile(binary, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "started");\nconsole.log("30.0.0");\n`);
+        useFakeDrawio(binary);
         let output = input;
         if (alias === "file symlink") {
           output = join(dir, "symlink.png");
@@ -396,14 +413,13 @@ describe("exportDiagram animated SVG", () => {
       );
       await writeFile(
         binary,
-        `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
+        `import { writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) process.stdout.write("31.0.0\\n");
 else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="80px" height="40px" viewBox="0 0 80 40"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');
 `,
       );
-      await chmod(binary, 0o755);
+      useFakeDrawio(binary);
 
       const result = await exportDiagram({ input, output, animated: true, binary });
       const svg = await readFile(output, "utf8");

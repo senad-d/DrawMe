@@ -4,8 +4,8 @@
  * see the notice beside it). Resolves a keyword query such as "aws lambda" or
  * "uml actor" to the real palette style instead of a guess.
  *
- * Uses a tag map with exact + Soundex matching, strict AND first, a scored OR
- * fallback, and a verbatim-title tiebreaker.
+ * Prefers exact normalized titles, then uses exact + Soundex tag matches with
+ * strict AND first, a scored OR fallback, and a verbatim-title tiebreaker.
  */
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -85,16 +85,26 @@ function buildTagMap(shapes: Shape[]): Map<string, Set<number>> {
   return tagMap;
 }
 
-function splitCompound(token: string): string[] {
-  const spaced = token
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([a-zA-Z])(\d)/g, "$1 $2")
-    .replace(/(\d)([a-zA-Z])/g, "$1 $2");
-  return spaced
-    .trim()
+function normalizeWords(text: string): string {
+  return text
+    // Split AWSLambda, but keep alphanumeric terms such as IPv6 intact.
+    .replace(/([A-Z])([A-Z][a-z])(?![0-9])/g, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
-    .split(/\s+/)
-    .filter((p) => p.length >= 2);
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function buildTitleMap(shapes: Shape[]): Map<string, number[]> {
+  const titles = new Map<string, number[]>();
+  for (const [i, shape] of shapes.entries()) {
+    for (const title of new Set([shape.title.toLowerCase(), normalizeWords(shape.title)])) {
+      const matches = titles.get(title);
+      if (matches) matches.push(i);
+      else titles.set(title, [i]);
+    }
+  }
+  return titles;
 }
 
 interface TermMatch {
@@ -110,27 +120,6 @@ function matchTerm(tagMap: Map<string, Set<number>>, term: string): TermMatch {
     phonetic = new Set([...(tagMap.get(sx) ?? new Set<number>())].filter((i) => !exact.has(i)));
   }
   return { exact, phonetic };
-}
-
-/** Sub-terms for a raw query word: its compound splits, else the whole word if long enough. */
-function pickTerms(subs: string[], raw: string): string[] {
-  if (subs.length) return subs;
-  return raw.length >= 2 ? [raw] : [];
-}
-
-/** Tokenize the query into unique search terms (compound-split, deduped, order-preserving). */
-function parseTerms(query: string): string[] {
-  const terms: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of query.toLowerCase().split(/\s+/).filter(Boolean)) {
-    for (const t of pickTerms(splitCompound(raw), raw)) {
-      if (!seen.has(t)) {
-        seen.add(t);
-        terms.push(t);
-      }
-    }
-  }
-  return terms;
 }
 
 /** Strict AND across all terms (exact ∪ phonetic per term). Null when there are no terms. */
@@ -160,8 +149,15 @@ function scoreMatches(termMatches: TermMatch[], pool: Set<number> | null): Map<n
   return scores;
 }
 
-/** Rank scored shapes: by score, then verbatim-title hits, then title, then index. */
-function rankMatches(scores: Map<number, number>, shapes: Shape[], terms: string[], limit: number): ShapeMatch[] {
+/** Rank by whole-title match, then tag score, title hits, title, and index. */
+function rankMatches(
+  scores: Map<number, number>,
+  exactTitles: Set<number>,
+  verbatim: string,
+  shapes: Shape[],
+  terms: string[],
+  limit: number,
+): ShapeMatch[] {
   const termSet = new Set(terms);
   const titleHits = (idx: number): number => {
     const toks = new Set(shapes[idx].title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
@@ -170,7 +166,10 @@ function rankMatches(scores: Map<number, number>, shapes: Shape[], terms: string
     return n;
   };
 
-  const ranked = [...scores.keys()].sort((a, b) => {
+  const ranked = [...new Set([...exactTitles, ...scores.keys()])].sort((a, b) => {
+    const aVerbatim = shapes[a].title.toLowerCase() === verbatim, bVerbatim = shapes[b].title.toLowerCase() === verbatim;
+    if (aVerbatim !== bVerbatim) return aVerbatim ? -1 : 1;
+    if (exactTitles.has(a) !== exactTitles.has(b)) return exactTitles.has(a) ? -1 : 1;
     const ds = (scores.get(b) ?? 0) - (scores.get(a) ?? 0);
     if (ds !== 0) return ds;
     const dh = titleHits(b) - titleHits(a);
@@ -184,32 +183,37 @@ function rankMatches(scores: Map<number, number>, shapes: Shape[], terms: string
   return ranked.slice(0, limit).map((i) => ({ style: shapes[i].style, w: shapes[i].w, h: shapes[i].h, title: shapes[i].title }));
 }
 
-function search(shapes: Shape[], tagMap: Map<string, Set<number>>, query: string, limit: number): ShapeMatch[] {
-  if (!query) return [];
-  const terms = parseTerms(query);
-  if (!terms.length) return [];
-
-  const termMatches = terms.map((t) => matchTerm(tagMap, t));
-  const andSet = intersectAll(termMatches);
-  const pool = andSet?.size ? andSet : null; // AND results if any, else OR across all terms
-  const scores = scoreMatches(termMatches, pool);
-  return rankMatches(scores, shapes, terms, limit);
+interface ShapeIndex {
+  shapes: Shape[];
+  tagMap: Map<string, Set<number>>;
+  titleMap: Map<string, number[]>;
 }
 
 const INDEX_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "assets", "data", "shape-index.json.gz");
-let cachedShapes: Shape[] | null = null;
-let cachedTagMap: Map<string, Set<number>> | null = null;
+let cachedIndex: ShapeIndex | null = null;
 
-function load(): { shapes: Shape[]; tagMap: Map<string, Set<number>> } {
-  if (!cachedShapes || !cachedTagMap) {
-    cachedShapes = JSON.parse(gunzipSync(readFileSync(INDEX_PATH)).toString("utf8")) as Shape[];
-    cachedTagMap = buildTagMap(cachedShapes);
+function load(): ShapeIndex {
+  if (!cachedIndex) {
+    const shapes = JSON.parse(gunzipSync(readFileSync(INDEX_PATH)).toString("utf8")) as Shape[];
+    cachedIndex = { shapes, tagMap: buildTagMap(shapes), titleMap: buildTitleMap(shapes) };
   }
-  return { shapes: cachedShapes, tagMap: cachedTagMap };
+  return cachedIndex;
 }
 
 /** Search the bundled shape index; returns up to `limit` matches ranked by relevance. */
 export function searchShapes(query: string, limit = 10): ShapeMatch[] {
-  const { shapes, tagMap } = load();
-  return search(shapes, tagMap, query, limit);
+  if (!Number.isInteger(limit) || limit < 0) throw new RangeError("shape search limit must be a nonnegative integer");
+  if (limit === 0) return [];
+  const normalized = normalizeWords(query);
+  if (!normalized) return [];
+
+  const { shapes, tagMap, titleMap } = load();
+  const terms = [...new Set(normalized.split(" ").filter((term) => term.length >= 2))];
+  const termMatches = terms.map((t) => matchTerm(tagMap, t));
+  const andSet = intersectAll(termMatches);
+  const pool = andSet?.size ? andSet : null; // AND results if any, else OR across all terms
+  const scores = scoreMatches(termMatches, pool);
+  const verbatim = query.trim().toLowerCase();
+  const exactTitles = new Set([...(titleMap.get(verbatim) ?? []), ...(titleMap.get(normalized) ?? [])]);
+  return rankMatches(scores, exactTitles, verbatim, shapes, terms, limit);
 }

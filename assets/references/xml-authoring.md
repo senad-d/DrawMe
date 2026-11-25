@@ -189,13 +189,14 @@ Use `drawio_animate` for any animation beyond continuous connector flow. Author 
 | `travel` | visible connector | A dot runs along the connector in `color` |
 | `wait` | none | Pause for `duration` ms |
 
-- Steps run one after another; `parallel: true` starts a step with the previous one. `stagger` offsets consecutive cells of one step for a cascade.
-- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden. Everything else is visible from the start.
+- Use 1–200 steps and include effective visual motion: waits and no-ops alone are rejected. Steps run sequentially by default; `parallel: true` starts a step in the previous batch. `stagger` offsets consecutive cells within one step.
+- Keep `hold` and `stagger` within 0–60,000 ms. Use a positive duration of at most 60,000 ms for visual steps; `wait` requires a duration and may be zero. Keep the sequence within 300,000 ms before the loop hold. `loop` defaults to true and `hold` to 1600 ms.
+- A cell whose first effect is an entrance (`fadeIn`, `popIn`, `slideIn`, `drawIn`) starts hidden in playback. Do not set `visible="0"` on a cell the sequence must reveal. Reveal containers before animating their children. Use `fadeIn` to restore a dimmed cell to full opacity; an entrance on an already fully visible cell is invalid.
 - `drawIn` needs a solid connector without `flowAnimation=1`; use `fadeIn` for dashed or flowing connectors.
-- `loop` (default true) repeats the sequence after `hold` ms (default 1600) on the final state.
-- The tool stores the steps on the page root cell (`drawmeMotion`), so a later call without `steps` re-exports the same motion after layout edits. `drawio_validate` checks the stored steps against the page.
-- It writes `<name>.animated.svg` and a `<name>.storyboard.png` with one captioned frame per step. Use the storyboard to confirm order and visibility; it does not show easing or dot movement.
-- The motion plays in browsers and wherever the SVG is shown as an image (for example a README). draw.io itself does not play it.
+- The tool stores the steps on the page root cell (`drawmeMotion`), so a later call without `steps` re-exports the same motion after layout edits. `drawio_validate` checks the stored steps against the page. Embed images in the diagram rather than linking them; unresolved image links prevent standalone SVG verification.
+- The default SVG is `<name>.animated.svg`. For page 1 at that path the board is `<name>.storyboard.png`; otherwise it is `<output>.page-<pageIndex>.board.png` (for example `review.svg.page-2.board.png`). Use the storyboard path returned by the tool.
+- Review the captioned end states of up to 12 visual batches, sampled evenly with the first and last retained. Parallel steps share a tile; standalone waits take time but have no tile. The board helps check order and visibility, not easing or dot movement.
+- Browsers can play the SVG motion, including when shown as an image. draw.io itself does not play DrawMe motion.
 
 Example: reveal a three-hop flow, run traffic through it, then focus on the service.
 

@@ -6,11 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Raster exports enforce a 6,000,000-pixel budget including margins, even with an explicit width. Preview rasters also cap the long side at 2000 px by default or 2576 px when width is supplied. The public export tool exposes `width`, not `height`. See the [export sizing reference](docs/reference.md#size-and-margins) for the different SVG and PDF page rules.
+
 ## [0.1.11] - 2026-11-09
 
 ### Fixed
 
-- Final PNG/JPG exports use the selected page's content width and height to lower the raster scale when needed, targeting a six-million-pixel budget to avoid draw.io `UnknownVizError` failures. Explicit width and height requests remain unchanged.
+- Final PNG/JPG exports use the selected page's content width and height to lower the raster scale when needed, targeting a six-million-pixel budget to avoid draw.io `UnknownVizError` failures. At the time, explicit dimensions bypassed this scale cap. The internal planner accepted width and height; the public tool exposed only `width`.
 
 ## [0.1.10] - 2026-10-27
 

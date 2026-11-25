@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
 import { fitCanvasFile } from "../src/fitcanvas";
 import { validateXml } from "../src/validate";
 
@@ -73,6 +74,51 @@ describe("fitCanvasFile", () => {
       expect(fitted).toContain('x="140" y="130" as="sourcePoint"');
       expect(fitted).toContain('x="290" y="130" as="targetPoint"');
     }));
+
+  it.each([
+    {
+      scenario: "an edge-only page",
+      cells: `<mxCell id="e" edge="1" parent="1"><mxGeometry relative="1" as="geometry">
+        <mxPoint x="-10" y="0" as="sourcePoint"/><mxPoint x="90" y="50" as="targetPoint"/>
+      </mxGeometry></mxCell>`,
+      width: 140,
+      height: 90,
+    },
+    {
+      scenario: "a nested edge with one connected end",
+      cells: `<mxCell id="group" vertex="1" parent="1"><mxGeometry x="10" y="30" width="60" height="40" as="geometry"/></mxCell>
+        <mxCell id="node" vertex="1" parent="group"><mxGeometry x="5" y="5" width="10" height="10" as="geometry"/></mxCell>
+        <mxCell id="e" edge="1" source="node" parent="group"><mxGeometry relative="1" as="geometry">
+          <mxPoint x="600" y="700" as="sourcePoint"/><mxPoint x="200" y="80" as="targetPoint"/>
+        </mxGeometry></mxCell>
+        <mxCell id="hidden" edge="1" parent="1" visible="0"><mxGeometry relative="1" as="geometry">
+          <mxPoint x="800" y="900" as="targetPoint"/>
+        </mxGeometry></mxCell>`,
+      width: 240,
+      height: 120,
+    },
+  ])("fits the free terminal within the margins on $scenario", ({ cells, width, height }) =>
+    inTmp(async (dir) => {
+      const file = join(dir, "free-terminal.drawio");
+      const margin = 20;
+      await writeFile(file, wrap(`<mxGraphModel page="1" pageWidth="300" pageHeight="200"><root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>${cells}
+      </root></mxGraphModel>`));
+      await fitCanvasFile({ input: file, margin });
+
+      const doc = new DOMParser().parseFromString(await readFile(file, "utf8"), "text/xml");
+      const model = doc.getElementsByTagName("mxGraphModel")[0];
+      const edge = doc.getElementById("e")!;
+      const target = Array.from(edge.getElementsByTagName("mxPoint")).find((p) => p.getAttribute("as") === "targetPoint")!;
+      const parent = doc.getElementById("group")?.getElementsByTagName("mxGeometry")[0];
+      const targetX = Number(target.getAttribute("x")) + Number(parent?.getAttribute("x") ?? 0);
+      const targetY = Number(target.getAttribute("y")) + Number(parent?.getAttribute("y") ?? 0);
+      const pageWidth = Number(model.getAttribute("pageWidth"));
+      const pageHeight = Number(model.getAttribute("pageHeight"));
+      expect([pageWidth - targetX, pageHeight - targetY]).toEqual([margin, margin]);
+      expect([pageWidth, pageHeight]).toEqual([width, height]);
+    }),
+  );
 
   it("honours pageScale when computing page dimensions", () =>
     inTmp(async (dir) => {

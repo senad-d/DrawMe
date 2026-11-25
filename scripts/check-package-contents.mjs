@@ -3,9 +3,11 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimePackageClosure } from "./package-closure.mjs";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const packageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const extensions = packageJson.pi?.extensions;
 const issues = [];
 
 if (packageJson.private === true) {
@@ -14,7 +16,7 @@ if (packageJson.private === true) {
 if (!packageJson.keywords?.includes("pi-package")) {
   issues.push("package.json keywords must include pi-package");
 }
-if (!packageJson.pi?.extensions?.includes("./src/index.ts")) {
+if (!Array.isArray(extensions) || !extensions.includes("./src/index.ts")) {
   issues.push("package.json pi.extensions must include ./src/index.ts");
 }
 if (typeof packageJson.pi?.image !== "string" || packageJson.pi.image.length === 0) {
@@ -49,7 +51,9 @@ try {
 }
 
 const packedFiles = new Set(packResult?.files?.map((file) => file.path) ?? []);
-const requiredFiles = [
+const closure = runtimePackageClosure(ROOT, Array.isArray(extensions) ? extensions : []);
+issues.push(...closure.issues);
+const requiredFiles = new Set([
   "package.json",
   "README.md",
   "LICENSE",
@@ -69,17 +73,8 @@ const requiredFiles = [
   "example/drawme-validation-decision-tree.drawio",
   "example/event-driven-orders.drawio",
   "example/git-graph-example.drawio",
-  "src/dom.ts",
-  "src/drawio.ts",
-  "src/explain.ts",
-  "src/fitcanvas.ts",
-  "src/geometry.ts",
-  "src/index.ts",
-  "src/png.ts",
-  "src/shapesearch.ts",
-  "src/validate.ts",
-  "src/workflow.ts",
-];
+  ...closure.paths,
+]);
 
 for (const file of requiredFiles) {
   if (!packedFiles.has(file)) issues.push(`required package file is missing: ${file}`);

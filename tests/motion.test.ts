@@ -19,6 +19,7 @@ import {
 } from "../src/motion";
 import { buildStoryboard, sampleFrames, MAX_STORYBOARD_FRAMES } from "../src/storyboard";
 import { validateXml } from "../src/validate";
+import { createValidationBudget, ValidationBudgetExceeded } from "../src/validation-budget";
 
 const PAGE = `<mxfile><diagram name="Flow"><mxGraphModel pageWidth="400" pageHeight="200"><root>
   <mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -167,6 +168,127 @@ describe("motion compilation", () => {
     expect(motion.css).toContain("[data-drawme-dot] { display: none !important; }");
   });
 
+  it("preserves selector escaping for a quoted cell id with a backslash and a tab", () => {
+    const id = 'cell"\\\t';
+    const page = model(PAGE.replace('id="a"', 'id="cell&quot;&#92;&#9;"'));
+    const result = compileMotion({ steps: [{ effect: "fadeIn", cells: [id] }] }, motionCells(page));
+    expect(result.errors).toEqual([]);
+    expect(result.compiled?.css).toContain(String.raw`g[data-cell-id="cell\"\\\9 "] { animation: `);
+  });
+
+  it("adds a standalone wait to the duration without adding a storyboard frame", () => {
+    const motion = compile({
+      hold: 40,
+      steps: [
+        { effect: "fadeIn", cells: ["a"], duration: 100 },
+        { effect: "wait", duration: 250 },
+        { effect: "highlight", cells: ["a"], duration: 200 },
+        { effect: "highlight", cells: ["b"], duration: 300, parallel: true },
+        { effect: "fadeOut", cells: ["a"], duration: 150, parallel: false },
+      ],
+    }).compiled!;
+    expect([motion.sequenceMs, motion.durationMs]).toEqual([800, 840]);
+    expect(motion.frames.map(({ time }) => time)).toEqual([100, 650, 800]);
+  });
+
+  it.each<MotionSpec>([
+    { steps: [{ effect: "wait", duration: 100 }] },
+    { steps: [{ effect: "dim", cells: ["a"], value: 1 }] },
+    { steps: [{ effect: "travel", cells: ["e"], color: "#0000" }] },
+  ])("rejects a stored timeline with no effective visual motion ($steps.0.effect)", (spec) => {
+    expect(compile(spec)).toMatchObject({ compiled: null, errors: [expect.stringMatching(/no effective visual motion/)] });
+  });
+
+  it("requires the ancestor to be visible at the scheduled start, not at its step's end", () => {
+    const cells = motionCells(model(PAGE.replace('id="b" value="B" vertex="1" parent="1"', 'id="b" value="B" vertex="1" parent="a"')));
+    const reveal = { effect: "fadeIn", cells: ["a"], duration: 200 } as const;
+    const emphasis = { effect: "highlight", cells: ["b"], duration: 100 } as const;
+    const revealStep = { ...reveal, cells: [...reveal.cells] };
+    const emphasisStep = { ...emphasis, cells: [...emphasis.cells] };
+    expect(compileMotion({ steps: [emphasisStep, revealStep] }, cells).errors).toContainEqual(expect.stringMatching(/ancestor 'a'.*hidden/));
+    expect(compileMotion({ steps: [revealStep, { ...emphasisStep, parallel: true }] }, cells).errors).toContainEqual(expect.stringMatching(/ancestor 'a'.*hidden/));
+    expect(compileMotion({ steps: [revealStep, emphasisStep] }, cells).errors).toEqual([]);
+  });
+
+  it("accounts for stagger even when the child step is listed before the parent's reveal", () => {
+    const cells = motionCells(model(PAGE.replace('id="b" value="B" vertex="1" parent="1"', 'id="b" value="B" vertex="1" parent="a"')));
+    const result = compileMotion({ steps: [
+      { effect: "highlight", cells: ["d", "b"], stagger: 300, duration: 100 },
+      { effect: "fadeIn", cells: ["a"], duration: 200, parallel: true },
+    ] }, cells);
+    expect(result.errors).toEqual([]);
+    expect(result.compiled?.frames.map(({ time }) => time)).toEqual([400]);
+  });
+
+  it("does not skip animated ancestors across non-targetable containers or use their end state early", () => {
+    const page = model(PAGE.replace('id="b" value="B" vertex="1" parent="1"', 'id="b" value="B" vertex="1" parent="container"')
+      .replace('<mxCell id="b"', '<mxCell id="container" parent="a"/><mxCell id="b"'));
+    const cells = motionCells(page);
+    expect(cells.has("container")).toBe(false);
+    const fade: MotionSpec["steps"][number] = { effect: "fadeOut", cells: ["a"], duration: 200 };
+    const emphasize: MotionSpec["steps"][number] = { effect: "highlight", cells: ["d", "b"], stagger: 100, parallel: true };
+    expect(compileMotion({ steps: [fade, emphasize] }, cells).errors).toEqual([]);
+    expect(compileMotion({ steps: [fade, { ...emphasize, stagger: 200 }] }, cells).errors)
+      .toContainEqual(expect.stringMatching(/ancestor 'a'.*hidden/));
+  });
+
+  it("does not count an effect on an authored-hidden layer as visual motion", () => {
+    const page = model(PAGE.replace('<mxCell id="1" parent="0"/>', '<mxCell id="1" parent="0" visible="0"/>'));
+    expect(compileMotion({ steps: [{ effect: "highlight", cells: ["a"] }] }, motionCells(page)))
+      .toMatchObject({ compiled: null, errors: [expect.stringMatching(/hidden/)] });
+  });
+
+  it("rejects another full-opacity entrance but allows fadeIn to restore a dimmed cell", () => {
+    const result = compile({ steps: [
+      { effect: "fadeIn", cells: ["a"] },
+      { effect: "fadeIn", cells: ["a"] },
+    ] });
+    expect(result.errors).toContainEqual(expect.stringMatching(/step 2 .*already visible/));
+    const restored = compile({ steps: [
+      { effect: "dim", cells: ["a"], value: 0.25 },
+      { effect: "fadeIn", cells: ["a"] },
+    ] });
+    expect(restored.errors).toEqual([]);
+    expect(restored.compiled?.frames.map(({ opacity }) => opacity.get("a"))).toEqual([0.25, 1]);
+  });
+
+  it("accepts 200 steps and rejects 201", () => {
+    const page = model();
+    const steps: MotionSpec["steps"] = [
+      { effect: "fadeIn", cells: ["a"] },
+      ...Array.from({ length: 199 }, () => ({ effect: "wait", duration: 0 } as const)),
+    ];
+    storeMotion(page, JSON.stringify({ steps }));
+    expect(analyzeStoredMotion(page)?.compiled?.frames).toHaveLength(1);
+    steps.push({ effect: "wait", duration: 0 });
+    storeMotion(page, JSON.stringify({ steps }));
+    expect(analyzeStoredMotion(page)).toMatchObject({ compiled: null, errors: [expect.stringContaining("maximum 200")] });
+  });
+
+  it("accepts the maximum hold, duration and stagger and rejects values above it", () => {
+    const page = model();
+    const steps = [{ effect: "fadeIn", cells: ["a", "b"], duration: 60_000, stagger: 60_000 }];
+    storeMotion(page, JSON.stringify({ steps, hold: 60_000 }));
+    expect(analyzeStoredMotion(page)?.compiled?.durationMs).toBe(180_000);
+    storeMotion(page, JSON.stringify({ steps, hold: 60_001 }));
+    expect(analyzeStoredMotion(page)?.errors).toEqual([expect.stringContaining("hold must be between 0 and 60000")]);
+    storeMotion(page, JSON.stringify({ steps: [{ ...steps[0], duration: 60_001, stagger: 60_001 }] }));
+    expect(analyzeStoredMotion(page)?.errors).toEqual([
+      expect.stringContaining("duration must be between 1 and 60000"),
+      expect.stringContaining("stagger must be between 0 and 60000"),
+    ]);
+  });
+
+  it("caps the sequence before adding the loop hold", () => {
+    const steps: MotionSpec["steps"] = [
+      { effect: "fadeIn", cells: ["a"], duration: 60_000 },
+      ...Array.from({ length: 4 }, () => ({ effect: "wait", duration: 60_000 } as const)),
+    ];
+    expect(compile({ steps, hold: 60_000 }).compiled?.durationMs).toBe(360_000);
+    expect(compile({ steps: [...steps, { effect: "wait", duration: 1 }] }).errors)
+      .toEqual([expect.stringContaining("maximum 300000 ms")]);
+  });
+
   it("plays once without a hold when loop is false", () => {
     const motion = compile({ loop: false, hold: 5000, steps: [{ effect: "fadeIn", cells: ["a"], duration: 400 }] }).compiled!;
     expect(motion.durationMs).toBe(400);
@@ -193,6 +315,13 @@ describe("motion SVG injection", () => {
     expect(svg).toContain('repeatCount="indefinite"');
     expect(svg).toContain('data-drawme-animation="motion"');
     expect(svg).toContain('g[data-cell-id="d"] * { animation: none !important; }');
+  });
+
+  it("rejects a linked image without certifying the SVG but permits an embedded one", () => {
+    const motion = compile({ steps: [{ effect: "fadeIn", cells: ["a"] }] }).compiled!;
+    const image = (href: string) => SVG.replace("<defs/>", `<defs/><image href="${href}"/>`);
+    expect(() => injectMotion(image("file:///local-logo.png"), motion)).toThrow(/embed.*image/i);
+    expect(injectMotion(image("data:image/png;base64,aW1hZ2U="), motion)).toContain('data-drawme-animation="motion"');
   });
 
   it("refuses an SVG that lacks an animated cell", () => {
@@ -231,6 +360,19 @@ describe("motion storage", () => {
       "page 'Flow': page has both stored motion and an enabled native page animation; keep only one timeline",
     );
     expect(result.observations.some((line) => line.includes("stored motion has 1 step(s)"))).toBe(true);
+  });
+
+  it("uses the caller's budget during parsing, target checks, and diagnostic emission", () => {
+    const page = model();
+    storeMotion(page, JSON.stringify({ steps: [
+      { effect: "drawIn", cells: ["d", "missing", "a"] },
+      { effect: "fadeIn", cells: ["unknown"] },
+    ] }));
+    const normal = analyzeStoredMotion(page);
+    expect(normal?.errors).toHaveLength(4);
+    expect(analyzeStoredMotion(page, createValidationBudget(1_000, 4))).toEqual(normal);
+    expect(() => analyzeStoredMotion(page, createValidationBudget(1_000, 2))).toThrow(new ValidationBudgetExceeded("diagnostics"));
+    expect(() => analyzeStoredMotion(page, createValidationBudget(1, 100))).toThrow(new ValidationBudgetExceeded("work"));
   });
 
   it("detects dark page backgrounds and picks the matching default accent", () => {
@@ -281,6 +423,8 @@ describe("storyboard", () => {
       accent: new Map<string, string>(),
     }));
     const sampled = sampleFrames(frames);
+    expect(MAX_STORYBOARD_FRAMES).toBe(12);
+    expect(sampleFrames(frames.slice(0, 12))).toEqual(frames.slice(0, 12));
     expect(sampled).toHaveLength(MAX_STORYBOARD_FRAMES);
     expect(sampled[0].label).toBe("step 0");
     expect(sampled.at(-1)!.label).toBe("step 29");
