@@ -274,6 +274,37 @@ describe("native draw.io artifacts through the registered tools", async () => {
     }
   }, NATIVE_TIMEOUT);
 
+  it.runIf(pageSelection).each([
+    { candidate: "a local file", local: true },
+    { candidate: "an embedded image", local: false },
+  ])("requires standalone responsive logos when a native XHTML srcset uses $candidate", async ({ local }) => {
+    const session = await nativeSession();
+    const input = "responsive-logo.drawio", output = "responsive-logo.animated.svg";
+    const embedded = `data:image/png;base64,${TINY_PNG}`;
+    const logoPath = session.path("logo.png");
+    await session.put("logo.png", Buffer.from(TINY_PNG, "base64"));
+    const secondCandidate = local ? pathToFileURL(logoPath).href : embedded;
+    // Both cases share an embedded fallback and a valid first candidate. Only the 2x URL differs.
+    const label = `&lt;img width=&quot;24&quot; height=&quot;24&quot; src=&quot;${embedded}&quot; srcset=&quot;${embedded} 1x, ${secondCandidate} 2x&quot;&gt;`;
+    await session.put(input, diagram(page("Responsive", node("logo", label, 40, 40, 80, 40, "html=1;"))));
+    const result = await session.call("drawio_animate", { input, output, steps: [{ effect: "fadeIn", cells: ["logo"] }], storyboard: false });
+    const message = result.content[0];
+    if (local && message.type === "text" && message.text.startsWith("Animate failed:")) {
+      expect(message.text).toMatch(/linked image; embed the image|unresolved.*image/i);
+      await expect(stat(session.path(output))).rejects.toMatchObject({ code: "ENOENT" });
+      return;
+    }
+
+    expect(result.details).toMatchObject({ output: session.path(output), animatedCells: 1 });
+    await rm(logoPath);
+    const svg = parseXml((await regularFile(session.path(output))).toString());
+    const images = svg.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "img");
+    expect(images).toHaveLength(1);
+    expect(images[0].getAttribute("src")).toBe(embedded);
+    expect(images[0].getAttribute("srcset"), "both responsive candidates must survive as embedded URLs")
+      .toMatch(/^data:image\/png;base64,[\w+/=]+ 1x,\s*data:image\/png;base64,[\w+/=]+ 2x$/i);
+  }, NATIVE_TIMEOUT);
+
   it.runIf(pageSelection)("renders visible storyboard colors but never hidden draft pixels, and keeps the earlier board", async () => {
     const session = await nativeSession();
     const blue = 0x105bc7, green = 0x119044, red = 0xed152f;
