@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, sep } from "node:path";
 import { DEFAULT_FIT_MARGIN } from "./fitcanvas";
 import { inspectPng, readRasterFile } from "./png";
 import { cliPageIndex, LINUX_ROOT_RENDERER_REASON } from "./renderer";
@@ -59,9 +59,12 @@ export function deriveOutput(input: string, format: ExportFormat, embed: boolean
   const dir = dirname(input);
   const ext = extname(input);
   const base = ext ? basename(input).slice(0, -ext.length) : basename(input);
-  if (mode === "preview") return join(dir, `${base}.preview.${format}`);
-  if (format === "png" && embed) return join(dir, `${base}.drawio.png`);
-  return join(dir, `${base}.${format}`);
+  const suffix = mode === "preview" ? `.preview.${format}` : format === "png" && embed ? ".drawio.png" : `.${format}`;
+  const name = base + suffix;
+  if (sep !== "/") return join(dir, name);
+  // Only the filesystem can resolve '..' after a directory symlink on POSIX.
+  if (dir === ".") return name;
+  return dir.endsWith(sep) ? dir + name : dir + sep + name;
 }
 
 function positive(value: number | undefined): value is number {

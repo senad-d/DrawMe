@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cappedScale, MAX_FINAL_RASTER_PIXELS, planExport, verifyStagedArtifact } from "../src/export-policy";
+import { cappedScale, deriveOutput, MAX_FINAL_RASTER_PIXELS, planExport, verifyStagedArtifact } from "../src/export-policy";
 
 const INPUT = { input: "diagram.drawio" };
 // FFmpeg's baseline JFIF export of a single 2×2 white frame.
@@ -12,6 +12,13 @@ function flag(args: string[], name: string): number | undefined {
   const i = args.indexOf(name);
   return i < 0 ? undefined : Number(args[i + 1]);
 }
+
+it.skipIf(process.platform === "win32")("preserves the POSIX parent path when deriving export siblings", () => {
+  const input = "through/../diagram.drawio";
+  expect(deriveOutput(input, "svg", true)).toBe("through/../diagram.svg");
+  expect(deriveOutput(input, "png", true)).toBe("through/../diagram.drawio.png");
+  expect(deriveOutput(input, "png", false, "preview")).toBe("through/../diagram.preview.png");
+});
 
 describe("planExport", () => {
   it("validates one-based pages and translates only an explicitly requested index", () => {
