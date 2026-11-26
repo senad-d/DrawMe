@@ -2,7 +2,7 @@ import childProcess from "node:child_process";
 import { createHash } from "node:crypto";
 import { getEventListeners, once } from "node:events";
 import { existsSync } from "node:fs";
-import { copyFile, link, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -175,6 +175,32 @@ it("reads and writes only the calling Pi workspace and preserves absolute paths"
   } finally {
     process.chdir(previous);
   }
+});
+
+it.skipIf(process.platform === "win32")("uses filesystem resolution for session import and layout operands across a symlinked directory", async () => {
+  const { dir, run, binary } = await fixture();
+  const actual = join(dir, "actual");
+  await mkdir(join(actual, "child"), { recursive: true });
+  await symlink(join(actual, "child"), join(dir, "through"), "dir");
+  // On POSIX, resolve the directory symlink before applying '..'. Normalizing
+  // the string first selects the wrong fixture and can overwrite a decoy.
+  await writeFile(join(actual, "source.mmd"), "flowchart LR; A-->B");
+  await writeFile(join(dir, "source.mmd"), "wrong source");
+  await writeFile(join(actual, "source.drawio"), graph("correct", "Actual layout source"));
+  await writeFile(join(dir, "source.drawio"), graph("decoy", "Decoy layout source"));
+  for (const output of ["converted.drawio", "laid out.drawio"]) {
+    await writeFile(join(dir, output), "do not replace my file");
+  }
+
+  const converted = await run("drawio_from_mermaid", { input: "through/../source.mmd", output: "through/../converted.drawio" });
+  expect.soft(converted.details, text(converted)).toMatchObject({ binary });
+  expect.soft(await readFile(join(actual, "converted.drawio"), "utf8").catch(() => "missing")).toContain("Converted vertex");
+  expect.soft(await readFile(join(dir, "converted.drawio"), "utf8")).toBe("do not replace my file");
+
+  const laidOut = await run("drawio_layout", { input: `${dir}/through/../source.drawio`, output: "through/../laid out.drawio", preset: "horizontalFlow" });
+  expect.soft(laidOut.details, text(laidOut)).toMatchObject({ binary });
+  expect.soft(await readFile(join(actual, "laid out.drawio"), "utf8").catch(() => "missing")).toContain("Actual layout source");
+  expect.soft(await readFile(join(dir, "laid out.drawio"), "utf8")).toBe("do not replace my file");
 });
 
 it.each([["30.0.4", false], ["30.2.4", true]] as const)("uses draw.io %s capabilities in check, import, layout and the queued workflow", async (version, available) => {
