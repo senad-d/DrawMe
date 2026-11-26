@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { open, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, sep } from "node:path";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { DomEl } from "./dom";
 import { analyzeDrawioAnimation } from "./animation";
@@ -60,16 +60,17 @@ export interface AnimateResult {
   version?: string;
 }
 
-function stem(path: string): string {
-  const ext = extname(path);
-  return join(dirname(path), ext ? basename(path).slice(0, -ext.length) : basename(path));
+function siblingPath(path: string, name: string): string {
+  // On POSIX, replacing only the filename leaves the filesystem to interpret
+  // '..' after a directory symlink instead of lexically normalizing it away.
+  return sep === "/" ? path.slice(0, path.lastIndexOf(sep) + 1) + name : join(dirname(path), name);
 }
 
 const ANIMATED_SUFFIX = ".animated.svg";
 
 function storyboardPath(output: string, pageIndex: number): string {
   const name = basename(output);
-  return join(dirname(output), pageIndex === 1 && name.endsWith(ANIMATED_SUFFIX)
+  return siblingPath(output, pageIndex === 1 && name.endsWith(ANIMATED_SUFFIX)
     ? `${name.slice(0, -ANIMATED_SUFFIX.length)}.storyboard.png`
     : `${name}.storyboard-p${pageIndex}.png`);
 }
@@ -152,7 +153,7 @@ async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
     await writeFile(input, serialize(xml, doc), "utf8");
   }
 
-  const output = opts.output ?? `${stem(input)}${ANIMATED_SUFFIX}`;
+  const output = opts.output ?? siblingPath(input, `${basename(input, extname(input))}${ANIMATED_SUFFIX}`);
   const svg = await prepareExport(
     { input, format: "svg", mode: "final", output, pageIndex, binary, signal },
     async (staged) => {
@@ -170,7 +171,7 @@ async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
       const boardXml = buildStoryboard(model, frames);
       // A private sibling .drawio keeps any relative images based at the
       // same directory as in the authored SVG input.
-      const temp = join(dirname(input), `.drawme-storyboard-${randomUUID()}.drawio`);
+      const temp = siblingPath(input, `.drawme-storyboard-${randomUUID()}.drawio`);
       const file = await open(temp, "wx", 0o600);
       boardSource = temp;
       try {
