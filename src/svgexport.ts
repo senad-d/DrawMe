@@ -11,6 +11,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { type DomEl, TEXT_NODE, attr, elemChildren } from "./dom";
+import { walkElements } from "./svg-helpers";
 
 const FUNCTION = "light-dark(";
 const CDATA_NODE = 4;
@@ -48,19 +49,13 @@ function pinColorScheme(style: string): string {
   return style.replace(/color-scheme\s*:\s*[^;]*/g, "color-scheme: light");
 }
 
-function walk(root: DomEl): DomEl[] {
-  const elements: DomEl[] = [root];
-  for (const child of elemChildren(root)) elements.push(...walk(child));
-  return elements;
-}
-
 /** Return the SVG with all adaptive colors resolved to the authored ones. */
 export function pinAuthoredColors(svg: string): string {
   if (!svg.includes(FUNCTION) && !/color-scheme\s*:\s*light\s+dark/.test(svg)) return svg;
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = doc.documentElement as unknown as DomEl | null;
   if (root?.tagName !== "svg") throw new Error("draw.io output is not valid SVG");
-  for (const element of walk(root)) {
+  for (const element of walkElements(root)) {
     const style = attr(element, "style");
     if (style !== null) element.setAttribute("style", pinColorScheme(resolveLightDark(style)));
     if (element.tagName === "style") pinStyleText(element);
