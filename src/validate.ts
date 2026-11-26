@@ -1017,6 +1017,11 @@ function emptyResult(): ValidateResult {
   return { errors: [], warnings: [], observations: [], score: { total: 0, through: 0, crossings: 0, overlaps: 0, anchors: 0 } };
 }
 
+function markIncomplete(result: ValidateResult, error: ValidationStop, pagePrefix = ""): void {
+  result.incomplete = true;
+  result.errors.push(excerpt(`${pagePrefix}validation incomplete: ${error.message}`, MAX_RENDERED_FINDING_LENGTH));
+}
+
 /** Return structural findings and the readability score of admitted warnings. */
 export function validateXml(xml: string, overrides?: Partial<ValidationLimits>): ValidateResult {
   const limits = { ...DEFAULT_VALIDATION_LIMITS, ...overrides };
@@ -1055,8 +1060,7 @@ export function validateXml(xml: string, overrides?: Partial<ValidationLimits>):
     }
   } catch (error) {
     if (error instanceof ValidationStop) {
-      result.incomplete = true;
-      result.errors.push(`${pagePrefix}validation incomplete: ${error.message}`);
+      markIncomplete(result, error, pagePrefix);
     } else if (error instanceof ParseError) {
       // Fatal parser diagnostics normally already went to the sink via onError.
       if (result.errors.length === 0) result.errors.push(malformedXml(error.message));
@@ -1074,7 +1078,8 @@ export async function validateFile(path: string, limits?: Partial<ValidationLimi
     xml = await readDiagramXml(path, limits?.maxBytes);
   } catch (error) {
     const result = emptyResult();
-    result.errors.push(excerpt(`cannot read ${path}: ${(error as Error).message}`, MAX_RENDERED_FINDING_LENGTH));
+    if (error instanceof ValidationStop) markIncomplete(result, error);
+    else result.errors.push(excerpt(`cannot read ${path}: ${(error as Error).message}`, MAX_RENDERED_FINDING_LENGTH));
     return result;
   }
   try {

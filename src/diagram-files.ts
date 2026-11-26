@@ -74,7 +74,7 @@ export async function readDiagramXml(path: string, maxBytes = DEFAULT_VALIDATION
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("invalid diagram byte limit");
   const check = (file: Stats) => {
     if (!file.isFile()) throw new Error(`diagram input is not a regular file: ${path}`);
-    if (file.size > maxBytes) throw new Error(`diagram input exceeds the ${maxBytes} byte limit: ${path}`);
+    if (file.size > maxBytes) throw new ValidationStop(`diagram input exceeds the ${maxBytes} byte limit: ${path}`);
   };
   check(await stat(path));
   // A file can be replaced after stat. Nonblocking open avoids a FIFO handoff
@@ -95,7 +95,7 @@ export async function readDiagramXml(path: string, maxBytes = DEFAULT_VALIDATION
       const { bytesRead } = await fd.read(buffer, used, buffer.length - used, null);
       if (bytesRead === 0) return buffer.toString("utf8", 0, used);
       used += bytesRead;
-      if (used === ceiling) throw new Error(`diagram input exceeds the ${maxBytes} byte limit: ${path}`);
+      if (used === ceiling) throw new ValidationStop(`diagram input exceeds the ${maxBytes} byte limit: ${path}`);
     }
   } finally {
     await fd.close();
