@@ -48,6 +48,8 @@ export interface ExportResult {
 }
 
 export interface PreparedExport {
+  /** Return the directory entry commit will replace, rejecting any retargeting since preparation. */
+  publicationDestination: () => string;
   commit: () => ExportResult;
   dispose: () => Promise<void>;
 }
@@ -184,10 +186,15 @@ function preserveFileAccess(destination: string, existing: BigIntStats, staged: 
   chmodSync(staged, Number(existing.mode & 0o777n));
 }
 
+function checkedPublicationDestination(output: string, prepared: string): string {
+  if (publicationPath(output) !== prepared) throw new Error(`export destination changed: ${output}`);
+  return prepared;
+}
+
 function publishExport(
   plan: ExportPlan, key: string, sources: readonly string[], destination: string, staged: string, implicitPreview: boolean,
 ): PreviewCleanup {
-  if (publicationPath(plan.output) !== destination) throw new Error(`export destination changed: ${plan.output}`);
+  checkedPublicationDestination(plan.output, destination);
   rejectSourceAlias(sources, destination);
   const existing = fileAt(destination);
   const linked = fileAt(plan.output)?.isSymbolicLink() === true;
@@ -294,6 +301,7 @@ export async function prepareExport(
     }
     signal?.throwIfAborted();
     return {
+      publicationDestination: () => checkedPublicationDestination(plan.output, destination),
       commit() {
         signal?.throwIfAborted();
         const cleanup = publishExport(plan, key, sources, destination, staged, plan.mode === "preview" && output === undefined);

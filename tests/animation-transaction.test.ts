@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { getEventListeners } from "node:events";
 import { existsSync } from "node:fs";
-import { link, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DOMParser } from "@xmldom/xmldom";
 import { afterEach, expect, it, vi } from "vitest";
 import { animateDiagram } from "../src/animate";
@@ -101,6 +102,69 @@ it.skipIf(process.platform === "win32")("renders the private storyboard source b
   }
   await expect(result).resolves.toMatchObject({ storyboard: join(dir, "review.svg.storyboard-p1.png") });
   expect(existsSync(boardInput)).toBe(false);
+});
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("re-exports unchanged stored motion with a storyboard from a nonwritable source directory", async () => {
+  const { dir, input, binary } = await fixture();
+  const library = join(dir, "read only examples");
+  const source = join(library, "motion.drawio");
+  const output = join(dir, "review.animated.svg");
+  await mkdir(library);
+  await rename(input, source);
+  await animateDiagram({ input: source, output, binary, steps: steps("a"), storyboard: false });
+  const original = await readFile(source);
+  await chmod(library, 0o555);
+  try {
+    const result = await animateDiagram({ input: source, output, binary });
+    expect(result).toMatchObject({ saved: false, output, storyboard: join(dir, "review.storyboard.png") });
+    expect(await readFile(output, "utf8")).toContain('data-cell-id="a"');
+    const board = await readFile(result.storyboard!);
+    expect(result.storyboardSha256).toBe(createHash("sha256").update(board).digest("hex"));
+    expect(await readFile(source)).toEqual(original);
+    expect(await readdir(library)).toEqual(["motion.drawio"]);
+  } finally {
+    await chmod(library, 0o755);
+  }
+});
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("keeps relative image operands based at the authored directory when a private storyboard is relocated", async () => {
+  const { dir, binary, release, ready } = await fixture("pause");
+  const library = join(dir, "read only examples");
+  const source = join(library, "motion.drawio");
+  const logo = join(library, "logo with space.png");
+  const output = join(dir, "review.animated.svg");
+  await mkdir(library);
+  await writeFile(logo, Buffer.from(TINY_PNG, "base64"));
+  const label = `&lt;img src='logo%20with%20space.png' srcset='data:image/png;base64,${TINY_PNG} 1x, ./logo%20with%20space.png 2x' style='background-image:url(./logo%20with%20space.png)'&gt;`;
+  await writeFile(source, diagram.replace('id="a"', `id="a" style="html=1;shape=image;image=logo%20with%20space.png;" value="${label}"`));
+  await animateDiagram({ input: source, output, binary, steps: steps("a"), storyboard: false });
+  await chmod(library, 0o555);
+  const result = animateDiagram({ input: source, output, binary });
+  const observed = result.then(() => undefined, (error: unknown) => { throw error; });
+  // Fail promptly if staging cannot reach the renderer; finish any child in teardown.
+  const settled = Promise.allSettled([result, observed]);
+  try {
+    const child = await Promise.race([runningBoard(ready), observed]);
+    if (!child) throw new Error("Expected the board renderer to be paused");
+    expect(dirname(await realpath(child.input))).not.toBe(await realpath(library));
+    const xml = await readFile(child.input, "utf8");
+    const expected = pathToFileURL(await realpath(logo)).href;
+    const boardDoc = new DOMParser().parseFromString(xml, "text/xml");
+    const boardCell = boardDoc.getElementById("f1-a")!;
+    expect(boardCell.getAttribute("style")).toContain(`image=${expected};`);
+    const html = new DOMParser().parseFromString(`<body>${boardCell.getAttribute("value")}</body>`, "text/html");
+    const image = html.getElementsByTagName("img")[0];
+    expect(image.getAttribute("src")).toBe(expected);
+    expect(image.getAttribute("srcset")).toBe(`data:image/png;base64,${TINY_PNG} 1x, ${expected} 2x`);
+    expect(image.getAttribute("style")).toBe(`background-image:url("${expected}")`);
+    await release();
+    await expect(result).resolves.toMatchObject({ saved: false, storyboard: join(dir, "review.storyboard.png") });
+    expect(existsSync(child.input)).toBe(false);
+  } finally {
+    await release();
+    await settled;
+    await chmod(library, 0o755);
+  }
 });
 
 it("queues the second page save behind the entire board render and preserves both pages and a following in-place fit", async () => {
@@ -266,6 +330,31 @@ it("keeps distinct reviewed boards across pages and dotted SVG names, with the c
     boards.set(path, bytes);
   }
   expect(boards.get(join(dir, variants[0].board))).not.toEqual(boards.get(join(dir, variants[2].board)));
+});
+
+it.skipIf(process.platform === "win32").each([true, false])("rejects an SVG and a storyboard symlink targeting the same publication entry (target exists: %s)", async (existing) => {
+  const { dir, input, binary } = await fixture();
+  const output = join(dir, "shared.animated.svg");
+  const board = join(dir, "shared.storyboard.png");
+  if (existing) await writeFile(output, "previous SVG");
+  await symlink("shared.animated.svg", board);
+  const preview = await exportDiagram({ input, binary, mode: "preview" });
+  const previousPreview = await readFile(preview.output);
+  await expect(animateDiagram({ input, binary, output, steps: steps("a") })).rejects.toThrow(/SVG and storyboard.*same.*destination/i);
+  if (existing) expect(await readFile(output, "utf8")).toBe("previous SVG");
+  else expect(existsSync(output)).toBe(false);
+  expect(await readFile(preview.output)).toEqual(previousPreview);
+});
+
+it("publishes both outputs when their distinct destination entries initially share a hard link", async () => {
+  const { dir, input, binary } = await fixture();
+  const output = join(dir, "shared.animated.svg");
+  const board = join(dir, "shared.storyboard.png");
+  await writeFile(output, "previous output");
+  await link(output, board);
+  const result = await animateDiagram({ input, binary, output, steps: steps("a") });
+  expect(await readFile(output, "utf8")).toContain('data-cell-id="a"');
+  expect(result.storyboardSha256).toBe(createHash("sha256").update(await readFile(board)).digest("hex"));
 });
 
 it("keeps a persistent board when its name supersedes a tracked preview", async () => {

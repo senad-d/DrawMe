@@ -5,11 +5,12 @@
  * opacity after that batch; highlight and travel steps show
  * their accent color on the stroke.
  */
-import { type Element, XMLSerializer } from "@xmldom/xmldom";
+import { DOMParser, type Element, XMLSerializer } from "@xmldom/xmldom";
 import { type DomEl, attr, elemChildren, firstByTag } from "./dom";
 import { contentBounds, collectCellsWithIds, pyFloat } from "./geometry";
 import { shiftCell } from "./fitcanvas";
 import { type MotionFrame, isDarkBackground } from "./motion";
+import { mapImageUrls } from "./svg-helpers";
 
 export const MAX_STORYBOARD_FRAMES = 12;
 const GAP = 80;
@@ -135,9 +136,60 @@ function cloneIdsFor(entries: PageEntry[], prefix: string): Map<string, string> 
   }));
 }
 
-function storyboardCell(entry: PageEntry, ids: Map<string, string>, ox: number, oy: number): DomEl {
+function cloneEntry(entry: PageEntry): PageEntry {
   const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
   const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
+  return { id: entry.id, element, cell };
+}
+
+/** Relocation is used only when the authored directory can't hold a private copy. */
+function rebaseImages(entry: PageEntry, base: URL, serializer: XMLSerializer): PageEntry {
+  const clone = cloneEntry(entry);
+  const absoluteImage = (value: string): string => {
+    const reference = value.trim();
+    if (!reference || /^(?:[a-z][a-z\d+.-]*:|[\\/#])/i.test(reference)) return value;
+    return new URL(reference.replaceAll("\\", "/"), base).href;
+  };
+  const style = attr(clone.cell, "style");
+  if (style) {
+    clone.cell.setAttribute("style", style.replace(/(^|;)((?:indicatorImage|image)=)([^;]*)/g, (_part, before, key, value: string) => {
+      const url = absoluteImage(value);
+      return before + key + (url === value ? value : url.replaceAll(";", "%3B"));
+    }));
+  }
+  const rebaseLabel = (owner: DomEl, attribute: string) => {
+    const value = attr(owner, attribute);
+    // Leave ordinary labels and already absolute/embedded resources byte-identical.
+    if (!value || !value.includes("<") || !/<(?:img|source|svg|image|feimage|style|use)\b|\bstyle\s*=/i.test(value)) return;
+    let changed = false;
+    let body: Element;
+    try {
+      const root = new DOMParser({ onError: () => {} }).parseFromString(`<body>${value}</body>`, "text/html").documentElement;
+      if (root?.localName !== "body") throw new Error("invalid HTML label");
+      body = root;
+      mapImageUrls(body, (url) => {
+        const absolute = absoluteImage(url);
+        changed ||= absolute !== url;
+        return absolute;
+      });
+    } catch (error) {
+      throw new Error("cannot relocate storyboard image references in a rich label; embed its images or use a writable source directory", { cause: error });
+    }
+    if (changed) {
+      const html = serializer.serializeToString(body);
+      owner.setAttribute(attribute, html.slice(html.indexOf(">") + 1, html.lastIndexOf("</body>")));
+    }
+  };
+  rebaseLabel(clone.cell, "value");
+  if (clone.element !== clone.cell) {
+    rebaseLabel(clone.element, "label");
+    rebaseLabel(clone.element, "value");
+  }
+  return clone;
+}
+
+function storyboardCell(entry: PageEntry, ids: Map<string, string>, ox: number, oy: number): DomEl {
+  const { element, cell } = cloneEntry(entry);
   element.setAttribute("id", ids.get(entry.id)!);
   if (element !== cell) (cell as unknown as Element).removeAttribute("id");
   const parent = ids.get(attr(cell, "parent") ?? "");
@@ -164,17 +216,18 @@ function applyFrameStyle(element: DomEl, id: string, frame: MotionFrame, parents
 }
 
 /** Build a one-page `.drawio` document that lays out the frames as a captioned grid. */
-export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
+export function buildStoryboard(model: DomEl, frames: MotionFrame[], imageBase?: URL): string {
   if (frames.length === 0) throw new Error("motion has no visual steps to storyboard");
   const { width, height } = pageSize(model);
   const entries = pageEntries(model);
   const parents = new Map(entries.map((entry) => [entry.id, attr(entry.cell, "parent")]));
   const layers = new Set(entries.filter((entry) => attr(entry.cell, "parent") === "0").map((entry) => entry.id));
-  const clones = visibleClones(entries, layers);
+  const serializer = new XMLSerializer();
+  const visible = visibleClones(entries, layers);
+  const clones = imageBase ? visible.map((entry) => rebaseImages(entry, imageBase, serializer)) : visible;
   const columns = Math.min(frames.length, width >= height ? 2 : 3);
   const rows = Math.ceil(frames.length / columns);
   const tileHeight = CAPTION_HEIGHT + height;
-  const serializer = new XMLSerializer();
   const parts: string[] = [];
   const dark = isDarkBackground(attr(model, "background"));
   const captionColor = dark ? "#CBD5E1" : "#334155";

@@ -4,9 +4,11 @@
  * inject the compiled motion, and render a storyboard PNG for review.
  */
 import { randomUUID } from "node:crypto";
-import { open, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { DomEl } from "./dom";
 import { analyzeDrawioAnimation } from "./animation";
@@ -73,6 +75,13 @@ function storyboardPath(output: string, pageIndex: number): string {
   return siblingPath(output, pageIndex === 1 && name.endsWith(ANIMATED_SUFFIX)
     ? `${name.slice(0, -ANIMATED_SUFFIX.length)}.storyboard.png`
     : `${name}.storyboard-p${pageIndex}.png`);
+}
+
+function publicationName(prepared: PreparedExport): string {
+  // Win32 and default macOS volumes can alias case-only differences, including
+  // a target that does not exist until commit. Compare names, not inode IDs.
+  const path = prepared.publicationDestination();
+  return process.platform === "win32" || process.platform === "darwin" ? path.toLowerCase() : path;
 }
 
 function serialize(original: string, doc: unknown): string {
@@ -164,18 +173,31 @@ async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
 
   let board: PreparedExport | undefined;
   let boardSource: string | undefined;
+  let boardDirectory: string | undefined;
   try {
     const frames = opts.storyboard === false ? undefined : sampleFrames(motion.frames);
     if (frames) {
       signal?.throwIfAborted();
-      const boardXml = buildStoryboard(model, frames);
-      // A private sibling .drawio keeps any relative images based at the
-      // same directory as in the authored SVG input.
-      const temp = siblingPath(input, `.drawme-storyboard-${randomUUID()}.drawio`);
-      const file = await open(temp, "wx", 0o600);
+      // Prefer a private sibling to keep the same relative image base. If
+      // the source folder is read-only, rebase those references in a private
+      // temporary document without opening or fetching any image ourselves.
+      const filename = `.drawme-storyboard-${randomUUID()}.drawio`;
+      let temp = siblingPath(input, filename);
+      let file;
+      let imageBase: URL | undefined;
+      try {
+        file = await open(temp, "wx", 0o600);
+      } catch (error) {
+        if (!["EACCES", "EPERM", "EROFS"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        const parent = await realpath(dirname(input));
+        imageBase = pathToFileURL(parent.endsWith(sep) ? parent : parent + sep);
+        boardDirectory = await mkdtemp(join(tmpdir(), "drawme-storyboard-"));
+        temp = join(boardDirectory, filename);
+        file = await open(temp, "wx", 0o600);
+      }
       boardSource = temp;
       try {
-        await file.writeFile(boardXml, "utf8");
+        await file.writeFile(buildStoryboard(model, frames, imageBase), "utf8");
       } finally {
         await file.close();
       }
@@ -188,6 +210,9 @@ async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
     // Abort cannot split the publications or retire a preview mid-transaction.
     // A synchronous filesystem failure is not an all-files rollback boundary.
     signal?.throwIfAborted();
+    if (board && publicationName(board) === publicationName(svg)) {
+      throw new Error("SVG and storyboard resolve to the same publication destination; choose a different SVG output path");
+    }
     // If a board supersedes a tracked preview at the same name, replace its
     // inode first so the SVG's preview retirement cannot unlink the board.
     const review = board?.commit();
@@ -215,6 +240,8 @@ async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
       }),
     };
   } finally {
-    await Promise.all([svg.dispose(), board?.dispose(), boardSource && rm(boardSource, { force: true })]);
+    const removeBoardSource = boardDirectory ? rm(boardDirectory, { recursive: true, force: true })
+      : boardSource && rm(boardSource, { force: true });
+    await Promise.all([svg.dispose(), board?.dispose(), removeBoardSource]);
   }
 }
