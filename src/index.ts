@@ -14,7 +14,7 @@ import { Type, type Static } from "typebox";
 import { DOMParser } from "@xmldom/xmldom";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, isAbsolute, resolve, sep, win32 } from "node:path";
 import { readFile, realpath } from "node:fs/promises";
 import {
   applyLayout,
@@ -98,13 +98,17 @@ const textResult = (text: string, details: unknown = {}) => ({ content: [{ type:
 function sessionPath(path: string, ctx: ExtensionContext | undefined): string;
 function sessionPath(path: string | undefined, ctx: ExtensionContext | undefined): string | undefined;
 function sessionPath(path: string | undefined, ctx: ExtensionContext | undefined): string | undefined {
-  if (!path || isAbsolute(path)) return path;
+  if (!path) return path;
   const cwd = ctx?.cwd ?? process.cwd();
-  // Don't collapse '..' across symlinked directories or drop a trailing
-  // separator (which makes this a directory operand, not a file).
-  if (sep === "/") return `${cwd.endsWith(sep) ? cwd : cwd + sep}${path}`;
-  const absolute = resolve(cwd, path);
-  return (path.endsWith(sep) || path.endsWith("/")) && !absolute.endsWith(sep) ? absolute + sep : absolute;
+  if (process.platform === "win32") {
+    // A single leading separator supplies a root but no drive/share. Resolve
+    // that operand against the session, not the process's current drive.
+    if (win32.isAbsolute(path) && win32.parse(path).root.length > 1) return path;
+    const absolute = win32.resolve(cwd, path);
+    return /[\\/]$/.test(path) && !absolute.endsWith(win32.sep) ? absolute + win32.sep : absolute;
+  }
+  // Don't collapse '..' across symlinked directories or drop a trailing separator.
+  return isAbsolute(path) ? path : `${cwd.endsWith(sep) ? cwd : cwd + sep}${path}`;
 }
 
 function modelSupportsImages(ctx: ExtensionContext | undefined): boolean {

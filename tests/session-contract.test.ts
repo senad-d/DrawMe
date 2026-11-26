@@ -7,6 +7,7 @@ import { buildSessionProjection, type SessionEntry, type SessionMessageEntry } f
 import { afterEach, expect, it, vi } from "vitest";
 import * as animation from "../src/animate";
 import * as drawio from "../src/drawio";
+import * as fitCanvas from "../src/fitcanvas";
 import drawme from "../src/index";
 import { inspectPng } from "../src/png";
 import * as validation from "../src/validate";
@@ -78,6 +79,33 @@ it("reads, fits and explains the session copy when process and session directori
     expect(await readFile(join(host, name), "utf8")).toBe("not an XML diagram");
   } finally {
     process.chdir(previous);
+  }
+});
+
+it("anchors current-drive rooted Windows fit operands to the session drive or share without changing qualified paths", async () => {
+  const fit = vi.spyOn(fitCanvas, "fitCanvasFile").mockResolvedValue({
+    input: "fixture", output: "fixture", margin: 40, changed: false, pages: [],
+  });
+  const tool = registered().tools.get("drawio_fit_canvas")!;
+  // Simulate Win32 path rules with separate process and session drives, even on POSIX.
+  vi.stubGlobal("process", Object.create(process, {
+    platform: { value: "win32" }, cwd: { value: () => String.raw`C:\host` },
+  }));
+  try {
+    const cwd = String.raw`D:\sessions\drawing`;
+    await tool.execute("fit", { input: "/input.drawio", output: String.raw`\out.drawio` }, undefined, undefined, { cwd });
+    expect(fit).toHaveBeenLastCalledWith({ input: String.raw`D:\input.drawio`, output: String.raw`D:\out.drawio`, margin: undefined });
+
+    const input = "C:/host/./input.drawio";
+    const output = String.raw`\\files\share\explicit.drawio`;
+    await tool.execute("fit", { input, output }, undefined, undefined, { cwd });
+    expect(fit).toHaveBeenLastCalledWith({ input, output, margin: undefined });
+
+    const share = String.raw`\\files\share\sessions`;
+    await tool.execute("fit", { input: String.raw`\input.drawio`, output: "/directory/" }, undefined, undefined, { cwd: share });
+    expect(fit).toHaveBeenLastCalledWith({ input: String.raw`\\files\share\input.drawio`, output: "\\\\files\\share\\directory\\", margin: undefined });
+  } finally {
+    vi.unstubAllGlobals();
   }
 });
 

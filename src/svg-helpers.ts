@@ -33,15 +33,17 @@ const CSS_URL_ATTRIBUTES = ["fill", "stroke", "filter", "clip-path", "mask", "ma
   "marker-mid", "marker-end", "cursor", "color-profile"];
 const ASCII_WHITESPACE = /[\t\n\f\r ]/;
 
-function assertEmbedded(value: string): void {
+type ImageUrlMap = (url: string) => string;
+
+function assertEmbedded(value: string): string {
   const url = value.trim();
-  if (url === "" || url.startsWith("#") || /^data:image\/[\w.+-]+(?:;[^,]*)?,/i.test(url)) return;
+  if (url === "" || url.startsWith("#") || /^data:image\/[\w.+-]+(?:;[^,]*)?,/i.test(url)) return value;
   throw new Error("animated SVG has an unresolved image resource; embed images as data URLs or remove external image references and export again");
 }
 
 /** Read HTML srcset candidates without splitting the commas inside data URLs. */
-function checkSrcset(value: string): void {
-  let index = 0;
+function mapSrcset(value: string, mapUrl: ImageUrlMap): string {
+  let index = 0, previousEnd = 0, rewritten = "";
   while (index < value.length) {
     if (value[index] === "," || ASCII_WHITESPACE.test(value[index])) {
       index++;
@@ -51,7 +53,12 @@ function checkSrcset(value: string): void {
     while (index < value.length && !ASCII_WHITESPACE.test(value[index])) index++;
     let end = index;
     while (end > start && value[end - 1] === ",") end--;
-    assertEmbedded(value.slice(start, end));
+    const url = value.slice(start, end);
+    const mapped = mapUrl(url);
+    if (mapped !== url) {
+      rewritten += value.slice(previousEnd, start) + mapped;
+      previousEnd = end;
+    }
     if (end < index) continue;
     let parentheses = 0;
     while (index < value.length) {
@@ -61,6 +68,7 @@ function checkSrcset(value: string): void {
       if (char === ")" && parentheses > 0) parentheses--;
     }
   }
+  return rewritten + value.slice(previousEnd);
 }
 
 function decodeCssEscapes(value: string): string {
@@ -94,15 +102,64 @@ function cssUrlAt(css: string, index: number): { url: string; end: number } | un
   }
 }
 
-/** Check CSS URL functions but not text that merely looks like one in a string or comment. */
-function checkCssUrls(css: string): void {
+/** Match CSS URL functions but not text that merely looks like one in a string or comment. */
+function mapCssUrls(css: string, mapUrl: ImageUrlMap): string {
+  let previousEnd = 0, rewritten = "";
   const tokens = /\/\*[\s\S]*?(?:\*\/|$)|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(?:[\w-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\n\r\f]))+/gi;
   for (let match = tokens.exec(css); match; match = tokens.exec(css)) {
     if (css[tokens.lastIndex] !== "(" || decodeCssEscapes(match[0]).toLowerCase() !== "url") continue;
     const argument = cssUrlAt(css, tokens.lastIndex + 1);
     if (!argument) continue; // Malformed CSS URL, not a resource that the viewer can load.
-    assertEmbedded(decodeCssEscapes(argument.url));
+    const url = decodeCssEscapes(argument.url);
+    const mapped = mapUrl(url);
+    if (mapped !== url) {
+      rewritten += css.slice(previousEnd, match.index) + `url(${cssString(mapped)})`;
+      previousEnd = argument.end;
+    }
     tokens.lastIndex = argument.end;
+  }
+  return rewritten + css.slice(previousEnd);
+}
+
+/** Visit image references in SVG or rich HTML labels without loading any resources. */
+export function mapImageUrls(root: Element, mapUrl: ImageUrlMap): void {
+  for (const node of walkElements(root as unknown as DomEl)) {
+    const element = node as unknown as Element;
+    const mapAttribute = (name: string, map: ImageUrlMap = mapUrl) => {
+      const value = element.getAttribute(name);
+      if (value === null) return;
+      const mapped = map(value);
+      if (mapped !== value) element.setAttribute(name, mapped);
+    };
+    switch (element.localName) {
+      case "image":
+      case "feImage":
+      case "use": {
+        mapAttribute("href");
+        const link = element.getAttributeNodeNS(XLINK_NS, "href");
+        if (link) {
+          const mapped = mapUrl(link.value);
+          if (mapped !== link.value) element.setAttributeNS(XLINK_NS, link.name, mapped);
+        } else {
+          mapAttribute("xlink:href");
+        }
+        break;
+      }
+      case "img":
+      case "source":
+        mapAttribute("src");
+        mapAttribute("srcset", (value) => mapSrcset(value, mapUrl));
+        break;
+      case "style": {
+        const css = element.textContent ?? "";
+        const mapped = mapCssUrls(css, mapUrl);
+        if (mapped !== css) element.textContent = mapped;
+        break;
+      }
+    }
+    const mapCss = (value: string) => mapCssUrls(value, mapUrl);
+    mapAttribute("style", mapCss);
+    for (const attribute of CSS_URL_ATTRIBUTES) mapAttribute(attribute, mapCss);
   }
 }
 
@@ -110,28 +167,5 @@ function checkCssUrls(css: string): void {
 export function assertStandaloneImages(svg: string): void {
   const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
   if (root?.localName !== "svg") throw new Error("draw.io output is not valid SVG");
-  for (const node of walkElements(root as unknown as DomEl)) {
-    const element = node as unknown as Element;
-    switch (element.localName) {
-      case "image":
-      case "feImage":
-      case "use":
-        assertEmbedded(element.getAttribute("href") ?? "");
-        assertEmbedded(element.getAttributeNS(XLINK_NS, "href") ?? "");
-        break;
-      case "img":
-      case "source":
-        assertEmbedded(element.getAttribute("src") ?? "");
-        checkSrcset(element.getAttribute("srcset") ?? "");
-        break;
-      case "style":
-        checkCssUrls(element.textContent ?? "");
-        break;
-    }
-    checkCssUrls(element.getAttribute("style") ?? "");
-    for (const attribute of CSS_URL_ATTRIBUTES) {
-      const value = element.getAttribute(attribute);
-      if (value) checkCssUrls(value);
-    }
-  }
+  mapImageUrls(root, assertEmbedded);
 }
