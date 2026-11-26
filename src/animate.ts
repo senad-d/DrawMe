@@ -3,14 +3,17 @@
  * store it on the page root cell, export the page to SVG with the draw.io CLI,
  * inject the compiled motion, and render a storyboard PNG for review.
  */
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { DomEl } from "./dom";
 import { analyzeDrawioAnimation } from "./animation";
-import { exportDiagram } from "./drawio";
+import { readDiagramXml, withDiagramFiles } from "./diagram-files";
+import { prepareExport, type PreparedExport } from "./drawio";
 import {
   type MotionSpec,
   compileMotion,
@@ -52,15 +55,33 @@ export interface AnimateResult {
   travellingDots: number;
   connectorFlows: number;
   storyboard?: string;
+  storyboardSha256?: string;
   storyboardFrames?: number;
   storyboardFramesTotal?: number;
   binary: string;
   version?: string;
 }
 
-function stem(path: string): string {
-  const ext = extname(path);
-  return join(dirname(path), ext ? basename(path).slice(0, -ext.length) : basename(path));
+function siblingPath(path: string, name: string): string {
+  // On POSIX, replacing only the filename leaves the filesystem to interpret
+  // '..' after a directory symlink instead of lexically normalizing it away.
+  return sep === "/" ? path.slice(0, path.lastIndexOf(sep) + 1) + name : join(dirname(path), name);
+}
+
+const ANIMATED_SUFFIX = ".animated.svg";
+
+function storyboardPath(output: string, pageIndex: number): string {
+  const name = basename(output);
+  return siblingPath(output, pageIndex === 1 && name.endsWith(ANIMATED_SUFFIX)
+    ? `${name.slice(0, -ANIMATED_SUFFIX.length)}.storyboard.png`
+    : `${name}.storyboard-p${pageIndex}.png`);
+}
+
+function publicationName(prepared: PreparedExport): string {
+  // Win32 and default macOS volumes can alias case-only differences, including
+  // a target that does not exist until commit. Compare names, not inode IDs.
+  const path = prepared.publicationDestination();
+  return process.platform === "win32" || process.platform === "darwin" ? path.toLowerCase() : path;
 }
 
 function serialize(original: string, doc: unknown): string {
@@ -88,19 +109,33 @@ function resolveSpec(opts: AnimateOptions, model: DomEl): { spec: MotionSpec; ch
       throw new Error(`stored motion contains malformed JSON: ${(error as Error).message}`, { cause: error });
     }
     spec = parseMotionSpec(parsed, errors);
-    if (spec && opts.loop !== undefined) spec.loop = opts.loop;
-    if (spec && opts.hold !== undefined) spec.hold = opts.hold;
+    if (spec && errors.length === 0 && (opts.loop !== undefined || opts.hold !== undefined)) {
+      spec = parseMotionSpec({
+        ...spec,
+        loop: opts.loop === undefined ? spec.loop : opts.loop,
+        hold: opts.hold === undefined ? spec.hold : opts.hold,
+      }, errors);
+    }
   }
   if (!spec || errors.length > 0) throw new Error(errors.join("; ") || "motion specification is invalid");
   return { spec, changed: JSON.stringify(spec) !== stored };
 }
 
-/** Validate, store, export, and verify motion for one page. Throws on any failure. */
-export async function animateDiagram(opts: AnimateOptions): Promise<AnimateResult> {
+type AnimateRequest = AnimateOptions & { signal?: AbortSignal };
+
+/** Validate, store, export, and verify motion for one page under the source lock. */
+export async function animateDiagram(opts: AnimateRequest): Promise<AnimateResult> {
+  opts.signal?.throwIfAborted();
   if (!existsSync(opts.input)) throw new Error(`input file not found: ${opts.input}`);
+  return withDiagramFiles([opts.input], opts.signal, () => animatePage(opts));
+}
+
+async function animatePage(opts: AnimateRequest): Promise<AnimateResult> {
+  const { input, binary, signal } = opts;
   const pageIndex = opts.pageIndex ?? 1;
-  const xml = await readFile(opts.input, "utf8");
-  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  const xml = await readDiagramXml(input);
+  const doc = new DOMParser({ onError: () => { throw new Error("input is not well-formed draw.io XML"); } })
+    .parseFromString(xml, "text/xml");
   const root = doc.documentElement as unknown as DomEl | null;
   if (!root) throw new Error("no root element (malformed XML)");
   const { model, name } = selectPage(root, pageIndex);
@@ -119,58 +154,94 @@ export async function animateDiagram(opts: AnimateOptions): Promise<AnimateResul
   if (!analysis.compiled) throw new Error(analysis.errors.join("; "));
   const motion = analysis.compiled;
 
+  signal?.throwIfAborted();
+  // The editable save is independent of rendering; keep its inode and use the
+  // original input for SVG so draw.io retains the authored image base.
   if (changed) {
     storeMotion(model, JSON.stringify(spec));
-    await writeFile(opts.input, serialize(xml, doc), "utf8");
+    await writeFile(input, serialize(xml, doc), "utf8");
   }
 
-  const output = opts.output ?? `${stem(opts.input)}.animated.svg`;
-  const exported = await exportDiagram(
-    { input: opts.input, format: "svg", mode: "final", output, pageIndex, binary: opts.binary },
+  const output = opts.output ?? siblingPath(input, `${basename(input, extname(input))}${ANIMATED_SUFFIX}`);
+  const svg = await prepareExport(
+    { input, format: "svg", mode: "final", output, pageIndex, binary, signal },
     async (staged) => {
-      const svg = await readFile(staged, "utf8");
+      const svg = await readFile(staged, { encoding: "utf8", signal });
       await writeFile(staged, injectMotion(svg, motion, native.flowEdgeIds), "utf8");
     },
   );
 
-  const result: AnimateResult = {
-    source: opts.input,
-    saved: changed,
-    page: name,
-    output,
-    steps: spec.steps.length,
-    loop: motion.loop,
-    sequenceMs: Math.round(motion.sequenceMs),
-    durationMs: Math.round(motion.durationMs),
-    animatedCells: motion.targetCellIds.length,
-    drawnConnectors: motion.drawInEdgeIds.length,
-    travellingDots: motion.dots.length,
-    connectorFlows: native.flowEdgeIds.length,
-    binary: exported.binary,
-    version: exported.version,
-  };
-
-  if (opts.storyboard ?? true) {
-    const frames = sampleFrames(motion.frames);
-    const tempDir = await mkdtemp(join(tmpdir(), "drawme-storyboard-"));
-    try {
-      const boardSource = join(tempDir, "storyboard.drawio");
-      await writeFile(boardSource, buildStoryboard(model, frames), "utf8");
-      const board = await exportDiagram({
-        input: boardSource,
-        format: "png",
-        mode: "final",
-        embed: false,
-        width: 2000,
-        output: `${stem(opts.input)}.storyboard.png`,
-        binary: opts.binary,
+  let board: PreparedExport | undefined;
+  let boardSource: string | undefined;
+  let boardDirectory: string | undefined;
+  try {
+    const frames = opts.storyboard === false ? undefined : sampleFrames(motion.frames);
+    if (frames) {
+      signal?.throwIfAborted();
+      // Prefer a private sibling to keep the same relative image base. If
+      // the source folder is read-only, rebase those references in a private
+      // temporary document without opening or fetching any image ourselves.
+      const filename = `.drawme-storyboard-${randomUUID()}.drawio`;
+      let temp = siblingPath(input, filename);
+      let file;
+      let imageBase: URL | undefined;
+      try {
+        file = await open(temp, "wx", 0o600);
+      } catch (error) {
+        if (!["EACCES", "EPERM", "EROFS"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        const parent = await realpath(dirname(input));
+        imageBase = pathToFileURL(parent.endsWith(sep) ? parent : parent + sep);
+        boardDirectory = await mkdtemp(join(tmpdir(), "drawme-storyboard-"));
+        temp = join(boardDirectory, filename);
+        file = await open(temp, "wx", 0o600);
+      }
+      boardSource = temp;
+      try {
+        await file.writeFile(buildStoryboard(model, frames, imageBase), "utf8");
+      } finally {
+        await file.close();
+      }
+      board = await prepareExport({
+        input: boardSource, logicalInput: input, format: "png", mode: "final",
+        embed: false, reviewRaster: true, output: storyboardPath(output, pageIndex), binary, signal,
       });
-      result.storyboard = board.output;
-      result.storyboardFrames = frames.length;
-      result.storyboardFramesTotal = motion.frames.length;
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
     }
+
+    // Abort cannot split the publications or retire a preview mid-transaction.
+    // A synchronous filesystem failure is not an all-files rollback boundary.
+    signal?.throwIfAborted();
+    if (board && publicationName(board) === publicationName(svg)) {
+      throw new Error("SVG and storyboard resolve to the same publication destination; choose a different SVG output path");
+    }
+    // If a board supersedes a tracked preview at the same name, replace its
+    // inode first so the SVG's preview retirement cannot unlink the board.
+    const review = board?.commit();
+    const exported = svg.commit();
+    return {
+      source: input,
+      saved: changed,
+      page: name,
+      output: exported.output,
+      steps: spec.steps.length,
+      loop: motion.loop,
+      sequenceMs: Math.round(motion.sequenceMs),
+      durationMs: Math.round(motion.durationMs),
+      animatedCells: motion.targetCellIds.length,
+      drawnConnectors: motion.drawInEdgeIds.length,
+      travellingDots: motion.dots.length,
+      connectorFlows: native.flowEdgeIds.length,
+      binary: exported.binary,
+      version: exported.version,
+      ...(review && {
+        storyboard: review.output,
+        storyboardSha256: review.storyboardSha256,
+        storyboardFrames: frames?.length,
+        storyboardFramesTotal: motion.frames.length,
+      }),
+    };
+  } finally {
+    const removeBoardSource = boardDirectory ? rm(boardDirectory, { recursive: true, force: true })
+      : boardSource && rm(boardSource, { force: true });
+    await Promise.all([svg.dispose(), board?.dispose(), removeBoardSource]);
   }
-  return result;
 }

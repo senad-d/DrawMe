@@ -1,5 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { padSvg, pinAuthoredColors, resolveLightDark } from "../src/svgexport";
+import { assertStandaloneImages } from "../src/svg-helpers";
+
+describe("standalone SVG images", () => {
+  it("checks prefixed image-set string candidates and ignores unrelated CSS strings and comments", () => {
+    const svg = (candidate: string) => `<svg><style>
+      /* -webkit-image-set('ignored.png' 1x) */
+      text::after { content: "image-set('literal.png' 1x)"; }
+      rect { background-image: -webkit-IMAGE-SET(url('data:image/png;base64,AAAA') 1x, '${candidate}' type('image/png') 2x); }
+    </style></svg>`;
+    expect(() => assertStandaloneImages(svg(String.raw`..\2f logo.png`))).toThrow(/unresolved image.*embed/i);
+    expect(() => assertStandaloneImages(svg("data:image/png;base64,BBBB"))).not.toThrow();
+  });
+
+  it("checks local sources in SVG, XHTML and CSS without mistaking embedded data or link text for image URLs", () => {
+    const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" xmlns:link="http://www.w3.org/1999/xlink">${body}</svg>`;
+    const embedded = 'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22/%3E';
+    const body = `<image link:href="${embedded}"/><use href="#icon"/>
+      <a href="notes.md"><text>url(not-an-image.png)</text></a>
+      <style>/* url(ignored.png) */ text::after { content: "url(text.png)"; } rect { fill:url(#icon); }</style>
+      <foreignObject><picture xmlns="http://www.w3.org/1999/xhtml"><source srcset="${embedded} 2x"/>
+      <img src="${embedded}" style="background-image: url('${embedded}')"/></picture></foreignObject>`;
+    expect(() => assertStandaloneImages(svg(body))).not.toThrow();
+    for (const unresolved of [
+      '<image link:href="C:\\icons\\logo.png"/>',
+      '<image href="file:///home/local/logo.png"/>',
+      '<feImage href="../logo.png"/>',
+      '<foreignObject><img xmlns="http://www.w3.org/1999/xhtml" src="//server/share/logo.png"/></foreignObject>',
+      `<foreignObject><source xmlns="http://www.w3.org/1999/xhtml" srcset="${embedded}, ./logo.png 2x"/></foreignObject>`,
+      '<style>rect { fill: u\\72 l("../logo.png"); }</style>',
+      '<rect fill="url(./logo.svg#paint)"/>',
+    ]) {
+      expect(() => assertStandaloneImages(svg(body + unresolved))).toThrow(/unresolved image.*embed/i);
+    }
+  });
+});
 
 describe("SVG color pinning", () => {
   it("resolves light-dark() to the authored color, including nested functions", () => {

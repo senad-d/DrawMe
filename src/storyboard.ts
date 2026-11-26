@@ -1,15 +1,16 @@
 /**
  * Storyboard: renders a motion timeline as a grid of static frames on one
- * draw.io page, one tile per sequential step, so motion order and visibility
- * can be reviewed in a single PNG. Each tile is a copy of the page with cell
- * opacity set to its state after that step; highlight and travel steps show
+ * draw.io page, one tile per sampled visual batch, so motion order and
+ * visibility can be reviewed in a single PNG. Each tile uses the cell
+ * opacity after that batch; highlight and travel steps show
  * their accent color on the stroke.
  */
-import { XMLSerializer } from "@xmldom/xmldom";
+import { DOMParser, type Element, XMLSerializer } from "@xmldom/xmldom";
 import { type DomEl, attr, elemChildren, firstByTag } from "./dom";
 import { contentBounds, collectCellsWithIds, pyFloat } from "./geometry";
 import { shiftCell } from "./fitcanvas";
 import { type MotionFrame, isDarkBackground } from "./motion";
+import { mapImageUrls } from "./svg-helpers";
 
 export const MAX_STORYBOARD_FRAMES = 12;
 const GAP = 80;
@@ -83,18 +84,121 @@ function effectiveOpacity(id: string, frame: MotionFrame, parents: Map<string, s
   return opacity;
 }
 
-function storyboardCell(entry: PageEntry, prefix: string, layers: Set<string>, ox: number, oy: number): DomEl {
+const TERMINALS = ["source", "target"] as const;
+
+/** Drop authored-hidden entries and any connectors/descendants that depend on an omitted clone. */
+function visibleClones(entries: PageEntry[], layers: Set<string>): PageEntry[] {
+  const candidates = entries.filter(({ id }) => id !== "0" && !layers.has(id));
+  const cloneIds = new Set(candidates.map(({ id }) => id));
+  const sourceIds = new Set(entries.map(({ id }) => id));
+  const omitted = new Set<string>();
+  const queue: string[] = [];
+  const dependents = new Map<string, string[]>();
+  const omit = (id: string) => {
+    if (omitted.has(id)) return;
+    omitted.add(id);
+    queue.push(id);
+  };
+  const dependOn = (id: string, ref: string) => {
+    const others = dependents.get(ref) ?? [];
+    others.push(id);
+    dependents.set(ref, others);
+  };
+  for (const { id, cell } of entries) {
+    if (attr(cell, "visible") === "0") omit(id);
+    const parent = attr(cell, "parent");
+    if (parent !== null) {
+      if (sourceIds.has(parent)) dependOn(id, parent);
+      else omit(id);
+    }
+    for (const end of TERMINALS) {
+      const ref = attr(cell, end);
+      if (ref === null) continue;
+      if (cloneIds.has(ref)) dependOn(id, ref);
+      else omit(id);
+    }
+  }
+  for (const id of queue) for (const dependent of dependents.get(id) ?? []) omit(dependent);
+  return candidates.filter(({ id }) => !omitted.has(id));
+}
+
+function cloneIdsFor(entries: PageEntry[], prefix: string): Map<string, string> {
+  const decorations = new Set([`${prefix}frame`, `${prefix}caption`]);
+  const used = new Set([...decorations, ...entries.map(({ id }) => `${prefix}${id}`)]);
+  return new Map(entries.map(({ id }) => {
+    const preferred = `${prefix}${id}`;
+    if (!decorations.has(preferred)) return [id, preferred];
+    let n = 2;
+    while (used.has(`${preferred}-${n}`)) n++;
+    const unique = `${preferred}-${n}`;
+    used.add(unique);
+    return [id, unique];
+  }));
+}
+
+function cloneEntry(entry: PageEntry): PageEntry {
   const element = (entry.element as unknown as { cloneNode(deep: boolean): DomEl }).cloneNode(true);
   const cell = element.tagName === "mxCell" ? element : firstByTag(element, "mxCell")!;
-  element.setAttribute("id", `${prefix}${entry.id}`);
-  const parent = attr(cell, "parent");
-  const topLevel = parent === null || layers.has(parent);
-  cell.setAttribute("parent", topLevel ? "1" : `${prefix}${parent}`);
-  for (const end of ["source", "target"]) {
-    const ref = attr(cell, end);
-    if (ref !== null) cell.setAttribute(end, `${prefix}${ref}`);
+  return { id: entry.id, element, cell };
+}
+
+/** Relocation is used only when the authored directory can't hold a private copy. */
+function rebaseImages(entry: PageEntry, base: URL, serializer: XMLSerializer): PageEntry {
+  const clone = cloneEntry(entry);
+  const absoluteImage = (value: string): string => {
+    const reference = value.trim();
+    if (!reference || /^(?:[a-z][a-z\d+.-]*:|[\\/#])/i.test(reference)) return value;
+    return new URL(reference.replaceAll("\\", "/"), base).href;
+  };
+  const style = attr(clone.cell, "style");
+  if (style) {
+    clone.cell.setAttribute("style", style.replace(/(^|;)((?:indicatorImage|image)=)([^;]*)/g, (_part, before, key, value: string) => {
+      const url = absoluteImage(value);
+      return before + key + (url === value ? value : url.replaceAll(";", "%3B"));
+    }));
   }
-  if (topLevel) shiftCell(cell, ox, oy);
+  const rebaseLabel = (owner: DomEl, attribute: string) => {
+    const value = attr(owner, attribute);
+    // Leave ordinary labels and already absolute/embedded resources byte-identical.
+    if (!value || !value.includes("<") || !/<(?:img|source|svg|image|feimage|style|use)\b|\bstyle\s*=/i.test(value)) return;
+    let changed = false;
+    let body: Element;
+    try {
+      const root = new DOMParser({ onError: () => {} }).parseFromString(`<body>${value}</body>`, "text/html").documentElement;
+      if (root?.localName !== "body") throw new Error("invalid HTML label");
+      body = root;
+      mapImageUrls(body, (url) => {
+        const absolute = absoluteImage(url);
+        changed ||= absolute !== url;
+        return absolute;
+      });
+    } catch (error) {
+      throw new Error("cannot relocate storyboard image references in a rich label; embed its images or use a writable source directory", { cause: error });
+    }
+    if (changed) {
+      const html = serializer.serializeToString(body);
+      owner.setAttribute(attribute, html.slice(html.indexOf(">") + 1, html.lastIndexOf("</body>")));
+    }
+  };
+  rebaseLabel(clone.cell, "value");
+  if (clone.element !== clone.cell) {
+    rebaseLabel(clone.element, "label");
+    rebaseLabel(clone.element, "value");
+  }
+  return clone;
+}
+
+function storyboardCell(entry: PageEntry, ids: Map<string, string>, ox: number, oy: number): DomEl {
+  const { element, cell } = cloneEntry(entry);
+  element.setAttribute("id", ids.get(entry.id)!);
+  if (element !== cell) (cell as unknown as Element).removeAttribute("id");
+  const parent = ids.get(attr(cell, "parent") ?? "");
+  cell.setAttribute("parent", parent ?? "1");
+  for (const end of TERMINALS) {
+    const ref = attr(cell, end);
+    if (ref !== null) cell.setAttribute(end, ids.get(ref)!);
+  }
+  if (parent === undefined) shiftCell(cell, ox, oy);
   return element;
 }
 
@@ -112,16 +216,18 @@ function applyFrameStyle(element: DomEl, id: string, frame: MotionFrame, parents
 }
 
 /** Build a one-page `.drawio` document that lays out the frames as a captioned grid. */
-export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
+export function buildStoryboard(model: DomEl, frames: MotionFrame[], imageBase?: URL): string {
   if (frames.length === 0) throw new Error("motion has no visual steps to storyboard");
   const { width, height } = pageSize(model);
   const entries = pageEntries(model);
   const parents = new Map(entries.map((entry) => [entry.id, attr(entry.cell, "parent")]));
   const layers = new Set(entries.filter((entry) => attr(entry.cell, "parent") === "0").map((entry) => entry.id));
+  const serializer = new XMLSerializer();
+  const visible = visibleClones(entries, layers);
+  const clones = imageBase ? visible.map((entry) => rebaseImages(entry, imageBase, serializer)) : visible;
   const columns = Math.min(frames.length, width >= height ? 2 : 3);
   const rows = Math.ceil(frames.length / columns);
   const tileHeight = CAPTION_HEIGHT + height;
-  const serializer = new XMLSerializer();
   const parts: string[] = [];
   const dark = isDarkBackground(attr(model, "background"));
   const captionColor = dark ? "#CBD5E1" : "#334155";
@@ -137,9 +243,9 @@ export function buildStoryboard(model: DomEl, frames: MotionFrame[]): string {
       `<mxCell id="${prefix}frame" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;fillColor=none;strokeColor=${frameColor};dashed=1;" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy + CAPTION_HEIGHT}" width="${width}" height="${height}" as="geometry"/></mxCell>`,
       `<mxCell id="${prefix}caption" value="${escapeXml(caption)}" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=${captionColor};" vertex="1" parent="1"><mxGeometry x="${ox}" y="${oy}" width="${width}" height="${CAPTION_HEIGHT - 8}" as="geometry"/></mxCell>`,
     );
-    for (const entry of entries) {
-      if (entry.id === "0" || layers.has(entry.id)) continue;
-      const element = storyboardCell(entry, prefix, layers, ox, oy + CAPTION_HEIGHT);
+    const ids = cloneIdsFor(clones, prefix);
+    for (const entry of clones) {
+      const element = storyboardCell(entry, ids, ox, oy + CAPTION_HEIGHT);
       applyFrameStyle(element, entry.id, frame, parents);
       parts.push(serializer.serializeToString(element as never));
     }

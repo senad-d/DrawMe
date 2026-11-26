@@ -1,10 +1,11 @@
 import { ChildProcess, spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openFile, resolveBinary } from "../src/drawio";
+import { applyLayout, convertMermaid, exportDiagram, openFile, resolveBinary } from "../src/drawio";
 import drawme from "../src/index";
 import { makeMockPi } from "./fixtures";
 
@@ -18,21 +19,28 @@ vi.mock("node:os", async (importOriginal) => ({
 }));
 
 const spawnMock = vi.mocked(spawn);
+const VERSION = "30.2.4";
+const GRAPH = `<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0"/><mxCell id="1" parent="0"/>
+  <mxCell id="a" parent="1" vertex="1"><mxGeometry width="10" height="10" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>`;
 let dir: string;
+
+function reply(stdout = "", stderr = "", code = 0): ChildProcess {
+  const child = Object.assign(new ChildProcess(), { stdout: new PassThrough(), stderr: new PassThrough() });
+  queueMicrotask(() => {
+    child.stdout.end(stdout);
+    child.stderr.end(stderr);
+    child.emit("close", code, null);
+  });
+  return child;
+}
 
 beforeEach(async () => {
   dir = await realpath(await mkdtemp(join(tmpdir(), "drawme-process-")));
   vi.stubEnv("DRAWME_DRAWIO_BINARY", undefined);
   vi.mocked(platform).mockReturnValue("darwin");
-  spawnMock.mockReset().mockImplementation((_bin, args) => {
-    const child = Object.assign(new ChildProcess(), { stdout: new PassThrough(), stderr: new PassThrough() });
-    queueMicrotask(() => {
-      child.stdout.end(Array.isArray(args) && args[0] === "--version" ? "30.0.0\n" : "");
-      child.stderr.end();
-      child.emit("close", 0, null);
-    });
-    return child;
-  });
+  spawnMock.mockReset().mockImplementation((_bin, args) => reply(Array.isArray(args) && args[0] === "--version" ? `${VERSION}\n` : ""));
 });
 
 afterEach(async () => {
@@ -42,22 +50,19 @@ afterEach(async () => {
 
 describe("CLI discovery trust", () => {
   it.each([
-    ["drawio_check", {}],
-    ["drawio_export", { format: "png" }],
-    ["drawio_animate", { steps: [{ effect: "fadeIn", cells: ["a"] }], storyboard: false }],
-    ["drawio_from_mermaid", { input: undefined, mermaid: "graph TD\n  A --> B" }],
-    ["drawio_layout", { preset: "verticalFlow" }],
-  ])("does not probe an unconfigured executable from %s", async (name, options) => {
+    ["drawio_check", {}, "drawio"],
+    ["drawio_export", { format: "png" }, "png"],
+    ["drawio_animate", { steps: [{ effect: "fadeIn", cells: ["a"] }], storyboard: false }, "svg"],
+    ["drawio_from_mermaid", { input: undefined, mermaid: "graph TD\n  A --> B" }, "drawio"],
+    ["drawio_layout", { preset: "verticalFlow" }, "drawio"],
+  ])("does not probe an unconfigured executable from %s", async (name, params, outputExtension) => {
     const input = join(dir, "diagram.drawio");
-    await writeFile(input, `<mxfile><diagram><mxGraphModel><root>
-      <mxCell id="0"/><mxCell id="1" parent="0"/>
-      <mxCell id="a" parent="1" vertex="1"><mxGeometry width="10" height="10" as="geometry"/></mxCell>
-    </root></mxGraphModel></diagram></mxfile>`);
+    await writeFile(input, GRAPH);
     const binary = join(dir, "Other Renderer");
     await writeFile(binary, "");
     const { pi, tools } = makeMockPi();
     drawme(pi as never);
-    await tools.get(name)!.execute("t", { input, output: join(dir, "output.drawio"), ...options, binary });
+    await tools.get(name)!.execute("t", { input, output: join(dir, `output.${outputExtension}`), ...params, binary });
 
     expect(spawnMock.mock.calls.map(([bin]) => bin)).not.toContain(binary);
     expect(spawnMock).toHaveBeenCalledWith("drawio", ["--version"], expect.anything());
@@ -69,7 +74,7 @@ describe("CLI discovery trust", () => {
     await writeFile(binary, "");
     vi.stubEnv("DRAWME_DRAWIO_BINARY", binary);
 
-    await expect(resolveBinary()).resolves.toMatchObject({ available: true, binary, version: "30.0.0", supportsMermaid: true });
+    await expect(resolveBinary()).resolves.toMatchObject({ available: true, binary, version: VERSION, supportsMermaid: true });
     expect(spawnMock).toHaveBeenCalledExactlyOnceWith(binary, ["--version"], expect.anything());
   });
 
@@ -78,6 +83,64 @@ describe("CLI discovery trust", () => {
 
     await expect(resolveBinary()).resolves.toMatchObject({ available: true, binary: "drawio" });
     expect(spawnMock).toHaveBeenCalledExactlyOnceWith("drawio", ["--version"], expect.anything());
+  });
+});
+
+describe("facade renderer invocation", () => {
+  it("uses absolute file operands, including private output paths, for export, Mermaid and layout", async () => {
+    const diagram = join(dir, "- diagram with spaces.drawio");
+    const mmd = join(dir, "- flow chart.mmd");
+    const relativeToHost = (file: string) => relative(process.cwd(), file);
+    await writeFile(diagram, GRAPH);
+    await writeFile(mmd, "graph TD\nA --> B");
+    const seen: { input: string; output: string; kind: string; args: string[] }[] = [];
+    spawnMock.mockImplementation((_bin, argv) => {
+      const args = argv as string[];
+      if (args.includes("--version")) return reply(`${VERSION}\n`);
+      const outputAt = args.indexOf("-o");
+      const output = args[outputAt + 1];
+      const input = args[outputAt + 2];
+      const kind = args.includes("--layout") ? "layout" : args[args.indexOf("-f") + 1];
+      seen.push({ input, output, kind, args });
+      writeFileSync(output, kind === "pdf" ? "%PDF-1.7\n%%EOF\n" : GRAPH);
+      return reply();
+    });
+    await exportDiagram({ input: relativeToHost(diagram), output: relativeToHost(join(dir, "- report.pdf")), format: "pdf" });
+    await convertMermaid({ input: relativeToHost(mmd), output: join(dir, "file.drawio") });
+    await convertMermaid({ mermaid: "graph TD\nC --> D", cwd: dir });
+    await applyLayout({ input: relativeToHost(diagram), output: join(dir, "layout.drawio"), preset: "verticalFlow" });
+
+    expect(seen.map(({ kind }) => kind)).toEqual(["pdf", "xml", "xml", "layout"]);
+    expect(seen.every(({ input, output }) => isAbsolute(input) && isAbsolute(output))).toBe(true);
+    expect(seen.map(({ input }) => basename(input))).toEqual([basename(diagram), basename(mmd), "diagram.mmd", basename(diagram)]);
+    expect(seen[0].args).not.toContain("--page-index");
+    expect(seen.map(({ output }) => basename(output))).toEqual(["artifact.pdf", "converted.drawio", "converted.drawio", "layout.drawio"]);
+  });
+
+  it("refuses a Windows CLI for both mounted-drive export and inline conversion on Linux", async () => {
+    vi.mocked(platform).mockReturnValue("linux");
+    const drive = join(dir, "mnt", "c");
+    await mkdir(join(drive, "Program Files"), { recursive: true });
+    const input = join(drive, "- Project Plan.drawio");
+    const binary = join(drive, "Program Files", "drawio.exe");
+    await writeFile(input, GRAPH);
+    await writeFile(binary, "");
+    await expect(exportDiagram({ input, format: "svg", binary })).rejects.toThrow(/Windows.*WSL.*native Linux/i);
+    await expect(convertMermaid({ mermaid: "graph TD\nA --> B", cwd: dir, binary })).rejects.toThrow(/Windows.*WSL.*native Linux/i);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("does not expose private stderr in export failures", async () => {
+    const input = join(dir, "diagram.drawio");
+    const marker = "private-renderer-marker";
+    await writeFile(input, GRAPH);
+    spawnMock.mockImplementationOnce(() => reply(`${VERSION}\n`));
+    spawnMock.mockImplementationOnce(() => reply("", marker + "x".repeat(100_000), 17));
+    const error: unknown = await exportDiagram({ input }).catch((error: unknown) => error);
+    expect(error).toMatchObject({ message: expect.stringMatching(/draw.io export failed:.*code 17/) });
+    expect(JSON.stringify(error)).not.toContain(marker);
+    expect((error as Error).message).not.toContain(marker);
+    expect((error as Error).cause).not.toHaveProperty("stderr");
   });
 });
 
@@ -98,7 +161,7 @@ describe("desktop opener trust", () => {
 
   it("opens a supported export through its absolute path", async () => {
     vi.mocked(platform).mockReturnValue("linux");
-    const document = join(dir, "Team Plan.drawio.png");
+    const document = join(dir, "- Team Plan.drawio.png");
     await writeFile(document, "");
 
     await expect(openFile(relative(process.cwd(), document))).resolves.toEqual({ opener: "xdg-open" });

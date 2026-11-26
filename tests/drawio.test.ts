@@ -1,32 +1,46 @@
-import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, it, expect, vi } from "vitest";
 import { access, chmod, link, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
-import { MAX_FINAL_RASTER_PIXELS, cappedScale, planExport, deriveOutput, exportDiagram, run, xvfbScreen } from "../src/drawio";
+import { basename, join, sep } from "node:path";
+import { getEventListeners } from "node:events";
+import { crc32, deflateSync } from "node:zlib";
+import { MAX_FINAL_RASTER_PIXELS, cappedScale, planExport, deriveOutput, exportDiagram, prepareExport, run, xvfbScreen } from "../src/drawio";
+import { withDiagramFiles } from "../src/diagram-files";
 import { TINY_PNG } from "./fixtures";
+import { installRendererFixtureAdapter, writeRendererFixture } from "./renderer-fixture";
+
+installRendererFixtureAdapter();
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>';
-const renderImage = `writeFileSync(output, svg ? ${JSON.stringify(SVG)} : Buffer.from("${TINY_PNG}", "base64"));`;
+const GRAPH = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
+const flatPng = Buffer.from(TINY_PNG, "base64");
+// A real draw.io model in the same zTXt encoding as Desktop's editable output.
+const pngText = Buffer.concat([Buffer.from("mxGraphModel\0\0"), deflateSync(encodeURIComponent(GRAPH))]);
+const pngChunk = Buffer.alloc(12 + pngText.length);
+pngChunk.writeUInt32BE(pngText.length);
+pngChunk.write("zTXt", 4);
+pngText.copy(pngChunk, 8);
+pngChunk.writeUInt32BE(crc32(pngChunk.subarray(4, -4)), pngChunk.length - 4);
+const embeddedPng = Buffer.concat([flatPng.subarray(0, -12), pngChunk, flatPng.subarray(-12)]);
+const renderFlatPng = `writeFileSync(output, Buffer.from("${TINY_PNG}", "base64"));`;
+const renderImage = `writeFileSync(output, svg ? ${JSON.stringify(SVG)} : Buffer.from(
+  args.includes("-e") ? "${embeddedPng.toString("base64")}" : "${TINY_PNG}", "base64"));`;
 
-async function makeFakeDrawio(dir: string, render = renderImage): Promise<string> {
-  const binary = join(dir, "fake-drawio.mjs");
-  await writeFile(
-    binary,
-    `#!/usr/bin/env node
-import { chmodSync, linkSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+async function makeFakeDrawio(dir: string, render = renderImage, version = "30.2.4"): Promise<string> {
+  return writeRendererFixture(dir, `
+import { spawn } from "node:child_process";
+import { chmodSync, existsSync, linkSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) {
-  process.stdout.write("30.0.0\\n");
+  console.log(${JSON.stringify(version)});
 } else {
   const output = args[args.indexOf("-o") + 1];
   const svg = args[args.indexOf("-f") + 1] === "svg";
   ${render}
 }
-`,
-  );
-  await chmod(binary, 0o755);
-  return binary;
+`, "fake drawio.mjs");
 }
 
 describe("deriveOutput", () => {
@@ -35,7 +49,7 @@ describe("deriveOutput", () => {
   });
   it("uses a single extension when not embedding", () => {
     expect(deriveOutput("diagram.drawio", "png", false)).toBe("diagram.png");
-    expect(deriveOutput("dir/diagram.drawio", "svg", true)).toBe("dir/diagram.svg");
+    expect(deriveOutput(join("dir", "diagram.drawio"), "svg", true)).toBe(join("dir", "diagram.svg"));
     expect(deriveOutput("diagram", "pdf", true)).toBe("diagram.pdf");
   });
 });
@@ -54,14 +68,24 @@ describe("xvfbScreen", () => {
 
 describe.skipIf(process.platform === "win32")("run", () => {
   it("kills the whole process group on timeout, leaving no orphans", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawme-run-"));
-    const pidFile = join(dir, "pid");
+    const dir = await mkdtemp(join(tmpdir(), "drawme run "));
+    const pidFile = join(dir, "child pid");
+    let pid: number | undefined;
     try {
-      await expect(run("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], 300)).rejects.toThrow("timed out");
-      const pid = Number(await readFile(pidFile, "utf8"));
-      await new Promise((r) => setTimeout(r, 200));
-      expect(() => process.kill(pid, 0)).toThrow();
+      await expect(run("sh", ["-c", `
+        sleep 30 &
+        child=$!
+        trap 'wait "$child"; exit' TERM
+        printf '%s' "$child" > "$1"
+        wait "$child"
+      `, "drawme-timeout", pidFile], 300)).rejects.toThrow("timed out");
+      pid = Number(await readFile(pidFile, "utf8"));
+      expect(pid).toBeGreaterThan(0);
+      await vi.waitFor(() => expect(() => process.kill(pid!, 0)).toThrow());
     } finally {
+      if (pid) {
+        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+      }
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -150,10 +174,13 @@ describe("planExport", () => {
     expect(one.args).toContain("--width");
     expect(one.args).not.toContain("-s");
 
-    // Small diagrams, unknown heights, and explicit sizes keep the requested scale.
+    // Small diagrams and unknown heights keep the requested scale; explicit sizes obey the same budget.
     expect(cappedScale(2, 40, 1000, 800)).toBe(2);
     expect(cappedScale(2, 40, 3000)).toBe(2);
-    expect(planExport({ input: "a.drawio", width: 5000 }, "darwin", false, 3000, 2000).args).toContain("5000");
+    const explicit = planExport({ input: "a.drawio", width: 5000 }, "darwin", false, 3000, 2000).args;
+    const outerWidth = Number(explicit[explicit.indexOf("--width") + 1]);
+    expect(outerWidth * (80 + Math.ceil((outerWidth - 80) * 2 / 3))).toBeLessThanOrEqual(MAX_FINAL_RASTER_PIXELS);
+    expect(outerWidth).toBeLessThan(5000);
   });
 
   it("supports explicit height, scale, border, and embed options", () => {
@@ -179,9 +206,9 @@ describe("planExport", () => {
     expect(p.args[i + 1]).toBe("2");
   });
 
-  it("on Linux the headless flags trail the input; --no-sandbox only as root", () => {
+  it("on Linux the headless flags trail the input and root cannot plan a renderer launch", () => {
     expect(planExport({ input: "a.drawio" }, "linux", false).linuxExtra).toEqual(["--disable-gpu"]);
-    expect(planExport({ input: "a.drawio" }, "linux", true).linuxExtra).toEqual(["--disable-gpu", "--no-sandbox"]);
+    expect(() => planExport({ input: "a.drawio" }, "linux", true)).toThrow(/sandbox.*unprivileged/i);
   });
 });
 
@@ -193,11 +220,13 @@ describe("exportDiagram source protection", () => {
       try {
         const input = join(dir, "source.drawio");
         const marker = join(dir, "started");
-        const binary = join(dir, "fake-drawio.mjs");
         const source = "<mxfile/>";
         await writeFile(input, source);
-        await writeFile(binary, `#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "started");\nconsole.log("30.0.0");\n`);
-        await chmod(binary, 0o755);
+        const binary = await writeRendererFixture(dir, `
+          import { writeFileSync } from "node:fs";
+          writeFileSync(${JSON.stringify(marker)}, "started");
+          console.log("30.2.4");
+        `);
         let output = input;
         if (alias === "file symlink") {
           output = join(dir, "symlink.png");
@@ -219,6 +248,67 @@ describe("exportDiagram source protection", () => {
       }
     },
   );
+});
+
+describe("exportDiagram renderer boundary", () => {
+  it.each([["26.2.15", "1"], ["32.4.1", "2"]])("uses the %s CLI page convention for a compressed second page", async (version, index) => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme page convention "));
+    try {
+      const input = join(dir, "- same name.drawio");
+      const output = join(dir, "- report.svg");
+      const argv = join(dir, "argv.json");
+      await writeFile(input, `<mxfile><diagram>${GRAPH}</diagram><diagram>compressed-page</diagram></mxfile>`);
+      const binary = await makeFakeDrawio(dir, `${renderImage}\nwriteFileSync(${JSON.stringify(argv)}, JSON.stringify(args));`, version);
+      const result = await exportDiagram({ input, output, format: "svg", pageIndex: 2, binary });
+      const args = JSON.parse(await readFile(argv, "utf8")) as string[];
+      expect(result).toMatchObject({ output, binary, version });
+      expect(args).toContain(input);
+      expect(args[args.indexOf("--page-index") + 1]).toBe(index);
+      expect(args[args.indexOf("-o") + 1]).toMatch(/artifact\.svg$/);
+      expect((await stat(output)).isFile()).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid page selection before discovery without changing prior bytes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-invalid-page-"));
+    try {
+      const input = join(dir, "bare.drawio");
+      const output = join(dir, "existing.svg");
+      const marker = join(dir, "probed");
+      await writeFile(input, GRAPH);
+      await writeFile(output, SVG);
+      const binary = await writeRendererFixture(dir, `
+        import { writeFileSync } from "node:fs";
+        writeFileSync(${JSON.stringify(marker)}, "started");
+        console.log("32.4.1");
+      `);
+      for (const pageIndex of [0, 1.9, 2]) {
+        await expect(exportDiagram({ input, output, pageIndex, format: "svg", binary })).rejects.toThrow(/pageIndex.*(?:positive integer|out of range)/);
+      }
+      expect(existsSync(marker)).toBe(false);
+      expect(await readFile(output, "utf8")).toBe(SVG);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("lets the intake boundary reject non-file input before discovery", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-invalid-input-"));
+    try {
+      const marker = join(dir, "probed");
+      const binary = await writeRendererFixture(dir, `
+        import { writeFileSync } from "node:fs";
+        writeFileSync(${JSON.stringify(marker)}, "started");
+        console.log("32.4.1");
+      `);
+      await expect(exportDiagram({ input: dir, output: join(dir, "out.png"), binary })).rejects.toThrow(/input is not a regular file/);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("exportDiagram publication", () => {
@@ -267,6 +357,30 @@ describe("exportDiagram publication", () => {
 
       await expect(exportDiagram({ input, output: `${output}${sep}`, format: "svg", binary })).rejects.toThrow("must name a file");
       expect(existsSync(output)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects directory destinations and returns a regular PDF at an extensionless destination", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-pdf-output-"));
+    try {
+      const input = join(dir, "source.drawio");
+      const directory = join(dir, "existing.directory");
+      const output = join(dir, "report");
+      await mkdir(directory);
+      await writeFile(input, GRAPH);
+      const pdf = "%PDF-1.7\nfixture\n%%EOF\n";
+      const binary = await makeFakeDrawio(dir, `
+        if (!output.endsWith(".pdf")) process.exit(12);
+        writeFileSync(output, ${JSON.stringify(pdf)});
+      `);
+      await expect(exportDiagram({ input, output: directory, format: "pdf", binary })).rejects.toThrow("destination is not a regular file");
+      expect(await readdir(directory)).toEqual([]);
+      const result = await exportDiagram({ input, output, format: "pdf", binary });
+      expect(result).toMatchObject({ output, format: "pdf", binary });
+      expect((await stat(result.output)).isFile()).toBe(true);
+      expect(await readFile(result.output, "utf8")).toBe(pdf);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -370,13 +484,212 @@ describe("exportDiagram publication", () => {
   });
 });
 
+describe("prepared export commit boundary", () => {
+  it("does not publish a prepared PNG or retire the earlier preview until commit", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-prepared-preview-"));
+    try {
+      const input = join(dir, "source.drawio");
+      const output = join(dir, "next.png");
+      await writeFile(input, GRAPH);
+      const binary = await makeFakeDrawio(dir);
+      const previous = await exportDiagram({ input, mode: "preview", binary });
+      await withDiagramFiles([input], undefined, async () => {
+        const prepared = await prepareExport({ input, output, mode: "preview", binary });
+        try {
+          expect(existsSync(output)).toBe(false);
+          expect(existsSync(previous.output)).toBe(true);
+          const result = prepared.commit();
+          const bytes = await readFile(output);
+          expect(result).toMatchObject({
+            binary, version: "30.2.4", embed: false, removedPreviews: [previous.output],
+            previewSha256: createHash("sha256").update(bytes).digest("hex"),
+          });
+          expect(bytes).toEqual(Buffer.from(TINY_PNG, "base64"));
+          expect(existsSync(previous.output)).toBe(false);
+        } finally {
+          await prepared.dispose();
+        }
+      });
+      expect((await readdir(dir)).some(name => name.startsWith(".drawme-export-"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a board digest without recording or retiring it as a preview", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-board-receipt-"));
+    try {
+      const input = join(dir, "source.drawio");
+      const output = join(dir, "board.png");
+      await writeFile(input, GRAPH);
+      const binary = await makeFakeDrawio(dir);
+      const previous = await exportDiagram({ input, mode: "preview", binary });
+      const board = await exportDiagram({ input, output, reviewRaster: true, embed: true, binary });
+      const bytes = await readFile(output);
+      expect(board).toMatchObject({ mode: "final", embed: false, replacedPreview: false, removedPreviews: [],
+        storyboardSha256: createHash("sha256").update(bytes).digest("hex") });
+      expect(board.previewSha256).toBeUndefined();
+      const final = await exportDiagram({ input, format: "svg", binary });
+      expect(final.removedPreviews).toEqual([previous.output]);
+      expect(await readFile(output)).toEqual(bytes);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("checks the editable original for destination aliases when rendering a private source", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-logical-input-"));
+    try {
+      const logicalInput = join(dir, "original.drawio");
+      const input = join(dir, "private.drawio");
+      const output = join(dir, "board.png");
+      await writeFile(logicalInput, GRAPH);
+      await writeFile(input, GRAPH);
+      await link(logicalInput, output);
+      const binary = await makeFakeDrawio(dir);
+      await withDiagramFiles([logicalInput], undefined, async () => {
+        const attempted = prepareExport({ input, logicalInput, output, reviewRaster: true, binary })
+          .then(prepared => prepared.dispose());
+        await expect(attempted).rejects.toThrow("output aliases the input");
+      });
+      expect(await readFile(logicalInput, "utf8")).toBe(GRAPH);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("exportDiagram cancellation", () => {
+  it("settles an aborted queued export before the source owner releases and never probes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-queued-export-"));
+    const controller = new AbortController();
+    let queued: Promise<void> | undefined;
+    try {
+      const input = join(dir, "source.drawio");
+      const alias = join(dir, "source alias.drawio");
+      const output = join(dir, "final.svg");
+      await writeFile(input, GRAPH);
+      await link(input, alias);
+      await writeFile(output, SVG);
+      const binary = await makeFakeDrawio(dir);
+      const previous = await exportDiagram({ input: alias, mode: "preview", binary });
+      const marker = join(dir, "probed");
+      const guard = await writeRendererFixture(dir, `
+        import { writeFileSync } from "node:fs";
+        writeFileSync(${JSON.stringify(marker)}, "started");
+        console.log("32.4.1");
+      `);
+      await withDiagramFiles([input], undefined, async () => {
+        let outcome: unknown;
+        queued = exportDiagram({ input: alias, output, format: "svg", binary: guard, signal: controller.signal })
+          .then(result => { outcome = result; }, (error: unknown) => { outcome = error; });
+        // Wait until the abort listener is installed by the file transaction, not merely
+        // until the caller starts resolving the input's hard-link identity.
+        await vi.waitFor(() => expect(getEventListeners(controller.signal, "abort")).toHaveLength(1));
+        controller.abort();
+        await vi.waitFor(() => expect(outcome).toMatchObject({ name: "AbortError" }));
+        expect(existsSync(marker)).toBe(false);
+        expect(await readFile(output, "utf8")).toBe(SVG);
+        expect(await readFile(previous.output)).toEqual(Buffer.from(TINY_PNG, "base64"));
+      });
+      const next = await exportDiagram({ input: alias, output, format: "svg", binary });
+      expect(next.removedPreviews).toEqual([previous.output]);
+    } finally {
+      controller.abort();
+      await queued;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reaps a running renderer on abort, disposes its stage and keeps committed bytes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-running-export-"));
+    const controller = new AbortController();
+    let running: Promise<unknown> | undefined;
+    let pids: number[] = [];
+    try {
+      const input = join(dir, "source.drawio");
+      const output = join(dir, "final.svg");
+      const marker = join(dir, "renderer pids.json");
+      await writeFile(input, GRAPH);
+      await writeFile(output, SVG);
+      const binary = await makeFakeDrawio(dir);
+      const previous = await exportDiagram({ input, mode: "preview", binary });
+      const entries = await readdir(dir);
+      await makeFakeDrawio(dir, `
+        ${renderImage}
+        const pids = [process.pid];
+        if (process.platform === "win32") setTimeout(() => process.exit(19), 3000);
+        else {
+          const child = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(19), 3000)"], { stdio: "inherit" });
+          process.on("SIGTERM", () => { /* let Node reap its descendant */ });
+          child.on("exit", code => { process.exitCode = code ?? 0; });
+          pids.push(child.pid);
+        }
+        writeFileSync(${JSON.stringify(marker)}, JSON.stringify(pids));
+      `);
+      let outcome: unknown;
+      running = exportDiagram({ input, output, format: "svg", binary, signal: controller.signal })
+        .then(result => { outcome = result; }, (error: unknown) => { outcome = error; });
+      await vi.waitFor(async () => {
+        pids = JSON.parse(await readFile(marker, "utf8")) as number[];
+        expect(pids).toHaveLength(process.platform === "win32" ? 1 : 2);
+      });
+      for (const pid of pids) expect(() => process.kill(pid, 0)).not.toThrow();
+      controller.abort();
+      await vi.waitFor(() => expect(outcome).toMatchObject({ name: "AbortError" }), { timeout: 1_500 });
+      await vi.waitFor(() => {
+        for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+      });
+      expect((await readdir(dir)).filter(name => name !== basename(marker))).toEqual(entries);
+      expect(await readFile(output, "utf8")).toBe(SVG);
+      expect(await readFile(previous.output)).toEqual(Buffer.from(TINY_PNG, "base64"));
+      await makeFakeDrawio(dir);
+      const next = await exportDiagram({ input, output, format: "svg", binary });
+      expect(next.removedPreviews).toEqual([previous.output]);
+      expect(await readFile(output, "utf8")).toContain("data-drawme-margin");
+    } finally {
+      controller.abort();
+      await running;
+      for (const pid of pids) {
+        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+      }
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 12_000);
+
+  it("refuses commit when aborted after verification and before publication", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-aborted-prepared-"));
+    try {
+      const input = join(dir, "source.drawio");
+      const output = join(dir, "final.svg");
+      const controller = new AbortController();
+      await writeFile(input, GRAPH);
+      const binary = await makeFakeDrawio(dir);
+      const previous = await exportDiagram({ input, mode: "preview", binary });
+      await withDiagramFiles([input], controller.signal, async () => {
+        const prepared = await prepareExport({ input, output, format: "svg", binary, signal: controller.signal });
+        try {
+          controller.abort();
+          expect(prepared.commit).toThrow(/aborted/i);
+        } finally {
+          await prepared.dispose();
+        }
+      });
+      expect(existsSync(output)).toBe(false);
+      expect(await readFile(previous.output)).toEqual(Buffer.from(TINY_PNG, "base64"));
+      expect((await readdir(dir)).some(name => name.startsWith(".drawme-export-"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("exportDiagram animated SVG", () => {
   it("compiles and verifies a portable sequence after CLI export", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawme-animated-export-"));
     try {
       const input = join(dir, "sequence.drawio");
       const output = join(dir, "sequence.svg");
-      const binary = join(dir, "fake-drawio.mjs");
       const animation = JSON.stringify({
         animation: {
           loop: false,
@@ -394,22 +707,35 @@ describe("exportDiagram animated SVG", () => {
           <mxCell id="a" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>
         </root></mxGraphModel></diagram></mxfile>`,
       );
-      await writeFile(
-        binary,
-        `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
-const args = process.argv.slice(2);
-if (args.includes("--version")) process.stdout.write("31.0.0\\n");
-else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/2000/svg" width="80px" height="40px" viewBox="0 0 80 40"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');
-`,
-      );
-      await chmod(binary, 0o755);
+      const binary = await makeFakeDrawio(dir, `writeFileSync(output, '<svg xmlns="http://www.w3.org/2000/svg" width="80px" height="40px" viewBox="0 0 80 40"><defs/><g data-cell-id="a"><rect width="80" height="40"/></g></svg>');`);
 
       const result = await exportDiagram({ input, output, animated: true, binary });
       const svg = await readFile(output, "utf8");
       expect(result).toMatchObject({ format: "svg", animated: true });
       expect(result.animation).toMatchObject({ sequenceCompiled: true, verified: true, sequenceDurationMs: 500 });
       expect(svg).toContain("data-drawme-animation");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies images after the SVG finalizer without retiring a preview on failure", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-svg-finalizer-"));
+    try {
+      const input = join(dir, "source.drawio");
+      const output = join(dir, "final.svg");
+      const binary = await makeFakeDrawio(dir);
+      await writeFile(input, GRAPH);
+      await writeFile(output, SVG);
+      const previous = await exportDiagram({ input, mode: "preview", binary });
+      const entries = await readdir(dir);
+      await expect(exportDiagram({ input, output, format: "svg", binary }, async staged => {
+        const svg = SVG.replace("/>", '><image href="file:///logo.png"/></svg>');
+        await writeFile(staged, svg);
+      })).rejects.toThrow(/animated SVG verification failed:.*image/i);
+      expect(await readFile(output, "utf8")).toBe(SVG);
+      expect(await readFile(previous.output)).toEqual(Buffer.from(TINY_PNG, "base64"));
+      expect(await readdir(dir)).toEqual(entries);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -440,6 +766,29 @@ else writeFileSync(args[args.indexOf("-o") + 1], '<svg xmlns="http://www.w3.org/
 });
 
 describe("exportDiagram preview cleanup", () => {
+  it("keeps the prior editable final and preview if the renderer omits the model", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-missing-embedded-model-"));
+    try {
+      const input = join(dir, "source.drawio");
+      await writeFile(input, GRAPH);
+      const binary = await makeFakeDrawio(dir);
+      const final = await exportDiagram({ input, binary });
+      expect(final.embed).toBe(true);
+      const preview = await exportDiagram({ input, binary, mode: "preview" });
+      await makeFakeDrawio(dir, renderFlatPng);
+
+      await expect(exportDiagram({ input, binary })).rejects.toThrow(/missing editable diagram metadata/);
+      expect(await readFile(final.output)).toEqual(embeddedPng);
+      expect(await readFile(preview.output)).toEqual(flatPng);
+
+      const flat = await exportDiagram({ input, binary, output: final.output, embed: false });
+      expect(flat).toMatchObject({ embed: false, removedPreviews: [preview.output] });
+      expect(await readFile(flat.output)).toEqual(flatPng);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps default previews separate from existing final exports", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawme-default-preview-"));
     try {
@@ -556,11 +905,26 @@ describe("exportDiagram preview cleanup", () => {
       const binary = await makeFakeDrawio(dir);
       await writeFile(input, "<mxfile/>");
 
-      const results = await Promise.all(outputs.map((output) => exportDiagram({ input, mode: "preview", output, binary })));
-
-      expect(outputs.slice(0, -1).every((output) => !existsSync(output))).toBe(true);
-      expect(existsSync(outputs.at(-1)!)).toBe(true);
-      expect(results.map((result) => result.removedPreviews)).toEqual([[], [outputs[0]], [outputs[1]]]);
+      const exports: ReturnType<typeof exportDiagram>[] = [];
+      const controllers = outputs.map(() => new AbortController());
+      try {
+        await withDiagramFiles([input], undefined, async () => {
+          // Queue in a known order behind a held lock. Concurrent filesystem
+          // lookups do not otherwise guarantee the order of admission.
+          for (const [index, output] of outputs.entries()) {
+            const { signal } = controllers[index];
+            exports.push(exportDiagram({ input, mode: "preview", output, binary, signal }));
+            await vi.waitFor(() => expect(getEventListeners(signal, "abort")).toHaveLength(1));
+          }
+        });
+        const results = await Promise.all(exports);
+        expect(outputs.slice(0, -1).every((output) => !existsSync(output))).toBe(true);
+        expect(existsSync(outputs.at(-1)!)).toBe(true);
+        expect(results.map((result) => result.removedPreviews)).toEqual([[], [outputs[0]], [outputs[1]]]);
+      } finally {
+        controllers.forEach(controller => controller.abort());
+        await Promise.allSettled(exports);
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

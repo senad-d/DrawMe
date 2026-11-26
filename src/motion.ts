@@ -7,9 +7,11 @@
  * so the motion can be reviewed as static images.
  */
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { verifyFlowGroups } from "./animation";
-import { type DomEl, attr, childrenByTag, elemChildren, firstByTag } from "./dom";
+import { animationGraphRoot, baseOpacity, createAnimationBudget, reportAnimationFinding, verifyFlowGroups } from "./animation";
+import { diagramPages, pageModel, type ValidationBudget } from "./diagram-files";
+import { type DomEl, attr, elemChildren } from "./dom";
 import { collectCellsWithIds } from "./geometry";
+import { assertStandaloneImages, cssString, walkElements } from "./svg-helpers";
 
 /** Attribute on the page root cell (`id="0"`) that stores the motion spec as JSON. */
 export const MOTION_ATTRIBUTE = "drawmeMotion";
@@ -105,6 +107,10 @@ export interface MotionCell {
   kind: "vertex" | "edge";
   style: string;
   parent: string | null;
+  /** Authored visibility, including any intermediary layer that cannot be animated. */
+  hidden?: boolean;
+  /** Nearest ancestor with a motion track, skipping static layers. */
+  animationParent?: string;
 }
 
 export interface MotionDot {
@@ -153,7 +159,8 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function styleValue(style: string, key: string): string | undefined {
+function styleValue(style: string, key: string, budget?: ValidationBudget): string | undefined {
+  budget?.work(Math.ceil(style.length / 64));
   for (const item of style.split(";")) {
     const separator = item.indexOf("=");
     if (separator > 0 && item.slice(0, separator).trim() === key) return item.slice(separator + 1).trim();
@@ -165,81 +172,110 @@ function transformValue(dx: number, dy: number, scale: number): string {
   return `translate(${dx}px, ${dy}px) scale(${scale})`;
 }
 
-function round(value: number): number {
-  return Math.round(value * 10_000) / 10_000;
-}
-
-/** Quote an arbitrary draw.io cell id as a CSS attribute-selector string. */
-function cssString(value: string): string {
-  let escaped = '"';
-  for (const char of value) {
-    const code = char.codePointAt(0)!;
-    if (char === '"' || char === "\\") escaped += `\\${char}`;
-    else if (code <= 0x1f || code === 0x7f) escaped += `\\${code.toString(16)} `;
-    else escaped += char;
-  }
-  return `${escaped}"`;
-}
-
 function groupSelector(id: string): string {
   return `g[data-cell-id=${cssString(id)}]`;
 }
 
+type Layer = { hidden: boolean; parent: string | null };
+
+function staticLayers(
+  start: string | null, all: Map<string, DomEl>, animatable: Map<string, MotionCell>, cache: Map<string, Layer>,
+  budget?: ValidationBudget,
+): Layer {
+  const path = new Map<string, boolean>();
+  let id = start;
+  let layer: Layer = { hidden: false, parent: null };
+  while (id !== null) {
+    budget?.work();
+    if (animatable.has(id)) { layer = { hidden: false, parent: id }; break; }
+    const known = cache.get(id);
+    if (known) { layer = known; break; }
+    const node = all.get(id);
+    if (!node || path.has(id)) break; // Structural cycles are reported by drawio_validate.
+    path.set(id, attr(node, "visible") === "0" || baseOpacity(attr(node, "style"), budget) === 0);
+    id = attr(node, "parent");
+  }
+  for (const [id, hidden] of [...path].reverse()) {
+    if (hidden && !layer.hidden) layer = { ...layer, hidden };
+    cache.set(id, layer);
+  }
+  return layer;
+}
+
 /** Cells of one page model, keyed by id (wrapper ids resolved, DOM untouched). */
-export function motionCells(model: DomEl): Map<string, MotionCell> {
-  const { ids } = collectCellsWithIds(firstByTag(model, "root"));
+export function motionCells(model: DomEl, budget = createAnimationBudget()): Map<string, MotionCell> {
+  const root = animationGraphRoot(model, budget);
+  const { ids } = collectCellsWithIds(root, budget.work);
   const result = new Map<string, MotionCell>();
   for (const [id, cell] of ids) {
-    let kind: MotionCell["kind"] | null = null;
-    if (cell.getAttribute("vertex") === "1") kind = "vertex";
-    else if (cell.getAttribute("edge") === "1") kind = "edge";
+    budget.work();
+    const kind = attr(cell, "vertex") === "1" ? "vertex" : attr(cell, "edge") === "1" ? "edge" : null;
     if (kind) result.set(id, { kind, style: attr(cell, "style") ?? "", parent: attr(cell, "parent") });
+  }
+  const cache = new Map<string, Layer>();
+  for (const [id, cell] of result) {
+    budget.work();
+    const layer = staticLayers(cell.parent, ids, result, cache, budget);
+    if (layer.hidden || attr(ids.get(id)!, "visible") === "0") cell.hidden = true;
+    if (layer.parent !== null && layer.parent !== cell.parent) cell.animationParent = layer.parent;
   }
   return result;
 }
 
+type MotionError = (message: string) => void;
+
+function reportErrors(errors: string[], budget: ValidationBudget): MotionError {
+  return (message) => reportAnimationFinding(budget, "error", errors, message);
+}
+
 /** Shape-check raw JSON (from a tool call or the stored attribute) into a spec. */
-export function parseMotionSpec(raw: unknown, errors: string[]): MotionSpec | null {
+export function parseMotionSpec(raw: unknown, errors: string[], budget = createAnimationBudget()): MotionSpec | null {
+  const error = reportErrors(errors, budget);
   const value = isObject(raw) && isObject(raw.motion) ? raw.motion : raw;
   if (!isObject(value)) {
-    errors.push("motion spec must be an object with a steps array");
+    error("motion spec must be an object with a steps array");
     return null;
   }
   if (!Array.isArray(value.steps) || value.steps.length === 0) {
-    errors.push("motion spec must contain a non-empty steps array");
+    error("motion spec must contain a non-empty steps array");
     return null;
   }
-  if (value.steps.length > MAX_STEPS) errors.push(`motion spec has ${value.steps.length} steps (maximum ${MAX_STEPS})`);
-  if (value.loop !== undefined && typeof value.loop !== "boolean") errors.push("motion loop must be a boolean");
+  if (value.steps.length > MAX_STEPS) {
+    error(`motion spec has ${value.steps.length} steps (maximum ${MAX_STEPS})`);
+    return null;
+  }
+  if (value.loop !== undefined && typeof value.loop !== "boolean") error("motion loop must be a boolean");
   const hold = value.hold === undefined ? null : finite(value.hold);
   if (value.hold !== undefined && (hold === null || hold < 0 || hold > MAX_DURATION_MS)) {
-    errors.push(`motion hold must be between 0 and ${MAX_DURATION_MS} ms`);
+    error(`motion hold must be between 0 and ${MAX_DURATION_MS} ms`);
   }
 
   const steps: MotionStep[] = [];
   value.steps.forEach((raw: unknown, index: number) => {
+    budget.work();
     const n = index + 1;
     if (!isObject(raw)) {
-      errors.push(`motion step ${n} must be an object`);
+      error(`motion step ${n} must be an object`);
       return;
     }
     const effect = raw.effect;
     if (typeof effect !== "string" || !(MOTION_EFFECTS as readonly string[]).includes(effect)) {
-      errors.push(`motion step ${n} has unknown effect '${String(effect)}' (expected ${MOTION_EFFECTS.join(", ")})`);
+      const name = effect === null || typeof effect !== "object" ? String(effect) : typeof effect;
+      error(`motion step ${n} has unknown effect '${name}' (expected ${MOTION_EFFECTS.join(", ")})`);
       return;
     }
     const step: MotionStep = { effect: effect as MotionEffect };
-    parseStepTiming(raw, step, n, errors);
+    parseStepTiming(raw, step, n, error, budget);
     if (raw.direction !== undefined) {
       if (typeof raw.direction !== "string" || !(SLIDE_DIRECTIONS as readonly string[]).includes(raw.direction)) {
-        errors.push(`motion step ${n} direction must be one of ${SLIDE_DIRECTIONS.join(", ")}`);
+        error(`motion step ${n} direction must be one of ${SLIDE_DIRECTIONS.join(", ")}`);
       } else {
         step.direction = raw.direction as SlideDirection;
       }
     }
     if (raw.color !== undefined) {
       if (typeof raw.color !== "string" || !COLOR.test(raw.color)) {
-        errors.push(`motion step ${n} color must be a hex color such as #2563eb`);
+        error(`motion step ${n} color must be a hex color such as #2563eb`);
       } else {
         step.color = raw.color;
       }
@@ -253,10 +289,13 @@ export function parseMotionSpec(raw: unknown, errors: string[]): MotionSpec | nu
   };
 }
 
-function parseStepTiming(raw: Record<string, unknown>, step: MotionStep, n: number, errors: string[]): void {
+function parseStepTiming(
+  raw: Record<string, unknown>, step: MotionStep, n: number, error: MotionError, budget?: ValidationBudget,
+): void {
   if (raw.cells !== undefined) {
+    if (Array.isArray(raw.cells)) budget?.work(raw.cells.length);
     if (!Array.isArray(raw.cells) || raw.cells.some((id) => typeof id !== "string")) {
-      errors.push(`motion step ${n} cells must be an array of cell ids`);
+      error(`motion step ${n} cells must be an array of cell ids`);
     } else {
       step.cells = raw.cells as string[];
     }
@@ -264,11 +303,11 @@ function parseStepTiming(raw: Record<string, unknown>, step: MotionStep, n: numb
   for (const key of ["duration", "stagger", "value"] as const) {
     if (raw[key] === undefined) continue;
     const number = finite(raw[key]);
-    if (number === null) errors.push(`motion step ${n} ${key} must be a number`);
+    if (number === null) error(`motion step ${n} ${key} must be a number`);
     else step[key] = number;
   }
   if (raw.parallel !== undefined) {
-    if (typeof raw.parallel !== "boolean") errors.push(`motion step ${n} parallel must be a boolean`);
+    if (typeof raw.parallel !== "boolean") error(`motion step ${n} parallel must be a boolean`);
     else step.parallel = raw.parallel;
   }
 }
@@ -277,12 +316,13 @@ class Track {
   readonly points: KeyPoint[];
   current: Value;
 
-  constructor(initial: Value) {
+  constructor(initial: Value, private readonly budget?: ValidationBudget) {
     this.points = [{ t: 0, v: initial }];
     this.current = initial;
   }
 
   private put(t: number, v: Value, ease?: string): void {
+    this.budget?.work(this.points.length);
     const existing = this.points.find((point) => Math.abs(point.t - t) < 1e-9);
     if (existing) {
       existing.v = v;
@@ -308,11 +348,13 @@ class Track {
 
   finish(t: number): void {
     this.put(t, this.current);
+    this.budget?.work(this.points.length * Math.ceil(Math.log2(this.points.length + 1)));
     this.points.sort((a, b) => a.t - b.t);
   }
 
   get animated(): boolean {
-    return new Set(this.points.map((point) => point.v)).size > 1;
+    this.budget?.work(this.points.length);
+    return this.points.some((point) => point.v !== this.points[0].v);
   }
 }
 
@@ -339,24 +381,26 @@ interface ResolvedStep {
 function resolveSteps(
   spec: MotionSpec,
   cells: Map<string, MotionCell>,
-  errors: string[],
+  error: MotionError,
   accent: string,
+  budget?: ValidationBudget,
 ): ResolvedStep[] {
   const resolved: ResolvedStep[] = [];
   spec.steps.forEach((step, index) => {
+    budget?.work();
     const number = index + 1;
     const where = `motion step ${number} (${step.effect})`;
     const duration = step.duration ?? (step.effect === "wait" ? null : DEFAULT_DURATION[step.effect]);
-    if (duration === null) errors.push(`${where} needs a duration in ms`);
-    else if (duration < 0 || duration > MAX_DURATION_MS || (step.effect !== "wait" && duration === 0)) {
-      errors.push(`${where} duration must be between ${step.effect === "wait" ? 0 : 1} and ${MAX_DURATION_MS} ms`);
+    if (duration === null) error(`${where} needs a duration in ms`);
+    else if (!Number.isFinite(duration) || duration < 0 || duration > MAX_DURATION_MS || (step.effect !== "wait" && duration === 0)) {
+      error(`${where} duration must be between ${step.effect === "wait" ? 0 : 1} and ${MAX_DURATION_MS} ms`);
     }
     const stagger = step.stagger ?? 0;
-    if (stagger < 0 || stagger > MAX_DURATION_MS) errors.push(`${where} stagger must be between 0 and ${MAX_DURATION_MS} ms`);
-    if (step.parallel && index === 0) errors.push(`${where} cannot be parallel: there is no previous step`);
+    if (!Number.isFinite(stagger) || stagger < 0 || stagger > MAX_DURATION_MS) error(`${where} stagger must be between 0 and ${MAX_DURATION_MS} ms`);
+    if (step.parallel && index === 0) error(`${where} cannot be parallel: there is no previous step`);
     const ids = step.cells ?? [];
-    validateStepOptions(step, ids, where, errors);
-    validateStepCells(step, ids, cells, where, errors);
+    validateStepOptions(step, ids, where, error, budget);
+    validateStepCells(step, ids, cells, where, error, budget);
     resolved.push({
       number,
       effect: step.effect,
@@ -372,45 +416,48 @@ function resolveSteps(
   return resolved;
 }
 
-function validateStepOptions(step: MotionStep, ids: string[], where: string, errors: string[]): void {
-  if (step.value !== undefined && (step.effect !== "dim" || step.value < 0 || step.value > 1)) {
-    errors.push(`${where} value is only valid for dim and must be between 0 and 1`);
+function validateStepOptions(step: MotionStep, ids: string[], where: string, error: MotionError, budget?: ValidationBudget): void {
+  if (step.value !== undefined && (step.effect !== "dim" || !Number.isFinite(step.value) || step.value < 0 || step.value > 1)) {
+    error(`${where} value is only valid for dim and must be between 0 and 1`);
   }
-  if (step.direction !== undefined && step.effect !== "slideIn") errors.push(`${where} direction is only valid for slideIn`);
+  if (step.direction !== undefined && step.effect !== "slideIn") error(`${where} direction is only valid for slideIn`);
   if (step.color !== undefined && step.effect !== "highlight" && step.effect !== "travel") {
-    errors.push(`${where} color is only valid for highlight and travel`);
+    error(`${where} color is only valid for highlight and travel`);
   }
   if (step.effect === "wait") {
-    if (ids.length > 0) errors.push(`${where} must not list cells`);
+    if (ids.length > 0) error(`${where} must not list cells`);
   } else if (ids.length === 0) {
-    errors.push(`${where} must list at least one cell id`);
+    error(`${where} must list at least one cell id`);
   }
-  if (new Set(ids).size !== ids.length) errors.push(`${where} lists a cell more than once`);
+  budget?.work(ids.length);
+  if (new Set(ids).size !== ids.length) error(`${where} lists a cell more than once`);
 }
 
 function validateStepCells(
-  step: MotionStep, ids: string[], cells: Map<string, MotionCell>, where: string, errors: string[],
+  step: MotionStep, ids: string[], cells: Map<string, MotionCell>, where: string, error: MotionError, budget?: ValidationBudget,
 ): void {
   for (const id of ids) {
+    budget?.work();
     const cell = cells.get(id);
     if (!cell) {
-      errors.push(`${where} references missing cell '${id}'`);
+      error(`${where} references missing cell '${id}'`);
       continue;
     }
-    if (EDGE_ONLY.has(step.effect) && cell.kind !== "edge") errors.push(`${where} needs a connector, but '${id}' is a shape`);
+    if (EDGE_ONLY.has(step.effect) && cell.kind !== "edge") error(`${where} needs a connector, but '${id}' is a shape`);
     if (step.effect !== "drawIn" || cell.kind !== "edge") continue;
-    if (styleValue(cell.style, "dashed") === "1") {
-      errors.push(`${where} cannot draw dashed connector '${id}'; use fadeIn or make it solid`);
+    if (styleValue(cell.style, "dashed", budget) === "1") {
+      error(`${where} cannot draw dashed connector '${id}'; use fadeIn or make it solid`);
     }
-    if (styleValue(cell.style, "flowAnimation") === "1") {
-      errors.push(`${where} cannot draw connector '${id}' because it uses flowAnimation=1; use fadeIn`);
+    if (styleValue(cell.style, "flowAnimation", budget) === "1") {
+      error(`${where} cannot draw connector '${id}' because it uses flowAnimation=1; use fadeIn`);
     }
   }
 }
 
-function batches(steps: ResolvedStep[]): ResolvedStep[][] {
+function batches(steps: ResolvedStep[], budget?: ValidationBudget): ResolvedStep[][] {
   const result: ResolvedStep[][] = [];
   for (const step of steps) {
+    budget?.work();
     if (step.parallel && result.length > 0) result.at(-1)!.push(step);
     else result.push([step]);
   }
@@ -439,16 +486,145 @@ function pct(t: number, total: number): string {
   return `${((t / total) * 100).toFixed(6)}%`;
 }
 
-function formatValue(value: Value): string {
-  return typeof value === "number" ? String(round(value)) : value;
-}
-
 function keyframes(name: string, property: string, track: Track, total: number): string {
   const lines = track.points.map((point) => {
     const ease = point.ease ? ` animation-timing-function: ${point.ease};` : "";
-    return `  ${pct(point.t, total)} { ${property}: ${formatValue(point.v)};${ease} }`;
+    return `  ${pct(point.t, total)} { ${property}: ${point.v};${ease} }`;
   });
   return `@keyframes ${name} {\n${lines.join("\n")}\n}`;
+}
+
+type Target = { step: ResolvedStep & { effect: Exclude<MotionEffect, "wait"> }; start: number; end: number; before: number; after: number };
+
+function planBatch(
+  batch: ResolvedStep[], time: number, tracks: Map<string, CellTracks>, error: MotionError, budget?: ValidationBudget,
+): Map<string, Target> {
+  const touched = new Set<string>();
+  const targets = new Map<string, Target>();
+  for (const step of batch) {
+    const effect = step.effect;
+    if (effect === "wait") continue;
+    const visualStep = { ...step, effect };
+    const where = `motion step ${step.number} (${effect})`;
+    step.cells.forEach((id, order) => {
+      budget?.work();
+      if (touched.has(id)) {
+        error(`${where} targets '${id}' again in the same parallel group`);
+        return;
+      }
+      touched.add(id);
+      const before = tracks.get(id)!.opacity.current as number;
+      const entrance = ENTRANCES.has(effect);
+      if (entrance && (effect === "fadeIn" ? before >= 1 : before > 0)) {
+        error(`${where} targets '${id}', which is already visible; fade it out first or use highlight`);
+        return;
+      }
+      const start = time + step.stagger * order;
+      const end = start + step.duration * (effect === "drawIn" ? 0 : effect === "popIn" ? 0.6 : 1);
+      const after = entrance ? 1 : effect === "fadeOut" ? 0 : effect === "dim" ? step.value : before;
+      targets.set(id, { step: visualStep, start, end, before, after });
+    });
+  }
+  return targets;
+}
+
+/** Walk self and moving ancestors; static intermediary layers were folded into the visibility facts. */
+function everyAncestor(
+  start: string, cells: Map<string, MotionCell>, check: (id: string, cell: MotionCell) => boolean, budget?: ValidationBudget,
+): boolean {
+  const seen = new Set<string>();
+  let id: string | null = start;
+  while (id !== null && !seen.has(id)) {
+    budget?.work();
+    const cell = cells.get(id);
+    if (!cell) break;
+    if (!check(id, cell)) return false;
+    seen.add(id);
+    id = cell.animationParent ?? cell.parent;
+  }
+  return true;
+}
+
+function shownAt(target: Target, time: number): boolean {
+  if (time >= target.end) return target.after > 0;
+  if (time <= target.start) return target.before > 0;
+  return target.before > 0 || target.after > 0;
+}
+
+/** Intersect the times when every ancestor is visible with the time of the actual change. */
+function hasVisibleChange(
+  id: string, target: Target, cells: Map<string, MotionCell>, targets: Map<string, Target>, opacity: (id: string) => number,
+  budget?: ValidationBudget,
+): boolean {
+  if (target.before === target.after) return false;
+  let start = target.start;
+  let end = target.step.effect === "drawIn" ? start + target.step.duration : target.end;
+  return everyAncestor(id, cells, (parent, cell) => {
+    if (cell.hidden) return false;
+    const change = targets.get(parent);
+    if (!change) return opacity(parent) > 0;
+    if (change.before <= 0) {
+      if (change.after <= 0) return false;
+      start = Math.max(start, change.start);
+    } else if (change.after <= 0) end = Math.min(end, change.end);
+    return start < end;
+  }, budget);
+}
+
+function applyTarget(
+  id: string, target: Target, cell: CellTracks, kind: MotionCell["kind"],
+  dots: MotionDot[], drawInEdges: Set<string>, accent: Map<string, string>, budget?: ValidationBudget,
+): void {
+  const { step, start: s, end, before, after } = target;
+  const d = step.duration;
+  switch (step.effect) {
+    case "fadeIn":
+      cell.opacity.tween(s, end, before, after, EASE.out);
+      break;
+    case "fadeOut":
+      cell.opacity.tween(s, end, before, after, EASE.in);
+      break;
+    case "dim":
+      cell.opacity.tween(s, end, before, after, EASE.inOut);
+      break;
+    case "popIn":
+      cell.transform ??= new Track(IDENTITY, budget);
+      cell.opacity.tween(s, end, before, after, EASE.out);
+      cell.transform.tween(s, s + d, transformValue(0, 0, 0.6), IDENTITY, EASE.back);
+      break;
+    case "slideIn": {
+      const [dx, dy] = slideOffset(step.direction);
+      cell.transform ??= new Track(IDENTITY, budget);
+      cell.opacity.tween(s, end, before, after, EASE.out);
+      cell.transform.tween(s, s + d, transformValue(dx, dy, 1), IDENTITY, EASE.out);
+      break;
+    }
+    case "drawIn":
+      cell.line ??= new Track(1, budget);
+      cell.decor ??= new Track(0, budget);
+      drawInEdges.add(id);
+      cell.opacity.jump(s, after);
+      cell.line.tween(s, s + d * 0.8, 1, 0, EASE.inOut);
+      cell.decor.tween(s + d * 0.7, s + d, 0, 1, EASE.out);
+      break;
+    case "highlight": {
+      const glow = `drop-shadow(0px 0px 12px ${step.color})`;
+      cell.filter ??= new Track(NO_GLOW, budget);
+      cell.filter.tween(s, s + d * 0.4, NO_GLOW, glow, EASE.out);
+      cell.filter.tween(s + d * 0.4, s + d, glow, NO_GLOW, EASE.inOut);
+      if (kind === "vertex") {
+        cell.transform ??= new Track(IDENTITY, budget);
+        cell.transform.tween(s, s + d * 0.4, IDENTITY, transformValue(0, 0, 1.04), EASE.out);
+        cell.transform.tween(s + d * 0.4, s + d, transformValue(0, 0, 1.04), IDENTITY, EASE.inOut);
+      }
+      accent.set(id, step.color);
+      break;
+    }
+    case "travel":
+      dots.push({ cellId: id, start: s, duration: d, color: step.color });
+      accent.set(id, step.color);
+      break;
+  }
 }
 
 /** Validate a spec against the page and compile it to CSS, SMIL dots, and storyboard frames. */
@@ -456,120 +632,93 @@ export function compileMotion(
   spec: MotionSpec,
   cells: Map<string, MotionCell>,
   accent: string = DEFAULT_ACCENT,
+  budget = createAnimationBudget(),
 ): MotionAnalysis {
   const errors: string[] = [];
-  const steps = resolveSteps(spec, cells, errors, accent);
+  const error = reportErrors(errors, budget);
+  if (spec.steps.length > MAX_STEPS) {
+    error(`motion spec has ${spec.steps.length} steps (maximum ${MAX_STEPS})`);
+    return { spec, compiled: null, errors };
+  }
+  if (spec.hold !== undefined && (!Number.isFinite(spec.hold) || spec.hold < 0 || spec.hold > MAX_DURATION_MS)) {
+    error(`motion hold must be between 0 and ${MAX_DURATION_MS} ms`);
+  }
+  const steps = resolveSteps(spec, cells, error, accent, budget);
   if (errors.length > 0) return { spec, compiled: null, errors };
 
-  // A cell whose first effect is an entrance starts hidden; everything else starts visible.
-  const firstEffect = firstCellEffects(steps);
-
-  const tracks = new Map<string, CellTracks>();
-  const ensure = (id: string): CellTracks => {
-    let entry = tracks.get(id);
-    if (!entry) {
-      entry = { opacity: new Track(ENTRANCES.has(firstEffect.get(id)!) ? 0 : 1) };
-      tracks.set(id, entry);
+  const authored = new Map<string, number>();
+  const initialOpacity = (id: string) => {
+    let value = authored.get(id);
+    if (value === undefined) {
+      value = baseOpacity(cells.get(id)?.style ?? null, budget);
+      authored.set(id, value);
     }
-    return entry;
+    return value;
   };
-  for (const id of firstEffect.keys()) ensure(id);
-
+  const tracks = new Map<string, CellTracks>();
+  for (const step of steps) {
+    for (const id of step.cells) {
+      budget.work();
+      if (!tracks.has(id)) {
+        // A cell whose first effect is an entrance starts hidden; otherwise keep its authored opacity.
+        tracks.set(id, { opacity: new Track(ENTRANCES.has(step.effect) ? 0 : initialOpacity(id), budget) });
+      }
+    }
+  }
+  const opacity = (id: string) => (tracks.get(id)?.opacity.current as number | undefined) ?? initialOpacity(id);
   const dots: MotionDot[] = [];
   const frames: MotionFrame[] = [];
   const drawInEdges = new Set<string>();
   let time = 0;
-  for (const batch of batches(steps)) {
-    const touched = new Set<string>();
+  let hasMotion = false;
+  for (const batch of batches(steps, budget)) {
+    budget.work(batch.length);
+    const span = batch.reduce((span, step) => Math.max(span,
+      step.duration + step.stagger * Math.max(0, step.cells.length - 1)), 0);
+    if (time + span > MAX_TOTAL_MS) {
+      error(`motion sequence lasts ${Math.round(time + span)} ms (maximum ${MAX_TOTAL_MS} ms)`);
+      break;
+    }
+    // Plan all concurrent opacity changes before testing visibility or applying any track.
+    const targets = planBatch(batch, time, tracks, error, budget);
     const accent = new Map<string, string>();
-    let span = 0;
-    for (const step of batch) {
+    for (const [id, target] of targets) {
+      const { step, start } = target;
       const where = `motion step ${step.number} (${step.effect})`;
-      span = Math.max(span, step.duration + step.stagger * Math.max(0, step.cells.length - 1));
-      step.cells.forEach((id, order) => {
-        if (touched.has(id)) {
-          errors.push(`${where} targets '${id}' again in the same parallel group`);
-          return;
-        }
-        touched.add(id);
-        const cell = tracks.get(id)!;
-        const s = time + step.stagger * order;
-        const d = step.duration;
-        const visible = (cell.opacity.current as number) > 0;
-        if (ENTRANCES.has(step.effect) && step.effect !== "fadeIn" && visible) {
-          errors.push(`${where} targets '${id}', which is already visible; fade it out first or use highlight`);
-          return;
-        }
-        if ((step.effect === "highlight" || step.effect === "travel") && !visible) {
-          errors.push(`${where} targets '${id}', which is hidden at that point; reveal it first`);
-          return;
-        }
-        switch (step.effect) {
-          case "fadeIn":
-            cell.opacity.tween(s, s + d, cell.opacity.current, 1, EASE.out);
-            break;
-          case "fadeOut":
-            cell.opacity.tween(s, s + d, cell.opacity.current, 0, EASE.in);
-            break;
-          case "dim":
-            cell.opacity.tween(s, s + d, cell.opacity.current, step.value, EASE.inOut);
-            break;
-          case "popIn":
-            cell.transform ??= new Track(IDENTITY);
-            cell.opacity.tween(s, s + d * 0.6, 0, 1, EASE.out);
-            cell.transform.tween(s, s + d, transformValue(0, 0, 0.6), IDENTITY, EASE.back);
-            break;
-          case "slideIn": {
-            const [dx, dy] = slideOffset(step.direction);
-            cell.transform ??= new Track(IDENTITY);
-            cell.opacity.tween(s, s + d, 0, 1, EASE.out);
-            cell.transform.tween(s, s + d, transformValue(dx, dy, 1), IDENTITY, EASE.out);
-            break;
-          }
-          case "drawIn":
-            cell.line ??= new Track(1);
-            cell.decor ??= new Track(0);
-            drawInEdges.add(id);
-            cell.opacity.jump(s, 1);
-            cell.line.tween(s, s + d * 0.8, 1, 0, EASE.inOut);
-            cell.decor.tween(s + d * 0.7, s + d, 0, 1, EASE.out);
-            break;
-          case "highlight": {
-            const glow = `drop-shadow(0px 0px 12px ${step.color})`;
-            cell.filter ??= new Track(NO_GLOW);
-            cell.filter.tween(s, s + d * 0.4, NO_GLOW, glow, EASE.out);
-            cell.filter.tween(s + d * 0.4, s + d, glow, NO_GLOW, EASE.inOut);
-            if (cells.get(id)!.kind === "vertex") {
-              cell.transform ??= new Track(IDENTITY);
-              cell.transform.tween(s, s + d * 0.4, IDENTITY, transformValue(0, 0, 1.04), EASE.out);
-              cell.transform.tween(s + d * 0.4, s + d, transformValue(0, 0, 1.04), IDENTITY, EASE.inOut);
-            }
-            accent.set(id, step.color);
-            break;
-          }
-          case "travel":
-            dots.push({ cellId: id, start: s, duration: d, color: step.color });
-            accent.set(id, step.color);
-            break;
-          case "wait":
-            break;
-        }
-      });
+      const emphasis = step.effect === "highlight" || step.effect === "travel";
+      const reachable = everyAncestor(id, cells, (parent, cell) => {
+        if (cell.hidden) return false;
+        if (!emphasis) return true;
+        const change = targets.get(parent);
+        return change ? shownAt(change, start) : opacity(parent) > 0;
+      }, budget);
+      if (!reachable) {
+        error(emphasis
+          ? `${where} targets '${id}', which is hidden at that point; reveal it first`
+          : `${where} targets '${id}', which is authored hidden; remove visible=0 or unhide its layer before animating`);
+        continue;
+      }
+      const kind = cells.get(id)!.kind;
+      const visibleEmphasis = step.effect === "travel" || (step.effect === "highlight" &&
+        (kind === "vertex" || !/^#(?:[\da-f]{3}0|[\da-f]{6}00)$/i.test(step.color)));
+      hasMotion ||= visibleEmphasis || hasVisibleChange(id, target, cells, targets, opacity, budget);
+      applyTarget(id, target, tracks.get(id)!, kind, dots, drawInEdges, accent, budget);
     }
     time += span;
-    if (batch.some((step) => step.effect !== "wait")) {
+    if (targets.size > 0) {
+      budget.work(tracks.size);
       const opacity = new Map<string, number>();
       for (const [id, cell] of tracks) opacity.set(id, cell.opacity.current as number);
       frames.push({ time, label: frameLabel(batch), opacity, accent });
     }
   }
-  if (time > MAX_TOTAL_MS) errors.push(`motion sequence lasts ${Math.round(time)} ms (maximum ${MAX_TOTAL_MS} ms)`);
+  if (errors.length === 0 && !hasMotion) error("motion sequence has no effective visual motion; add a visible transition or emphasis");
   if (errors.length > 0) return { spec, compiled: null, errors };
 
   const loop = spec.loop ?? true;
   const sequenceMs = Math.max(1, time);
   const durationMs = loop ? sequenceMs + (spec.hold ?? DEFAULT_HOLD_MS) : sequenceMs;
-  const css = compileTrackCss(tracks, durationMs, loop);
+  const css = compileTrackCss(tracks, durationMs, loop, initialOpacity, budget);
   return {
     spec,
     errors,
@@ -586,17 +735,9 @@ export function compileMotion(
   };
 }
 
-function firstCellEffects(steps: ResolvedStep[]): Map<string, MotionEffect> {
-  const effects = new Map<string, MotionEffect>();
-  for (const step of steps) {
-    for (const id of step.cells) {
-      if (!effects.has(id)) effects.set(id, step.effect);
-    }
-  }
-  return effects;
-}
-
-function compileTrackCss(tracks: Map<string, CellTracks>, durationMs: number, loop: boolean): string {
+function compileTrackCss(
+  tracks: Map<string, CellTracks>, durationMs: number, loop: boolean, authored: (id: string) => number, budget?: ValidationBudget,
+): string {
   const iteration = loop ? "infinite" : "1";
   const rules: string[] = [];
   const reduced: string[] = [];
@@ -611,14 +752,18 @@ function compileTrackCss(tracks: Map<string, CellTracks>, durationMs: number, lo
       const name = `drawme-motion-${++counter}`;
       rules.push(keyframes(name, property, track, durationMs));
       names.push(`${name} ${durationMs}ms linear 0ms ${iteration} normal both`);
-      finals.push(`${property}: ${formatValue(track.current)} !important;`);
+      finals.push(`${property}: ${track.current} !important;`);
     }
     rules.push(`${selector} { animation: ${names.join(", ")};${extra} }`);
     reduced.push(`  ${selector} { animation: none !important; ${finals.join(" ")} }`);
   };
   for (const [id, cell] of tracks) {
+    budget?.work(1 + Math.ceil(id.length / 64));
     const group = groupSelector(id);
     const groupTracks: [string, Track][] = [["opacity", cell.opacity]];
+    if (!cell.opacity.animated && cell.opacity.current !== authored(id)) {
+      rules.push(`${group} { opacity: ${cell.opacity.current} !important; }`);
+    }
     if (cell.transform) groupTracks.push(["transform", cell.transform]);
     if (cell.filter) groupTracks.push(["filter", cell.filter]);
     animate(group, groupTracks, cell.transform ? " transform-box: fill-box; transform-origin: center;" : "");
@@ -633,15 +778,16 @@ function compileTrackCss(tracks: Map<string, CellTracks>, durationMs: number, lo
 
 // --- Storage on the page root cell ---
 
-function rootCellElement(model: DomEl): DomEl | null {
-  const root = firstByTag(model, "root");
+function rootCellElement(model: DomEl, budget?: ValidationBudget): DomEl | null {
+  const root = animationGraphRoot(model, budget);
   if (!root) return null;
+  budget?.work(root.childNodes.length);
   return elemChildren(root).find((child) => attr(child, "id") === "0") ?? null;
 }
 
 /** The stored motion JSON of a page, or null. */
-export function readStoredMotion(model: DomEl): string | null {
-  const cell = rootCellElement(model);
+export function readStoredMotion(model: DomEl, budget?: ValidationBudget): string | null {
+  const cell = rootCellElement(model, budget);
   return cell ? attr(cell, MOTION_ATTRIBUTE) : null;
 }
 
@@ -686,29 +832,30 @@ export function isDarkBackground(color: string | null): boolean {
 /** Pick a 1-based page from a parsed `.drawio` document. */
 export function selectPage(root: DomEl, pageIndex = 1): { diagram: DomEl; model: DomEl; name: string } {
   if (!Number.isInteger(pageIndex) || pageIndex < 1) throw new Error("pageIndex must be a positive 1-based integer");
-  const pageList = childrenByTag(root, "diagram");
-  const pages = pageList.length > 0 ? pageList : [root];
+  const pages = diagramPages(root);
   const diagram = pages[pageIndex - 1];
   if (!diagram) throw new Error(`pageIndex ${pageIndex} is out of range (diagram has ${pages.length} page(s))`);
-  const model = diagram.tagName === "mxGraphModel" ? diagram : firstByTag(diagram, "mxGraphModel");
+  const model = pageModel(diagram);
   if (!model) throw new Error("compressed or missing page model cannot be animated; save the diagram uncompressed");
   return { diagram, model, name: attr(diagram, "name") ?? "?" };
 }
 
 /** Parse and compile the motion stored on a page; null when none is stored. */
-export function analyzeStoredMotion(model: DomEl): MotionAnalysis | null {
-  const raw = readStoredMotion(model);
+export function analyzeStoredMotion(model: DomEl, budget = createAnimationBudget()): MotionAnalysis | null {
+  const raw = readStoredMotion(model, budget);
+  budget.work(Math.ceil((raw?.length ?? 0) / 64));
   if (raw === null || raw.trim() === "") return null;
   const errors: string[] = [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    return { spec: null, compiled: null, errors: [`stored motion contains malformed JSON: ${(error as Error).message}`] };
+    reportErrors(errors, budget)(`stored motion contains malformed JSON: ${(error as Error).message}`);
+    return { spec: null, compiled: null, errors };
   }
-  const spec = parseMotionSpec(parsed, errors);
+  const spec = parseMotionSpec(parsed, errors, budget);
   if (!spec || errors.length > 0) return { spec, compiled: null, errors };
-  return compileMotion(spec, motionCells(model), themeAccent(model));
+  return compileMotion(spec, motionCells(model, budget), themeAccent(model), budget);
 }
 
 /** Default motion accent for a page: the Dark preset accent on a dark background, else the Light one. */
@@ -718,14 +865,8 @@ export function themeAccent(model: DomEl): string {
 
 // --- SVG injection ---
 
-function walk(root: DomEl): DomEl[] {
-  const elements: DomEl[] = [root];
-  for (const child of elemChildren(root)) elements.push(...walk(child));
-  return elements;
-}
-
 function linePath(group: DomEl): DomEl | null {
-  return walk(group).find((element) => element.tagName === "path" && attr(element, "fill") === "none") ?? null;
+  return walkElements(group).find((element) => element.tagName === "path" && attr(element, "fill") === "none") ?? null;
 }
 
 type Parented = DomEl & { parentNode: Parented | null };
@@ -743,7 +884,7 @@ function markDecor(group: DomEl, line: DomEl): void {
 }
 
 function keyTimes(times: number[], total: number): string {
-  return times.map((t) => String(Math.min(1, Math.max(0, round(t / total))))).join(";");
+  return times.map((t) => Math.min(1, Math.max(0, t / total)).toFixed(9)).join(";");
 }
 
 function appendDot(doc: XmlDocument, group: DomEl, path: string, dot: MotionDot, motion: CompiledMotion): void {
@@ -782,7 +923,7 @@ function appendDot(doc: XmlDocument, group: DomEl, path: string, dot: MotionDot,
 
 function motionSvgGroups(root: DomEl): Map<string, DomEl> {
   const groups = new Map<string, DomEl>();
-  for (const element of walk(root)) {
+  for (const element of walkElements(root)) {
     const id = attr(element, "data-cell-id");
     if (id !== null && !groups.has(id)) groups.set(id, element);
   }
@@ -826,7 +967,7 @@ export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: s
         .map((id) => `  ${groupSelector(id)} * { animation: none !important; }`)
         .join("\n")}\n}`
     : "";
-  let defs = walk(svgRoot).find((element) => element.tagName === "defs");
+  let defs = walkElements(svgRoot).find((element) => element.tagName === "defs");
   if (!defs) {
     defs = doc.createElementNS(SVG_NS, "defs") as unknown as DomEl;
     const rootNode = svgRoot as unknown as { firstChild: unknown; insertBefore(node: unknown, before: unknown): void };
@@ -837,5 +978,7 @@ export function injectMotion(svg: string, motion: CompiledMotion, flowEdgeIds: s
   style.setAttribute("data-drawme-animation", "motion"); // NOSONAR: xmldom XML elements have no browser dataset API.
   style.appendChild(doc.createTextNode(motion.css + flowReduced));
   (defs as unknown as { appendChild(node: unknown): void }).appendChild(style);
-  return new XMLSerializer().serializeToString(doc);
+  const finished = new XMLSerializer().serializeToString(doc);
+  assertStandaloneImages(finished);
+  return finished;
 }

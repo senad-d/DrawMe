@@ -23,6 +23,7 @@ describe("documentation examples", () => {
     expect(label("runtime")).toContain("22.19");
     expect(label("runtime")).toContain("/login, then /model");
     expect(label("desktop")).toContain("brew install --cask drawio");
+    expect(label("desktop")).toContain("WSL: use the native Linux CLI");
     expect(label("personal")).toContain("pi install npm:@senad-d/drawme");
     expect(label("personal")).toContain("~/.pi/agent/settings.json");
     expect(label("project")).toContain("pi install npm:@senad-d/drawme -l");
@@ -31,7 +32,9 @@ describe("documentation examples", () => {
     expect(label("trial")).toContain("Starts Pi; does not change settings");
     expect(label("load-note")).toContain("/reload");
     expect(label("verify")).toContain("Reports the detected path + version");
+    expect(label("verify")).toContain("Mermaid import + ELK layout support");
     expect(label("describe")).toContain("/drawme a login flow with retry");
+    expect(label("compatibility")).toContain("Mermaid conversion + ELK layout require draw.io v30.2.4 or later");
     expect(label("compatibility")).toContain("older versions still render and export");
   });
 
@@ -49,9 +52,21 @@ describe("documentation examples", () => {
     expect(label("vision")).toContain("Report rendered review as skipped");
     expect(label("missing-cli")).toContain("Still author + validate XML");
     expect(label("limit")).toContain("report unresolved findings");
-    expect(label("cleanup")).toContain("Final export removes the latest preview");
+    expect(label("author")).toContain("XML · exact shapes · optional import");
+    expect(label("v30")).toContain("Mermaid conversion + ELK layout require draw.io v30.2.4 or later");
+    expect(label("cleanup")).toContain("images visible in Pi, not files left on disk");
+    expect(label("cleanup")).toContain("may remove a tracked preview file for the same source, even across pages");
+    expect(label("cleanup")).toContain("Restart clears tracking");
     expect(label("motion")).toContain("Verified standalone animated SVG");
     expect(label("subtitle")).toContain("no approval pauses");
+  });
+
+  it("distinguishes the architecture's local renderer from model access and version-gated CLI features", () => {
+    const { label } = example("drawme-architecture");
+    expect(label("bridge")).toContain("Mermaid import · ELK layout");
+    expect(label("bridge")).toContain("Import + layout require v30.2.4+");
+    expect(label("locality")).toContain("desktop rendering run locally");
+    expect(label("locality")).toContain("provider may receive requests, tool context and attached preview/storyboard images");
   });
 
   it("keeps the requested Light, Dark and Multi-color showcase themes explicit", () => {

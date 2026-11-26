@@ -17,32 +17,13 @@ Read this when something looks wrong in the output (rendering, export, layout, e
 | `command not found: draw.io` after `brew install --cask drawio` | Homebrew installs the binary as `drawio` (no dot). Use `drawio --version`, not `draw.io --version`. The dot-name only exists inside the `.app` bundle (`/Applications/draw.io.app/Contents/MacOS/draw.io`) and on Windows (`draw.io.exe`). |
 | Export command not found on macOS | Try full path `/Applications/draw.io.app/Contents/MacOS/draw.io` |
 | Vision reports that the preview dimensions are too large | Re-export with `drawio_export` in preview mode and set a smaller `width`. If a 2000px full-diagram preview makes labels unreadable, tighten the canvas, simplify or split the layout, or use a focused review artifact. |
-| Linux: blank/error output headlessly | Prefix command with `xvfb-run -a` |
-| Linux: `--no-sandbox` placed before input file (parsed as filename) | Move `--no-sandbox` to the very end of the command (drawio-desktop#249, #1056) |
-| Linux: `Failed to get 'appData' path` / `Home directory not accessible` | `export HOME=/tmp` before invoking drawio (drawio-desktop#127) |
-| Linux server: segfault / EGL / MESA `failed to load driver` errors | Add `--disable-gpu` (suppresses Chromium GL init when no GPU available) |
+| Linux: renderer unavailable when running Pi as root | Restart Pi as an unprivileged user. DrawMe refuses to launch the Linux renderer as root rather than disable its sandbox. |
+| Linux: no display | Install Xvfb (`xvfb-run` must be on PATH), then run `/drawme-check` in Pi. DrawMe uses Xvfb automatically for discovery and rendering when no display is available. |
+| Linux: draw.io cannot access its home/app-data directory | Run Pi as a user with a writable home directory. |
 | PDF export fails | Ensure Chromium is available (draw.io bundles it on desktop) |
 | Background color wrong in CLI export | Known CLI bug; add `--transparent` flag or set background via style |
-| Vision returns 400 "Could not process image" on draft PNG | Re-export the preview without `-e` (issue #8). Root cause is a truncated IEND chunk in `-e` PNGs, not the `zTXt` chunk itself — but skipping `-e` for the preview is the simplest fix. |
+| Vision returns "Could not process image" | Use `drawio_export` in PNG preview mode, which verifies the image and omits editable XML, instead of attaching a final embedded PNG. |
 | Final embedded PNG won't open in image viewers | Export it again with `drawio_export` in final mode. The tool automatically repairs draw.io's truncated IEND chunk. SVG/PDF are unaffected. |
-| WSL2: `drawio` / `draw.io` not found | The CLI lives on the Windows side. Use the Windows desktop exe via `/mnt/c`: `"/mnt/c/Program Files/draw.io/draw.io.exe"` (or per-user `"/mnt/c/Users/<you>/AppData/Local/Programs/draw.io/draw.io.exe"`). |
-| WSL2: opening an exported file fails with a `/mnt/c/...`-style path | `cmd.exe` can't resolve WSL paths — convert first: `cmd.exe /c start "" "$(wslpath -w diagram.drawio.png)"`. The empty `""` after `start` is the (required) window title. |
+| WSL: `drawio` not found | Install the native Linux draw.io desktop CLI inside WSL; DrawMe cannot use the Windows `.exe` from WSL. If headless, install Xvfb too. |
 
-## WSL2 / Windows specifics
-
-**Locate the CLI.** Detect WSL2 with `grep -qi microsoft /proc/version`. On WSL2 the
-export CLI is the Windows desktop exe, reached through `/mnt/c` (quote the path —
-it contains a space):
-
-```bash
-"/mnt/c/Program Files/draw.io/draw.io.exe" --version
-# per-user install fallback:
-"/mnt/c/Users/$USER/AppData/Local/Programs/draw.io/draw.io.exe" --version
-```
-
-**Open a file.** Convert the WSL path to a Windows path first; `cmd.exe` cannot
-follow `/mnt/c/...`:
-
-```bash
-cmd.exe /c start "" "$(wslpath -w diagram.drawio.png)"
-```
+For a custom installation or an unavailable renderer, see [CLI discovery](../../docs/reference.md#drawio_check).

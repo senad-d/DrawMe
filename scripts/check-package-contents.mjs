@@ -3,9 +3,11 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkRuntimeClosure } from "./pack-closure.mjs";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const packageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const extensionEntries = Array.isArray(packageJson.pi?.extensions) ? packageJson.pi.extensions : [];
 const issues = [];
 
 if (packageJson.private === true) {
@@ -14,7 +16,7 @@ if (packageJson.private === true) {
 if (!packageJson.keywords?.includes("pi-package")) {
   issues.push("package.json keywords must include pi-package");
 }
-if (!packageJson.pi?.extensions?.includes("./src/index.ts")) {
+if (!extensionEntries.includes("./src/index.ts")) {
   issues.push("package.json pi.extensions must include ./src/index.ts");
 }
 if (typeof packageJson.pi?.image !== "string" || packageJson.pi.image.length === 0) {
@@ -25,15 +27,14 @@ const packArgs = ["pack", "--dry-run", "--json", "--ignore-scripts"];
 const npmExecPath = process.env.npm_execpath;
 let output;
 try {
-  output = npmExecPath
-    ? execFileSync(process.execPath, [npmExecPath, ...packArgs], {
-        cwd: ROOT,
-        encoding: "utf8",
-      })
-    : execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", packArgs, {
-        cwd: ROOT,
-        encoding: "utf8",
-      });
+  if (!npmExecPath && process.platform === "win32") {
+    throw new Error("Run npm run check:pack so Node can locate the npm CLI on Windows.");
+  }
+  output = execFileSync(
+    npmExecPath ? process.execPath : "npm",
+    npmExecPath ? [npmExecPath, ...packArgs] : packArgs,
+    { cwd: ROOT, encoding: "utf8" },
+  );
 } catch (error) {
   console.error("check:pack FAILED: npm pack --dry-run did not complete");
   if (error instanceof Error) console.error(error.message);
@@ -91,6 +92,8 @@ for (const file of packedFiles) {
     issues.push(`forbidden package file is present: ${file}`);
   }
 }
+
+if (packResult) issues.push(...checkRuntimeClosure(ROOT, extensionEntries, packedFiles));
 
 if (issues.length > 0) {
   console.error(`check:pack FAILED (${issues.length} issue(s)):`);

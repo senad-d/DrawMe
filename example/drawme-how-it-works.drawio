@@ -53,10 +53,10 @@
         <mxCell id="step-3" value="3" style="ellipse;aspect=fixed;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#FFFFFF;fillColor=#3B82F6;strokeColor=none;" vertex="1" parent="prepare">
           <mxGeometry x="1120" y="40" width="34" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="author" value="&lt;b&gt;Author&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1E3A8A&quot; style=&quot;font-size:18px&quot;&gt;.drawio is the source&lt;br&gt;XML · exact shapes · v30+ tools&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=22;fontColor=#1E3A8A;fillColor=#EFF6FF;strokeColor=#3B82F6;strokeWidth=1.5;shape=mxgraph.flowchart.document2;size=0.16;" vertex="1" parent="prepare">
+        <mxCell id="author" value="&lt;b&gt;Author&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1E3A8A&quot; style=&quot;font-size:18px&quot;&gt;.drawio is the source&lt;br&gt;XML · exact shapes · optional import&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=22;fontColor=#1E3A8A;fillColor=#EFF6FF;strokeColor=#3B82F6;strokeWidth=1.5;shape=mxgraph.flowchart.document2;size=0.16;" vertex="1" parent="prepare">
           <mxGeometry x="1120" y="90" width="340" height="130" as="geometry"/>
         </mxCell>
-        <mxCell id="v30" value="Mermaid conversion + ELK layout require draw.io v30+." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=16;fontStyle=0;" vertex="1" parent="1">
+        <mxCell id="v30" value="Mermaid conversion + ELK layout require draw.io v30.2.4 or later." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=16;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="80" y="492" width="900" height="30" as="geometry"/>
         </mxCell>
         <mxCell id="step-4" value="4" style="ellipse;aspect=fixed;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#FFFFFF;fillColor=#8B5CF6;strokeColor=none;" vertex="1" parent="quality">
@@ -89,7 +89,7 @@
         <mxCell id="e-check-author" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#3B82F6;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="check" target="author">
           <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="1060" y="380"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e-author-validate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8B5CF6;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="author" target="validate">
+        <mxCell id="e-author-validate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8B5CF6;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDy=-12;exitPerimeter=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="author" target="validate">
           <mxGeometry x="0" relative="1" as="geometry"><Array as="points"><mxPoint x="1330" y="515"/></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-validate-review" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8B5CF6;strokeWidth=2;endArrow=blockThin;endFill=1;endSize=8;fontFamily=Helvetica;fontSize=15;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="validate" target="review">
@@ -116,8 +116,8 @@
         <mxCell id="limit" value="&lt;b&gt;Bounded corrections&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64748B&quot; style=&quot;font-size:16px&quot;&gt;Keep the best validated state.&lt;br&gt;At eight retries, export and report unresolved findings.&lt;/font&gt;" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#0F172A;fontSize=19;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry x="1040" y="1035" width="500" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="cleanup" value="PNG / SVG / PDF embed XML; JPG cannot. Final export removes the latest preview." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=16;fontStyle=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1175" width="1500" height="30" as="geometry"/>
+        <mxCell id="cleanup" value="PNG / SVG / PDF can embed XML; JPG cannot. Review uses images visible in Pi, not files left on disk.&lt;br&gt;A new preview or final export may remove a tracked preview file for the same source, even across pages. Restart clears tracking." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontColor=#64748B;fontSize=16;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1155" width="1500" height="50" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

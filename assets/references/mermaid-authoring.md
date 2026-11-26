@@ -1,10 +1,8 @@
 # Mermaid authoring → native .drawio
 
-Use Mermaid when the diagram is a standard type with no custom styling requirements and the draw.io
-CLI is version 30 or newer. Mermaid keeps the input focused on structure while draw.io supplies the
-initial layout.
+Use Mermaid for standard diagrams that do not require custom styling. Mermaid keeps the input focused on structure while draw.io supplies the initial layout.
 
-Call `drawio_check` first, then convert with:
+Call `drawio_check` first. If Mermaid import is supported (draw.io 30.2.4 or newer), pass exactly one nonblank `mermaid` (inline text) or `input` (a `.mmd` path). Both together or neither are rejected. For example:
 
 ```text
 drawio_from_mermaid({
@@ -13,7 +11,7 @@ drawio_from_mermaid({
 })
 ```
 
-On draw.io 29 or older, skip Mermaid conversion and author uncompressed `.drawio` XML instead.
+If Mermaid import is unsupported, author uncompressed `.drawio` XML instead.
 
 ## When to prefer each authoring mode
 
@@ -40,12 +38,11 @@ also ask for a draw.io file.
 - Match label language to the user's language.
 - Never apply `drawio_layout` to a Mermaid-converted file; conversion already lays it out.
 
-After conversion, treat the `.drawio` as the source of truth. Validate it, export a preview, inspect the
-result, and then create the requested final exports.
+After conversion, treat the `.drawio` as the source of truth. Fit the finite imported page with `drawio_fit_canvas`, then validate, preview, inspect, and create the requested final exports.
 
 ## ELK layout for XML-authored diagrams
 
-For rough XML geometry on draw.io 30 or newer, use `drawio_layout` with one of these presets:
+For rough XML geometry, if `drawio_check` reports ELK layout support (draw.io 30.2.4 or newer), use `drawio_layout` with one of these presets:
 
 | Preset | Layout |
 |---|---|
