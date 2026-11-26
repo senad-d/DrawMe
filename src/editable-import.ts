@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { constants } from "node:fs";
 import { mkdtemp, open, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { DOMParser, XMLSerializer, type Element } from "@xmldom/xmldom";
 import { DEFAULT_VALIDATION_LIMITS, diagramPages, pageModel, readDiagramXml, withDiagramFiles } from "./diagram-files";
@@ -64,9 +64,20 @@ async function requireBinary(feature: "supportsMermaid" | "supportsLayout", over
   return { ...info, binary: info.binary };
 }
 
+function appendPath(directory: string, name: string): string {
+  // On POSIX only the filesystem may resolve '..' after a directory symlink.
+  if (sep === "/") return directory.endsWith(sep) ? directory + name : directory + sep + name;
+  return join(directory, name);
+}
+
+function absoluteOperand(path: string): string {
+  if (sep !== "/") return resolve(path);
+  return isAbsolute(path) ? path : appendPath(process.cwd(), path);
+}
+
 function resolveOutput(path: string): string {
   if (path.endsWith("/") || path.endsWith(sep) || !path) throw new Error(`editable destination must name a file: ${path}`);
-  return resolve(path);
+  return absoluteOperand(path);
 }
 
 async function readInput<T>(path: string, inspect: (path: string) => Promise<T>): Promise<T> {
@@ -126,12 +137,12 @@ async function writeEditableFile(path: string, xml: string): Promise<void> {
 
 /** Convert exactly one Mermaid source to a new, finite, already laid-out diagram. */
 export async function convertMermaid(opts: MermaidOptions): Promise<MermaidResult> {
-  const input = opts.input?.trim() ? resolve(opts.input) : undefined;
+  const input = opts.input?.trim() ? absoluteOperand(opts.input) : undefined;
   const inline = opts.mermaid ?? "";
   if (!!input === !!inline.trim()) throw new Error("provide exactly one of `input` (a .mmd file path) or `mermaid` (inline Mermaid text)");
   const output = resolveOutput(opts.output ?? (input
-    ? join(dirname(input), `${basename(input, extname(input))}.drawio`)
-    : resolve(opts.cwd ?? process.cwd(), "diagram.drawio")));
+    ? appendPath(dirname(input), `${basename(input, extname(input))}.drawio`)
+    : appendPath(absoluteOperand(opts.cwd ?? process.cwd()), "diagram.drawio")));
 
   // Check the source name separately: lock canonicalization can fail if its parent is absent.
   if (input) await readInput(input, stat);
@@ -141,11 +152,11 @@ export async function convertMermaid(opts: MermaidOptions): Promise<MermaidResul
       throw new Error(`inline Mermaid exceeds the ${DEFAULT_VALIDATION_LIMITS.maxBytes} byte limit`);
     }
     const { binary, version } = await requireBinary("supportsMermaid", opts.binary);
-    const dir = await mkdtemp(join(resolve(tmpdir()), "drawme-mmd-"));
+    const dir = await mkdtemp(appendPath(absoluteOperand(tmpdir()), "drawme-mmd-"));
     try {
-      const source = input ?? join(dir, "diagram.mmd");
+      const source = input ?? appendPath(dir, "diagram.mmd");
       if (!input) await writeFile(source, inline, "utf8");
-      const staged = join(dir, "converted.drawio");
+      const staged = appendPath(dir, "converted.drawio");
       const command = await invokeRenderer(binary, mermaidArgs(source, staged));
       const xml = await readRenderOutput(staged, "conversion");
       const { doc, root } = parseEditableXml(xml, "conversion output");
@@ -210,8 +221,8 @@ export async function applyLayout(opts: LayoutOptions): Promise<LayoutResult> {
   if (!LAYOUT_PRESETS.includes(opts.preset)) {
     throw new Error(`unknown layout preset '${opts.preset}'. Allowed: ${LAYOUT_PRESETS.join(", ")}`);
   }
-  const input = resolve(opts.input);
-  const output = resolveOutput(opts.output ?? join(dirname(input), `${basename(input, extname(input))}.layout.drawio`));
+  const input = absoluteOperand(opts.input);
+  const output = resolveOutput(opts.output ?? appendPath(dirname(input), `${basename(input, extname(input))}.layout.drawio`));
   await readInput(input, stat);
   return withDiagramFiles([input, output], undefined, async () => {
     const xml = await readInput(input, readDiagramXml);
@@ -220,12 +231,12 @@ export async function applyLayout(opts: LayoutOptions): Promise<LayoutResult> {
     const selected = page ? readLayoutModel(page) : { model: null, compressed: false };
     const { model, root: sourceRoot } = requireGraph(selected.model, "layout input first page");
     const { binary, version } = await requireBinary("supportsLayout", opts.binary);
-    const dir = await mkdtemp(join(resolve(tmpdir()), "drawme-layout-"));
+    const dir = await mkdtemp(appendPath(absoluteOperand(tmpdir()), "drawme-layout-"));
     try {
       const serializer = new XMLSerializer();
       const name = basename(input);
-      const source = join(dir, name);
-      const staged = join(dir, name.toLowerCase() === "layout.drawio" ? "layout-result.drawio" : "layout.drawio");
+      const source = appendPath(dir, name);
+      const staged = appendPath(dir, name.toLowerCase() === "layout.drawio" ? "layout-result.drawio" : "layout.drawio");
       await writeFile(source, `<mxfile compressed="false"><diagram>${serializer.serializeToString(model)}</diagram></mxfile>`, "utf8");
       const command = await invokeRenderer(binary, layoutArgs(source, opts.preset, staged));
       const result = parseEditableXml(await readRenderOutput(staged, "layout"), "layout output");

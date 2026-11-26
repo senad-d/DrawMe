@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
-import { link, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
@@ -159,11 +159,13 @@ it("passes a dash-prefixed, spaced Mermaid path as one absolute file operand", a
   const binary = await fixture();
   const input = await source("-file chart.mmd", FILE_MERMAID);
   const output = join(dir, "-my diagram.drawio");
-  const result = await convertMermaid({ input: relative(process.cwd(), input), mermaid: " ", output, binary });
+  const relativeInput = relative(process.cwd(), input);
+  const result = await convertMermaid({ input: relativeInput, mermaid: " ", output, binary });
   expect(result).toMatchObject({ output, binary, version: "30.2.4" });
   const [{ args, source: seen }] = await renders();
   const staged = args[args.indexOf("-o") + 1];
-  expect(args).toEqual(mermaidArgs(input, staged));
+  const operand = process.platform === "win32" ? input : `${process.cwd()}/${relativeInput}`;
+  expect(args).toEqual(mermaidArgs(operand, staged));
   expect(isAbsolute(staged)).toBe(true);
   expect(staged).not.toBe(output);
   expect(seen).toBe(FILE_MERMAID);
@@ -219,6 +221,31 @@ it("lays out first-page geometry by effective ID without rewriting authored grap
   expect(second).toBe(SECOND_PAGE);
   const fit = await fitCanvasFile({ input: output });
   expect(fit.pages[1]).toMatchObject({ status: "skipped", reason: expect.stringContaining("infinite canvas") });
+});
+
+it.skipIf(process.platform === "win32")("writes implicit editable outputs beside the physical inputs across a directory symlink", async () => {
+  const binary = await fixture();
+  const actual = join(dir, "actual");
+  const child = join(actual, "child");
+  await mkdir(child, { recursive: true });
+  await symlink(child, join(dir, "through"), "dir");
+  await writeFile(join(actual, "source.mmd"), FILE_MERMAID);
+  await writeFile(join(actual, "authored.drawio"), AUTHORED);
+  await source("source.mmd", INLINE_MERMAID);
+  await source("authored.drawio", AUTHORED.replace("Authored label", "Decoy label"));
+  const outputs = ["source.drawio", "authored.layout.drawio", "diagram.drawio"];
+  for (const name of outputs) await source(name, "keep me");
+
+  const viaLink = `${dir}/through/..`;
+  await convertMermaid({ input: `${relative(process.cwd(), dir)}/through/../source.mmd`, binary });
+  await applyLayout({ input: `${viaLink}/authored.drawio`, preset: "horizontalFlow", binary });
+  await convertMermaid({ mermaid: INLINE_MERMAID, cwd: viaLink, binary });
+
+  expect((await renders())[0].source).toBe(FILE_MERMAID);
+  expect(await readFile(join(actual, "source.drawio"), "utf8")).toContain('<mxGraphModel page="1"');
+  expect(await readFile(join(actual, "authored.layout.drawio"), "utf8")).toContain("Authored label");
+  expect(await readFile(join(actual, "diagram.drawio"), "utf8")).toContain('<mxGraphModel page="1"');
+  for (const name of outputs) await expect(readFile(join(dir, name), "utf8")).resolves.toBe("keep me");
 });
 
 it("preserves compatibility with a compressed first page without touching other pages", async () => {
