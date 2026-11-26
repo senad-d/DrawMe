@@ -275,9 +275,11 @@ export async function verifyStagedArtifact(
   const review = plan.mode === "preview" || plan.reviewRaster === true;
   if (plan.format === "png") {
     const data = await readRasterFile(path);
-    const { fixed, hasEditableDiagram } = inspectPng(data, plan.embed && !review,
+    const expectEditable = plan.embed && !review;
+    const { fixed, hasEditableDiagram } = inspectPng(data, expectEditable,
       (width, height) => checkRasterDimensions(plan, width, height, review));
-    if ((review || !plan.embed) && hasEditableDiagram) throw new Error("PNG output contains editable diagram metadata despite embedding being disabled");
+    if (expectEditable && !hasEditableDiagram) throw new Error("PNG output is missing editable diagram metadata despite embedding being requested");
+    if (!expectEditable && hasEditableDiagram) throw new Error("PNG output contains editable diagram metadata despite embedding being disabled");
     if (fixed) await writeFile(path, fixed);
     if (review) {
       const sha256 = createHash("sha256").update(data).digest("hex");

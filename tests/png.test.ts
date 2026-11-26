@@ -33,7 +33,7 @@ function image(pixels: Buffer, header = ihdr(), ...beforeData: Buffer[]): Buffer
   return Buffer.concat([SIGNATURE, header, ...beforeData, chunk("IDAT", deflateSync(pixels)), IEND]);
 }
 
-it("repairs a valid embedded PNG with the existing one-argument file API", async () => {
+it("preserves the standalone one-argument repair API even for legacy inputs without metadata", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drawme-repair-png-"));
   try {
     const path = join(dir, "embedded.png");
@@ -130,6 +130,8 @@ describe("repairPngBuffer", () => {
 const preview = planExport({ input: "input.drawio", mode: "preview", embed: true });
 const board = planExport({ input: "input.drawio", mode: "final", reviewRaster: true });
 const final = planExport({ input: "input.drawio" });
+const flatFinal = planExport({ input: "input.drawio", embed: false });
+const editableXml = '<mxfile><diagram name="Private"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>';
 
 async function withPngStage(action: (path: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "drawme-png-stage-"));
@@ -148,19 +150,40 @@ describe("staged PNGs", () => {
       const sha256 = createHash("sha256").update(data).digest("hex");
       expect(await verifyStagedArtifact(preview, path)).toEqual({ repaired: false, previewSha256: sha256 });
       expect(await verifyStagedArtifact(board, path)).toEqual({ repaired: false, storyboardSha256: sha256 });
-      expect(await verifyStagedArtifact(final, path)).toEqual({ repaired: false });
+      expect(await verifyStagedArtifact(flatFinal, path)).toEqual({ repaired: false });
+      expect(await readFile(path)).toEqual(data);
+    });
+  });
+
+  it("requires editable metadata before accepting or repairing an editable final PNG", async () => {
+    await withPngStage(async path => {
+      for (const flat of [PNG, PNG.subarray(0, -8)]) {
+        await writeFile(path, flat);
+        await expect(verifyStagedArtifact(final, path)).rejects.toThrow(/missing editable diagram metadata/);
+        expect(await readFile(path)).toEqual(flat);
+      }
+      await writeFile(path, PNG);
+      expect(await verifyStagedArtifact(flatFinal, path)).toEqual({ repaired: false });
+    });
+  });
+
+  it("repairs a truncated editable stage without changing its genuine embedded model", async () => {
+    await withPngStage(async path => {
+      const model = chunk("zTXt", Buffer.concat([Buffer.from("mxGraphModel\0\0"), deflateSync(encodeURIComponent(editableXml))]));
+      const data = image(Buffer.alloc(2), ihdr(), model);
+      await writeFile(path, data.subarray(0, -8));
+      expect(await verifyStagedArtifact(final, path)).toEqual({ repaired: true });
       expect(await readFile(path)).toEqual(data);
     });
   });
 
   it("refuses editable diagram text metadata on either review path, regardless of its PNG text encoding", async () => {
     await withPngStage(async path => {
-      const xml = '<mxfile><diagram name="Private"><mxGraphModel><root><mxCell id="0"/></root></mxGraphModel></diagram></mxfile>';
-      const encoded = encodeURIComponent(xml);
+      const encoded = encodeURIComponent(editableXml);
       for (const metadata of [
-        chunk("tEXt", Buffer.from(`mxGraphModel\0${xml}`)),
+        chunk("tEXt", Buffer.from(`mxGraphModel\0${editableXml}`)),
         chunk("zTXt", Buffer.concat([Buffer.from("mxGraphModel\0\0"), deflateSync(Buffer.from(encoded))])),
-        chunk("iTXt", Buffer.from(`mxGraphModel\0\0\0\0\0${xml}`)),
+        chunk("iTXt", Buffer.from(`mxGraphModel\0\0\0\0\0${editableXml}`)),
       ]) {
         const data = image(Buffer.alloc(2), ihdr(), metadata);
         await writeFile(path, data);

@@ -5,6 +5,7 @@ import { constants, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { getEventListeners } from "node:events";
+import { crc32, deflateSync } from "node:zlib";
 import { MAX_FINAL_RASTER_PIXELS, cappedScale, planExport, deriveOutput, exportDiagram, prepareExport, run, xvfbScreen } from "../src/drawio";
 import { withDiagramFiles } from "../src/diagram-files";
 import { TINY_PNG } from "./fixtures";
@@ -13,8 +14,19 @@ import { installRendererFixtureAdapter, writeRendererFixture } from "./renderer-
 installRendererFixtureAdapter();
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" viewBox="0 0 100 50"/>';
-const renderImage = `writeFileSync(output, svg ? ${JSON.stringify(SVG)} : Buffer.from("${TINY_PNG}", "base64"));`;
 const GRAPH = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
+const flatPng = Buffer.from(TINY_PNG, "base64");
+// A real draw.io model in the same zTXt encoding as Desktop's editable output.
+const pngText = Buffer.concat([Buffer.from("mxGraphModel\0\0"), deflateSync(encodeURIComponent(GRAPH))]);
+const pngChunk = Buffer.alloc(12 + pngText.length);
+pngChunk.writeUInt32BE(pngText.length);
+pngChunk.write("zTXt", 4);
+pngText.copy(pngChunk, 8);
+pngChunk.writeUInt32BE(crc32(pngChunk.subarray(4, -4)), pngChunk.length - 4);
+const embeddedPng = Buffer.concat([flatPng.subarray(0, -12), pngChunk, flatPng.subarray(-12)]);
+const renderFlatPng = `writeFileSync(output, Buffer.from("${TINY_PNG}", "base64"));`;
+const renderImage = `writeFileSync(output, svg ? ${JSON.stringify(SVG)} : Buffer.from(
+  args.includes("-e") ? "${embeddedPng.toString("base64")}" : "${TINY_PNG}", "base64"));`;
 
 async function makeFakeDrawio(dir: string, render = renderImage, version = "30.2.4"): Promise<string> {
   return writeRendererFixture(dir, `
@@ -754,6 +766,29 @@ describe("exportDiagram animated SVG", () => {
 });
 
 describe("exportDiagram preview cleanup", () => {
+  it("keeps the prior editable final and preview if the renderer omits the model", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-missing-embedded-model-"));
+    try {
+      const input = join(dir, "source.drawio");
+      await writeFile(input, GRAPH);
+      const binary = await makeFakeDrawio(dir);
+      const final = await exportDiagram({ input, binary });
+      expect(final.embed).toBe(true);
+      const preview = await exportDiagram({ input, binary, mode: "preview" });
+      await makeFakeDrawio(dir, renderFlatPng);
+
+      await expect(exportDiagram({ input, binary })).rejects.toThrow(/missing editable diagram metadata/);
+      expect(await readFile(final.output)).toEqual(embeddedPng);
+      expect(await readFile(preview.output)).toEqual(flatPng);
+
+      const flat = await exportDiagram({ input, binary, output: final.output, embed: false });
+      expect(flat).toMatchObject({ embed: false, removedPreviews: [preview.output] });
+      expect(await readFile(flat.output)).toEqual(flatPng);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps default previews separate from existing final exports", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawme-default-preview-"));
     try {
