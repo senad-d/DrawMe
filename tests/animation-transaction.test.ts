@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { getEventListeners } from "node:events";
 import { existsSync } from "node:fs";
-import { link, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
@@ -79,6 +79,29 @@ if (args[args.indexOf('-f') + 1] === 'svg') {
 async function runningBoard(ready: string): Promise<{ input: string; pid: number }> {
   return vi.waitFor(async () => JSON.parse(await readFile(ready, "utf8")), { timeout: 3000 });
 }
+
+it.skipIf(process.platform === "win32")("renders the private storyboard source beside the physical input, even with a separate SVG destination", async () => {
+  const { dir, input, binary, release, ready } = await fixture("pause");
+  const actual = join(dir, "actual");
+  const childDir = join(actual, "child");
+  await mkdir(childDir, { recursive: true });
+  await symlink(childDir, join(dir, "through"), "dir");
+  await rename(input, join(actual, "map.svg.drawio"));
+  const viaSymlink = `${dir}/through/../map.svg.drawio`;
+  const result = animateDiagram({ input: viaSymlink, binary, output: join(dir, "review.svg"), steps: steps("a") });
+  const settled = Promise.allSettled([result]);
+  let boardInput: string;
+  try {
+    const child = await runningBoard(ready);
+    boardInput = await realpath(child.input);
+    expect(dirname(boardInput)).toBe(await realpath(actual));
+  } finally {
+    await release();
+    await settled;
+  }
+  await expect(result).resolves.toMatchObject({ storyboard: join(dir, "review.svg.storyboard-p1.png") });
+  expect(existsSync(boardInput)).toBe(false);
+});
 
 it("queues the second page save behind the entire board render and preserves both pages and a following in-place fit", async () => {
   const { dir, input, binary, release, ready } = await fixture("pause");
