@@ -6,6 +6,9 @@ import { DOMParser } from "@xmldom/xmldom";
 import { analyzeAnimationPage, analyzeDrawioAnimation, enhanceAnimatedSvg } from "../src/animation";
 import { DEFAULT_VALIDATION_LIMITS, ValidationStop, createValidationBudget } from "../src/diagram-files";
 import type { DomEl } from "../src/dom";
+import { exportDiagram } from "../src/drawio";
+import { TINY_PNG } from "./fixtures";
+import { installRendererFixtureAdapter, writeRendererFixture } from "./renderer-fixture";
 
 function source(animation: string | null, edgeStyle = ""): string {
   const root = animation === null
@@ -18,6 +21,8 @@ function source(animation: string | null, edgeStyle = ""): string {
     <mxCell id="edge" style="${edgeStyle}" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry"/></mxCell>
   </root></mxGraphModel></diagram></mxfile>`;
 }
+
+installRendererFixtureAdapter();
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100">
   <defs></defs>
@@ -224,6 +229,36 @@ describe("enhanceAnimatedSvg", () => {
       await writeFile(output, linked);
       await expect(enhanceAnimatedSvg(input, output)).rejects.toThrow(/unresolved image.*embed/i);
       expect(await readFile(output, "utf8")).toBe(linked);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a local CSS image-set candidate in a staged SVG and accepts all-embedded candidates", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-image-set-"));
+    try {
+      const input = join(dir, "sequence.drawio");
+      const output = join(dir, "final.svg");
+      const rendererOutput = join(dir, "renderer-response.svg");
+      const binary = await writeRendererFixture(dir, `
+import { copyFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args.includes('--version')) process.stdout.write('32.4.1\\n');
+else copyFileSync(${JSON.stringify(rendererOutput)}, args[args.indexOf('-o') + 1]);
+`);
+      const embedded = `data:image/png;base64,${TINY_PNG}`;
+      const label = `<foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="background-image: image-set('${embedded}' type('image/png') 1x, '../logo.png' 2x)">logo.png</div></foreignObject>`;
+      const linked = SVG.replace("</svg>", `${label}</svg>`);
+      const exportSvg = () => exportDiagram({ input, output, binary, format: "svg", animated: true });
+      await writeFile(input, source(JSON.stringify({ steps: [{ fadeIn: { cells: ["a"] } }] })));
+      await writeFile(output, SVG);
+      await writeFile(rendererOutput, linked);
+      await expect(exportSvg()).rejects.toThrow(/animated SVG verification failed:.*unresolved image.*embed/i);
+      expect(await readFile(output, "utf8")).toBe(SVG);
+
+      await writeFile(rendererOutput, linked.replace("../logo.png", embedded));
+      await expect(exportSvg()).resolves.toMatchObject({ output, animation: { verified: true } });
+      expect(await readFile(output, "utf8")).toContain("logo.png</div>");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

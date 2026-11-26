@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
+import { analyzeAnimationPage, analyzeDrawioAnimation } from "../src/animation";
 import { DEFAULT_VALIDATION_LIMITS, ValidationStop, createValidationBudget } from "../src/diagram-files";
 import type { DomEl } from "../src/dom";
+import drawme from "../src/index";
 import {
   DEFAULT_ACCENT,
   DEFAULT_DARK_ACCENT,
@@ -20,6 +25,7 @@ import {
 } from "../src/motion";
 import { buildStoryboard, sampleFrames, MAX_STORYBOARD_FRAMES } from "../src/storyboard";
 import { validateXml } from "../src/validate";
+import { makeMockPi } from "./fixtures";
 
 const PAGE = `<mxfile><diagram name="Flow"><mxGraphModel pageWidth="400" pageHeight="200"><root>
   <mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -332,6 +338,51 @@ describe("motion storage", () => {
     storeMotion(page, JSON.stringify({ steps: [{ effect: "fadeIn", cells: Array<string>(200).fill("a") }] }));
     const work = createValidationBudget({ ...DEFAULT_VALIDATION_LIMITS, maxWork: 100 }, () => { throw new Error("unexpected finding"); });
     expect(() => analyzeStoredMotion(page, work)).toThrow(/work limit/);
+  });
+
+  it.each(["native", "stored"] as const)("retains only the admitted excerpt in %s diagnostics and tool errors", async (dialect) => {
+    const tail = "distant-diagnostic-tail";
+    const long = "x".repeat(2_000) + tail;
+    const spec = JSON.stringify({ steps: [{ effect: "fadeIn", cells: [long] }] }).replaceAll('"', "&quot;");
+    const xml = dialect === "native"
+      ? PAGE.replace('id="e"', `id="e" style="flowAnimation=${long};"`)
+      : PAGE.replace('id="0"', `id="0" ${MOTION_ATTRIBUTE}="${spec}"`);
+    const accepted: string[] = [];
+    const budget = createValidationBudget({ ...DEFAULT_VALIDATION_LIMITS, maxDiagnostics: 2 },
+      (_level, message) => accepted.push(message));
+    budget.finding("warning", "earlier finding");
+    const analysis = dialect === "native" ? analyzeDrawioAnimation(xml, 1, budget) : analyzeStoredMotion(model(xml), budget);
+    const excerpt = accepted[1];
+    expect(accepted[0]).toBe("earlier finding");
+    expect(excerpt).toHaveLength(512);
+    expect(excerpt).not.toContain(tail);
+    expect(analysis?.errors).toEqual([excerpt]);
+
+    const { pi, tools } = makeMockPi();
+    drawme(pi as never);
+    const dir = await mkdtemp(join(tmpdir(), "drawme-motion-diagnostic-"));
+    try {
+      const input = join(dir, "motion.drawio");
+      await writeFile(input, xml);
+      const result = await tools.get("drawio_animate")!.execute("t", { input, storyboard: false }, undefined, undefined, { cwd: dir });
+      expect(result.content[0]).toMatchObject({ type: "text", text: `Animate failed: ${excerpt}` });
+      expect(result.details).toMatchObject({ error: excerpt });
+      expect(await readFile(input, "utf8")).toBe(xml);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([analyzeAnimationPage, motionCells])("stops in the shared graph collector before reading an unadmitted wrapper", (analyze) => {
+    const root = new DOMParser().parseFromString(
+      '<mxGraphModel><root><mxCell id="0"/><UserObject id="wrapped"><mxCell vertex="1"/></UserObject></root></mxGraphModel>', "text/xml",
+    ).documentElement!;
+    const wrapper = root.getElementsByTagName("UserObject")[0];
+    const getAttribute = vi.spyOn(wrapper, "getAttribute");
+    // Model lookup, root children, and the two element visits fit. The wrapper's child scan does not.
+    const work = createValidationBudget({ ...DEFAULT_VALIDATION_LIMITS, maxWork: 5 }, () => {});
+    expect(() => analyze(root as unknown as DomEl, work)).toThrow(ValidationStop);
+    expect(getAttribute).not.toHaveBeenCalledWith("id");
   });
 
   it("reports stored-motion errors and timeline conflicts through drawio_validate", () => {

@@ -31,12 +31,24 @@ const FLOW_TIMINGS = new Set(["linear", "ease", "ease-in", "ease-out", "ease-in-
 const SVG_NS = "http://www.w3.org/2000/svg";
 const DEFAULT_FADE_DURATION_MS = 1000;
 const INSTANT_EPSILON_MS = 0.01;
+// Match the validation sink's excerpt ceiling on the arrays used by tool failures.
+const MAX_ANIMATION_DIAGNOSTIC_LENGTH = 512;
 
 type JsonObject = Record<string, unknown>;
 type Report = (level: "error" | "warning" | "observation", message: string) => void;
 
 export function createAnimationBudget(): ValidationBudget {
   return createValidationBudget(DEFAULT_VALIDATION_LIMITS, () => {});
+}
+
+export function reportAnimationFinding(
+  budget: ValidationBudget, level: Parameters<Report>[0], findings: string[], message: string,
+): void {
+  const excerpt = message.length > MAX_ANIMATION_DIAGNOSTIC_LENGTH
+    ? `${message.slice(0, MAX_ANIMATION_DIAGNOSTIC_LENGTH - 1)}…`
+    : message;
+  budget.finding(level, excerpt);
+  findings.push(excerpt);
 }
 
 export interface NativeAnimationSequence {
@@ -95,19 +107,9 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-// Charge the shared DOM helpers before they materialize child lists, including
-// the scans for an mxCell inside each object wrapper.
 export function animationGraphRoot(model: DomEl, budget?: ValidationBudget): DomEl | null {
   budget?.work(model.childNodes.length);
   return firstByTag(model, "root");
-}
-
-export function chargeCellCollection(root: DomEl | null, budget?: ValidationBudget): void {
-  if (!root || !budget) return;
-  budget.work(root.childNodes.length);
-  for (const child of elemChildren(root)) {
-    if (child.tagName === "object" || child.tagName === "UserObject") budget.work(child.childNodes.length);
-  }
 }
 
 function animationAttribute(root: DomEl | null, budget?: ValidationBudget): string | null {
@@ -358,12 +360,8 @@ export function analyzeAnimationPage(diagram: DomEl, budget = createAnimationBud
     warnings: [],
     observations: [],
   };
-  const report: Report = (level, message) => {
-    budget.finding(level, message);
-    if (level === "error") page.errors.push(message);
-    else if (level === "warning") page.warnings.push(message);
-    else page.observations.push(message);
-  };
+  const findings = { error: page.errors, warning: page.warnings, observation: page.observations };
+  const report: Report = (level, message) => reportAnimationFinding(budget, level, findings[level], message);
   if (diagram.tagName !== "mxGraphModel") budget.work(diagram.childNodes.length);
   const model = pageModel(diagram);
   if (!model) {
@@ -372,8 +370,7 @@ export function analyzeAnimationPage(diagram: DomEl, budget = createAnimationBud
   }
 
   const root = animationGraphRoot(model, budget);
-  chargeCellCollection(root, budget);
-  const cells = collectCells(root);
+  const cells = collectCells(root, budget.work);
   const { byId, animatable } = collectCellData(cells, budget);
   page.cells = byId;
   page.animatableCellIds = animatable;

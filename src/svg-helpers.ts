@@ -94,15 +94,33 @@ function cssUrlAt(css: string, index: number): { url: string; end: number } | un
   }
 }
 
-/** Check CSS URL functions but not text that merely looks like one in a string or comment. */
+/** Check CSS URL functions and image-set strings, not unrelated strings or comments. */
 function checkCssUrls(css: string): void {
-  const tokens = /\/\*[\s\S]*?(?:\*\/|$)|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(?:[\w-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\n\r\f]))+/gi;
+  const tokens = /\/\*[\s\S]*?(?:\*\/|$)|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(?:[\w\u0080-\uFFFF-]|\\(?:[0-9a-f]{1,6}(?:\r\n|[\t\n\f\r ])?|[^\n\r\f]))+|[()]/gi;
+  const imageSets: number[] = [];
+  let depth = 0;
   for (let match = tokens.exec(css); match; match = tokens.exec(css)) {
-    if (css[tokens.lastIndex] !== "(" || decodeCssEscapes(match[0]).toLowerCase() !== "url") continue;
-    const argument = cssUrlAt(css, tokens.lastIndex + 1);
-    if (!argument) continue; // Malformed CSS URL, not a resource that the viewer can load.
-    assertEmbedded(decodeCssEscapes(argument.url));
-    tokens.lastIndex = argument.end;
+    const token = match[0];
+    if (token === "(") {
+      depth++;
+    } else if (token === ")") {
+      if (imageSets.at(-1) === depth) imageSets.pop();
+      depth = Math.max(0, depth - 1);
+    } else if (token[0] === '"' || token[0] === "'") {
+      // Only direct strings are candidates; type("image/png") is a descriptor.
+      if (imageSets.at(-1) === depth) assertEmbedded(decodeCssEscapes(token.slice(1, -1)));
+    } else if (css[tokens.lastIndex] === "(" && !token.startsWith("/*")) {
+      const name = decodeCssEscapes(token).toLowerCase();
+      if (name === "image-set" || name === "-webkit-image-set") {
+        imageSets.push(++depth);
+        tokens.lastIndex++; // The opening parenthesis was counted here.
+      } else if (name === "url") {
+        const argument = cssUrlAt(css, tokens.lastIndex + 1);
+        if (!argument) continue; // Malformed CSS URL, not a resource that the viewer can load.
+        assertEmbedded(decodeCssEscapes(argument.url));
+        tokens.lastIndex = argument.end;
+      }
+    }
   }
 }
 

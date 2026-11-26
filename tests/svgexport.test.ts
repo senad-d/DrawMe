@@ -3,6 +3,16 @@ import { padSvg, pinAuthoredColors, resolveLightDark } from "../src/svgexport";
 import { assertStandaloneImages } from "../src/svg-helpers";
 
 describe("standalone SVG images", () => {
+  it("checks prefixed image-set string candidates and ignores unrelated CSS strings and comments", () => {
+    const svg = (candidate: string) => `<svg><style>
+      /* -webkit-image-set('ignored.png' 1x) */
+      text::after { content: "image-set('literal.png' 1x)"; }
+      rect { background-image: -webkit-IMAGE-SET(url('data:image/png;base64,AAAA') 1x, '${candidate}' type('image/png') 2x); }
+    </style></svg>`;
+    expect(() => assertStandaloneImages(svg(String.raw`..\2f logo.png`))).toThrow(/unresolved image.*embed/i);
+    expect(() => assertStandaloneImages(svg("data:image/png;base64,BBBB"))).not.toThrow();
+  });
+
   it("checks local sources in SVG, XHTML and CSS without mistaking embedded data or link text for image URLs", () => {
     const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" xmlns:link="http://www.w3.org/1999/xlink">${body}</svg>`;
     const embedded = 'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22/%3E';

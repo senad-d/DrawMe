@@ -7,7 +7,7 @@
  * so the motion can be reviewed as static images.
  */
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { animationGraphRoot, baseOpacity, chargeCellCollection, createAnimationBudget, verifyFlowGroups } from "./animation";
+import { animationGraphRoot, baseOpacity, createAnimationBudget, reportAnimationFinding, verifyFlowGroups } from "./animation";
 import { diagramPages, pageModel, type ValidationBudget } from "./diagram-files";
 import { type DomEl, attr, elemChildren } from "./dom";
 import { collectCellsWithIds } from "./geometry";
@@ -205,8 +205,7 @@ function staticLayers(
 /** Cells of one page model, keyed by id (wrapper ids resolved, DOM untouched). */
 export function motionCells(model: DomEl, budget = createAnimationBudget()): Map<string, MotionCell> {
   const root = animationGraphRoot(model, budget);
-  chargeCellCollection(root, budget);
-  const { ids } = collectCellsWithIds(root);
+  const { ids } = collectCellsWithIds(root, budget.work);
   const result = new Map<string, MotionCell>();
   for (const [id, cell] of ids) {
     budget.work();
@@ -225,11 +224,8 @@ export function motionCells(model: DomEl, budget = createAnimationBudget()): Map
 
 type MotionError = (message: string) => void;
 
-function reportErrors(errors: string[], budget?: ValidationBudget): MotionError {
-  return (message) => {
-    budget?.finding("error", message);
-    errors.push(message);
-  };
+function reportErrors(errors: string[], budget: ValidationBudget): MotionError {
+  return (message) => reportAnimationFinding(budget, "error", errors, message);
 }
 
 /** Shape-check raw JSON (from a tool call or the stored attribute) into a spec. */
