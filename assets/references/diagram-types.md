@@ -10,7 +10,7 @@ Read this file when:
 
 ## ERD (Entity-Relationship Diagram)
 
-For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relations from the schema before authoring. Mermaid ER conversion is suitable for a standard ERD on draw.io 30+; use XML with the styles below when exact table styling or placement is required.
+For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relations from the schema before authoring. Mermaid ER conversion is suitable for a standard ERD when `drawio_check` reports Mermaid support (draw.io 30.2.4 or newer); use XML with the styles below when exact table styling or placement is required.
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -38,7 +38,7 @@ For SQL DDL, derive tables, primary keys, foreign keys, and crow's-foot relation
 
 ## Sequence Diagram
 
-Prefer Mermaid conversion for a standard sequence diagram on draw.io 30+. Use the styles below for custom XML diagrams that require exact lifelines, activation bars, message placement, or interaction frames.
+Prefer Mermaid conversion for a standard sequence diagram when `drawio_check` reports Mermaid support (draw.io 30.2.4 or newer). Use the styles below for custom XML diagrams that require exact lifelines, activation bars, message placement, or interaction frames.
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -53,7 +53,7 @@ Prefer Mermaid conversion for a standard sequence diagram on draw.io 30+. Use th
 
 ## C4 Model (System Context / Container / Component)
 
-Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard single view on draw.io 30+; use XML when exact C4 styling, multiple pages, or drill-down links are required:
+Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard single view when `drawio_check` reports Mermaid support (draw.io 30.2.4 or newer); use XML when exact C4 styling, multiple pages, or drill-down links are required:
 
 | Element | Style | Notes |
 |---------|-------|-------|
@@ -66,7 +66,7 @@ Use the styles below for C4 diagrams. A Mermaid C4 sketch works for a standard s
 | Relationship | `endArrow=blockThin;endFill=1;html=1;fontSize=11;fontColor=#404040;strokeColor=#828282;labelBackgroundColor=#ffffff;` | Grey thin arrow, label = protocol/action |
 | Label format | `Name` ⏎ `[Type: Tech]` ⏎ `description` | The standard three-line C4 label |
 | Drill-down | wrap the element in `<UserObject link="data:page/id,<pageId>">` | Click jumps to the child page in draw.io / viewer |
-| Layout | TB, one `<diagram>` page per level | Export a single page with `--page-index <n>` (1-based) |
+| Layout | TB, one `<diagram>` page per level | Export a single page with `drawio_export` and a 1-based `pageIndex` |
 
 **Review:** every element shows its full three-line label inside the shape; relationship labels readable on their white background and clear of other lines; person shapes unclipped; one consistent color per C4 level; external systems visibly grey.
 
