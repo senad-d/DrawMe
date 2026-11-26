@@ -1,10 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MOTION_ATTRIBUTE } from "../src/motion";
 import { MIN_OUTER_MARGIN, validateFile, validateXml } from "../src/validate";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...fs, open: vi.fn(fs.open) };
+});
 
 /** Wrap a set of <mxCell> lines in a minimal valid .drawio document. */
 function doc(cells: string, modelAttributes = ""): string {
@@ -586,9 +591,47 @@ describe("validation limits", () => {
       const file = join(dir, "diagram.drawio");
       const xml = doc("");
       await writeFile(file, xml);
-      expect(await validateFile(file, { maxBytes: 16 })).toMatchObject({ errors: [expect.stringContaining("16 byte limit")] });
-      expect(await validateFile(dir)).toMatchObject({ errors: [expect.stringContaining("not a regular file")] });
+      const result = await validateFile(file, { maxBytes: 16 });
+      expect(result).toMatchObject({
+        incomplete: true, errors: [expect.stringMatching(/validation incomplete: .*16 byte limit/)], warnings: [], observations: [],
+      });
+      for (const [input, message] of [[dir, "not a regular file"], [join(dir, "missing.drawio"), "ENOENT"]]) {
+        const failure = await validateFile(input, { maxBytes: 16 });
+        expect(failure.errors).toEqual([expect.stringContaining(message)]);
+        expect(failure.errors[0]).toMatch(/^cannot read /);
+        expect(failure.incomplete).toBeUndefined();
+      }
       expect(await validateFile(file)).toEqual(validateXml(xml));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns an incomplete validation if a file outgrows its byte budget during the read", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawme-validate-"));
+    try {
+      const file = join(dir, "growing.drawio");
+      const xml = doc("");
+      await writeFile(file, xml);
+      const fd = await open(file, "r");
+      try {
+        const originalStat = fd.stat.bind(fd);
+        vi.spyOn(fd, "stat").mockImplementationOnce(async () => {
+          const beforeGrowth = await originalStat();
+          await appendFile(file, "\n");
+          return beforeGrowth;
+        });
+        vi.mocked(open).mockResolvedValueOnce(fd);
+        const maxBytes = Buffer.byteLength(xml);
+        expect(await validateFile(file, { maxBytes })).toMatchObject({
+          incomplete: true,
+          errors: [expect.stringMatching(new RegExp(`validation incomplete: .*${maxBytes} byte limit`))],
+          warnings: [],
+          observations: [],
+        });
+      } finally {
+        await fd.close();
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
