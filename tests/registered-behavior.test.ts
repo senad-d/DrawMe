@@ -203,6 +203,45 @@ it.skipIf(process.platform === "win32")("uses filesystem resolution for session 
   expect.soft(await readFile(join(dir, "laid out.drawio"), "utf8")).toBe("do not replace my file");
 });
 
+it.skipIf(process.platform === "win32")("keeps an implicit export next to its physical source across a symlinked directory", async () => {
+  const { dir, run, binary } = await fixture();
+  const actual = join(dir, "actual");
+  await mkdir(join(actual, "child"), { recursive: true });
+  await symlink(join(actual, "child"), join(dir, "through"), "dir");
+  await writeFile(join(actual, "source.drawio"), diagram);
+  await writeFile(join(dir, "source.drawio"), graph("decoy", "Wrong graph"));
+  const decoy = join(dir, "source.svg");
+  await writeFile(decoy, "do not replace my SVG");
+
+  const result = await run("drawio_export", { input: "through/../source.drawio", format: "svg" });
+  expect.soft(result.details, text(result)).toMatchObject({ binary });
+  expect.soft(await readFile(join(actual, "source.svg"), "utf8").catch(() => "missing")).toContain('data-cell-id="a"');
+  expect(await readFile(decoy, "utf8"), "lexical SVG decoy must be untouched").toBe("do not replace my SVG");
+});
+
+it.skipIf(process.platform === "win32").each([
+  ["derived SVG", undefined, "source.animated.svg", "source.storyboard.png"],
+  ["explicit SVG", "through/../custom.svg", "custom.svg", "custom.svg.storyboard-p1.png"],
+] as const)("keeps the %s and its storyboard in the physical destination directory", async (_kind, output, svgName, boardName) => {
+  const { dir, run } = await fixture();
+  const actual = join(dir, "actual");
+  await mkdir(join(actual, "child"), { recursive: true });
+  await symlink(join(actual, "child"), join(dir, "through"), "dir");
+  await writeFile(join(actual, "source.drawio"), diagram);
+  await writeFile(join(dir, "source.drawio"), graph("decoy", "Wrong graph"));
+  const decoy = "do not replace my file";
+  for (const name of [svgName, boardName]) await writeFile(join(dir, name), decoy);
+
+  const result = await run("drawio_animate", { input: "through/../source.drawio", output, steps: steps("a") }, { model: vision });
+  expect.soft(result.details, text(result)).toMatchObject({ imageAttached: true, steps: 1 });
+  expect.soft(await readFile(join(actual, svgName), "utf8").catch(() => "missing")).toContain('data-cell-id="a"');
+  const board = await readFile(join(actual, boardName)).catch(() => Buffer.alloc(0));
+  expect.soft(board.equals(png), `expected verified PNG at the physical ${boardName}`).toBe(true);
+  for (const name of [svgName, boardName]) {
+    expect.soft((await readFile(join(dir, name), "utf8")) === decoy, `lexical ${name} decoy must be untouched`).toBe(true);
+  }
+});
+
 it.each([["30.0.4", false], ["30.2.4", true]] as const)("uses draw.io %s capabilities in check, import, layout and the queued workflow", async (version, available) => {
   const { dir, binary, run, command, ui, pi, commands, invocations } = await fixture({ version });
   const probe = await run("drawio_check", {});
