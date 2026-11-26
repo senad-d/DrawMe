@@ -158,7 +158,7 @@ function pixelCounts({ chunks, header, width, height }: ReturnType<typeof png>, 
   const raster = inflateSync(Buffer.concat(chunks.filter((chunk) => chunk.type === "IDAT").map((chunk) => chunk.data)), {
     maxOutputLength: rowSize * height,
   });
-  expect(raster.length).toBe(rowSize * height);
+  expect(raster).toHaveLength(rowSize * height);
   const counts = new Map(colors.map((color) => [color, 0]));
   for (let row = 0; row < height; row++) {
     const start = row * rowSize;
